@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Casual AR Games</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: radial-gradient(circle at top right, #14181f 0%, #05060a 55%);
+            color: #f5f8ff;
+            min-height: 100vh;
+        }
+
+        main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem 1rem 3rem;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        header h1 {
+            font-size: clamp(2rem, 4vw, 3rem);
+            margin: 0.5rem 0;
+        }
+
+        header p {
+            color: #b0b7c8;
+            line-height: 1.6;
+            max-width: 640px;
+            margin: 0.5rem auto;
+        }
+
+        #instructions {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 18px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            font-size: 0.95rem;
+        }
+
+        #instructions strong {
+            color: #8ae7ff;
+        }
+
+        .game-grid {
+            display: grid;
+            gap: 2rem;
+        }
+
+        .game-card {
+            background: rgba(23, 28, 37, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 18px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            min-height: 450px;
+        }
+
+        .game-card header {
+            padding: 1.5rem;
+        }
+
+        .game-card header h2 {
+            margin: 0 0 0.4rem;
+            font-size: 1.4rem;
+        }
+
+        .game-card header p {
+            margin: 0;
+            color: #c1c6d8;
+            line-height: 1.6;
+        }
+
+        .frame-wrap {
+            position: relative;
+            flex: 1;
+            background: #000;
+        }
+
+        .frame-wrap iframe {
+            border: none;
+            width: 100%;
+            height: 100%;
+            min-height: 320px;
+        }
+
+        .frame-wrap::after {
+            content: 'Allow camera access inside each frame to play the AR scene.';
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            padding: 0.5rem 1rem;
+            font-size: 0.85rem;
+            color: #9ff6ff;
+            background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(3, 6, 12, 0.85) 100%);
+            text-align: center;
+        }
+
+        .game-actions {
+            padding: 1.25rem 1.5rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .game-actions a {
+            padding: 0.7rem 1.4rem;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: #f5f8ff;
+            text-decoration: none;
+            font-weight: 600;
+            transition: background 0.2s ease;
+        }
+
+        .game-actions a:hover {
+            background: rgba(138, 231, 255, 0.1);
+        }
+
+        @media (min-width: 900px) {
+            .game-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <header>
+            <p>Hands-on casual AR games side-by-side with immediate camera access.</p>
+            <h1>Casual Games Index</h1>
+        </header>
+
+        <section id="instructions">
+            <p>
+                Each panel below embeds one of the AR experiences in this repository. Make sure to
+                <strong>allow camera permissions</strong> when prompted and keep your hands visible in the webcam view.
+                Pinch or fist gestures activate the special moves explained in each game.
+            </p>
+        </section>
+
+        <section class="game-grid">
+            <article class="game-card">
+                <header>
+                    <h2>AR Gesture Shooter</h2>
+                    <p>
+                        Track the pistol pose, aim with your index finger, and pinch with the thumb to fire against hovering targets.
+                        Floating synth cues and a neon HUD keep you informed of every successful shot.
+                    </p>
+                </header>
+                <div class="frame-wrap">
+                    <iframe
+                        src="ar-gesture-shooting/gesture-shooting.html"
+                        title="AR Gesture Shooter"
+                        allow="camera; microphone; autoplay; encrypted-media"
+                        loading="lazy"
+                    ></iframe>
+                </div>
+                <div class="game-actions">
+                    <span>Pinch to shoot, raise your hand to unlock the crosshair.</span>
+                    <a href="ar-gesture-shooting/gesture-shooting.html" target="_blank" rel="noopener">Open in new tab</a>
+                </div>
+            </article>
+
+            <article class="game-card">
+                <header>
+                    <h2>AR Ninja: Dual Blade</h2>
+                    <p>
+                        Slice neon fruit orbs with both hands, rack up combos, trigger slow-motion with a pinch, and unleash the fist-powered ultimate.
+                        Choose classic or survival modes while keeping bombs at bay.
+                    </p>
+                </header>
+                <div class="frame-wrap">
+                    <iframe
+                        src="ar-ninja-fruit/ninja-fruit.html"
+                        title="AR Ninja Fruit"
+                        allow="camera; microphone; autoplay; encrypted-media"
+                        loading="lazy"
+                    ></iframe>
+                </div>
+                <div class="game-actions">
+                    <span>Slice through orbs, avoid bombs, and watch your combo grow.</span>
+                    <a href="ar-ninja-fruit/ninja-fruit.html" target="_blank" rel="noopener">Open in new tab</a>
+                </div>
+            </article>
+        </section>
+    </main>
+</body>
+</html>

@@ -1,1 +1,9 @@
 # casual-games
+
+A pair of browser-based AR experiments that run in a webcam tab—both leverage Three.js for rendering and MediaPipe Hands for gesture tracking.
+
+## ar-gesture-shooting
+The `gesture-shooting.html` experience is a sci-fi shooter: MediaPipe tracks a pistol-like hand pose, a floating crosshair follows your index finger, and pinching with the thumb fires projectiles at 3D targets that spawn in front of you. The HUD shows your score, aim assist kicks in near enemies, and synth-style audio cues reinforce every hit or miss. Allow camera access, raise your hand, and aim with index/trigger with thumb to keep the score climbing.
+
+## ar-ninja-fruit
+`ninja-fruit.html` is the “Dual Blade Edition” fruit-slicing dojo. Two hand cursors trace your motions, combo text pulses for consecutive slices, and you can pinch to trigger slow-motion or clench a fist once the ultimate meter is full. Classic (60s) and endless survival modes are available, bombs punish sloppy swings, and neon HUD elements display score, timer, statuses, and lives. Open the file in a secure context, grant camera rights, then slice through orbs to rack up combos and keep the meter charged.

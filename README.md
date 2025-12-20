@@ -7,3 +7,6 @@ The `gesture-shooting.html` experience is a sci-fi shooter: MediaPipe tracks a p
 
 ## ar-ninja-fruit
 `ninja-fruit.html` is the “Dual Blade Edition” fruit-slicing dojo. Two hand cursors trace your motions, combo text pulses for consecutive slices, and you can pinch to trigger slow-motion or clench a fist once the ultimate meter is full. Classic (60s) and endless survival modes are available, bombs punish sloppy swings, and neon HUD elements display score, timer, statuses, and lives. Open the file in a secure context, grant camera rights, then slice through orbs to rack up combos and keep the meter charged.
+
+## meteor-blaster
+`meteor-blaster.html` throws you into a neon defense grid where a finger-gun pose aims lasers at incoming meteors, bombs, and rare power-ups floating in a 3D cityscape. Hold the gesture to overcharge your shot, uncross and spread your hands to trigger a NOVA ultimate, and show an open palm to pause the mission; score, shield, and ultimate meters keep you honest as the swarm grows harder. Allow camera access, steady your aim, and keep the city shielded from impact to climb the leaderboard.

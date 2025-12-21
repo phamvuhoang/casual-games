@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>AR Anime Skills - Fixed Mirroring</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #111; font-family: 'Segoe UI', sans-serif; }
+        
+        #container { position: relative; width: 100vw; height: 100vh; }
+        
+        /* IMPORTANT: We flip EVERYTHING to create a consistent Mirror effect */
+        #webcam { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            object-fit: cover; 
+            transform: scaleX(-1); /* Creates the mirror effect */
+            z-index: 1; 
+        }
+        
+        /* Canvas must overlay exactly */
+        canvas { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+        }
+        
+        /* Debug skeleton canvas */
+        #output_canvas { z-index: 2; transform: scaleX(-1); /* Match webcam flip */ }
+        
+        /* ThreeJS does NOT need flip via CSS, we handle it in Math */
+        #three_canvas { z-index: 3; pointer-events: none; }
+
+        #ui-layer { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; 
+            pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; padding: 20px;
+        }
+
+        .hud-item {
+            background: rgba(0, 0, 0, 0.6); border: 2px solid #00d2ff; 
+            padding: 10px 20px; border-radius: 10px; color: #fff; text-align: center;
+            font-weight: bold; text-shadow: 0 0 5px #00d2ff;
+        }
+
+        #guide-box {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85); border: 3px solid #ff0055; 
+            padding: 20px; border-radius: 20px; text-align: center; color: white; width: 90%; max-width: 600px;
+        }
+        
+        #start-btn {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            padding: 20px 50px; font-size: 2rem; background: #ff0055; color: white; border: none; 
+            border-radius: 50px; cursor: pointer; z-index: 50; box-shadow: 0 0 30px #ff0055; pointer-events: auto;
+        }
+    </style>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1675471629/holistic.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1640029074/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1620248257/drawing_utils.js"></script>
+</head>
+<body>
+
+    <div id="container">
+        <video id="webcam" playsinline></video>
+        <canvas id="output_canvas"></canvas>
+        <canvas id="three_canvas"></canvas>
+
+        <div id="ui-layer">
+            <div style="display: flex; justify-content: space-between;">
+                <div class="hud-item">SCORE: <span id="score">0</span></div>
+                <div class="hud-item">TIME: <span id="timer">10</span></div>
+            </div>
+
+            <div id="guide-box">
+                <h1 id="skill-title" style="margin: 0; color: #ff0055; text-transform: uppercase;">LOADING...</h1>
+                <p id="skill-desc" style="font-size: 1.2rem; color: #ddd;">Waiting for camera...</p>
+            </div>
+        </div>
+
+        <button id="start-btn" onclick="startGame()">START GAME</button>
+    </div>
+
+    <script>
+        const CONFIG = {
+            CAMERA_W: 1280,
+            CAMERA_H: 720,
+            SKILL_TIME: 15
+        };
+
+        let camera, scene, renderer;
+        let holistic, camUtils;
+        let isPlaying = false;
+        let score = 0;
+        let timeLeft = CONFIG.SKILL_TIME;
+        let lastTime = 0;
+        
+        // Game State
+        let currentSkill = "SPIRIT_GUN"; // SPIRIT_GUN or KAMEHAMEHA
+        let fxGroup = new THREE.Group();
+        let activeBeam = null;
+        let chargeOrb = null;
+        let charging = false;
+        let chargeStart = 0;
+
+        // Visual Debug Marker
+        let debugMarker; 
+
+        // --- 1. Three.js Setup ---
+        function initThree() {
+            const cvs = document.getElementById('three_canvas');
+            scene = new THREE.Scene();
+            
+            // Set up camera to match the "Mirror" perspective
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 20;
+
+            renderer = new THREE.WebGLRenderer({ canvas: cvs, alpha: true, antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+
+            scene.add(new THREE.AmbientLight(0xffffff, 1));
+            scene.add(fxGroup);
+
+            // Create a small red dot to show user where the detection is
+            const dotGeo = new THREE.SphereGeometry(0.5, 16, 16);
+            const dotMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            debugMarker = new THREE.Mesh(dotGeo, dotMat);
+            debugMarker.visible = false;
+            scene.add(debugMarker);
+        }
+
+        // --- 2. Coordinate Mapping (The Fix) ---
+        function mapLandmarkToScreen(lm) {
+            // MediaPipe X: 0 (Left) -> 1 (Right)
+            // Screen is Mirrored: So we need to flip X calculation for 3D space
+            
+            // We multiply X by -1 to flip it for the 3D scene to match the CSS scaleX(-1)
+            const x = (lm.x - 0.5) * -35; 
+            const y = -(lm.y - 0.5) * 25; // Invert Y because 3D Y goes Up, Screen Y goes Down
+            const z = -lm.z * 10; // Use depth estimate
+            return new THREE.Vector3(x, y, z);
+        }
+
+        // --- 3. Game Logic ---
+        function switchSkill(skillName) {
+            currentSkill = skillName;
+            timeLeft = CONFIG.SKILL_TIME;
+            fxGroup.clear();
+            activeBeam = null;
+            chargeOrb = null;
+            charging = false;
+
+            const title = document.getElementById('skill-title');
+            const desc = document.getElementById('skill-desc');
+
+            if (skillName === 'SPIRIT_GUN') {
+                title.innerText = "SPIRIT GUN";
+                title.style.color = "#00ffff";
+                desc.innerHTML = "Use <b>EITHER HAND</b>.<br>Make a Gun Shape 🔫 and extend arm straight!";
+            } else {
+                title.innerText = "KAMEHAMEHA";
+                title.style.color = "#00aaff";
+                desc.innerHTML = "Bring <b>WRISTS TOGETHER</b> to Charge.<br>Push forward to Fire!";
+            }
+        }
+
+        function updateGame() {
+            if(!isPlaying) return;
+            
+            const now = Date.now();
+            if(now - lastTime > 1000) {
+                timeLeft--;
+                document.getElementById('timer').innerText = timeLeft;
+                lastTime = now;
+                if(timeLeft <= 0) {
+                    // Switch skill automatically if time runs out
+                    switchSkill(currentSkill === 'SPIRIT_GUN' ? 'KAMEHAMEHA' : 'SPIRIT_GUN');
+                }
+            }
+
+            // Animate Beam
+            if(activeBeam) {
+                activeBeam.position.z -= 1.5; // Move beam away
+                if(activeBeam.position.z < -50) {
+                    fxGroup.remove(activeBeam);
+                    activeBeam = null;
+                }
+            }
+            
+            // Animate Charge Orb
+            if(chargeOrb) {
+                chargeOrb.rotation.y += 0.1;
+                const scale = 1 + (Date.now() - chargeStart) / 400;
+                chargeOrb.scale.set(scale, scale, scale);
+            }
+
+            requestAnimationFrame(updateGame);
+        }
+
+        function success() {
+            score += 100;
+            document.getElementById('score').innerText = score;
+            setTimeout(() => {
+                switchSkill(currentSkill === 'SPIRIT_GUN' ? 'KAMEHAMEHA' : 'SPIRIT_GUN');
+            }, 1000);
+        }
+
+        // --- 4. Gesture Detection ---
+        function onResults(results) {
+            // Draw Skeleton for visual feedback
+            const canvas = document.getElementById('output_canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = CONFIG.CAMERA_W;
+            canvas.height = CONFIG.CAMERA_H;
+            
+            ctx.save();
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw skeleton
+            drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#ffffff', lineWidth: 1});
+            drawLandmarks(ctx, results.poseLandmarks, {color: '#ff0055', lineWidth: 1, radius: 2});
+            ctx.restore();
+
+            if(!isPlaying) {
+                renderer.render(scene, camera);
+                return;
+            }
+
+            // ---------------- SPIRIT GUN LOGIC ----------------
+            if (currentSkill === 'SPIRIT_GUN') {
+                let firingHand = null;
+
+                // Check BOTH hands (Dual Wield Support)
+                const hands = [results.rightHandLandmarks, results.leftHandLandmarks];
+                
+                for(let hand of hands) {
+                    if(hand) {
+                        // Gun Check: Index extended, others curled
+                        const idxTip = hand[8].y;
+                        const idxPip = hand[6].y;
+                        const midTip = hand[12].y;
+                        const midPip = hand[10].y;
+                        const ringTip = hand[16].y;
+                        
+                        // Simple Logic: Index tip is higher (smaller y) than knuckle, 
+                        // and Middle finger tip is lower (larger y) than knuckle (curled)
+                        if (idxTip < idxPip && midTip > midPip) {
+                            firingHand = hand;
+                            break; // Found a gun
+                        }
+                    }
+                }
+
+                if (firingHand) {
+                    const tipPos = mapLandmarkToScreen(firingHand[8]);
+                    
+                    // Show Debug Dot
+                    debugMarker.position.copy(tipPos);
+                    debugMarker.visible = true;
+
+                    if (!activeBeam) {
+                        // Fire!
+                        const geo = new THREE.CylinderGeometry(0.4, 0.4, 15, 8);
+                        const mat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+                        activeBeam = new THREE.Mesh(geo, mat);
+                        activeBeam.rotation.x = Math.PI / 2;
+                        activeBeam.position.copy(tipPos);
+                        fxGroup.add(activeBeam);
+                        success();
+                    }
+                } else {
+                    debugMarker.visible = false;
+                }
+            }
+
+            // ---------------- KAMEHAMEHA LOGIC ----------------
+            if (currentSkill === 'KAMEHAMEHA' && results.poseLandmarks) {
+                const lw = results.poseLandmarks[15]; // Left Wrist
+                const rw = results.poseLandmarks[16]; // Right Wrist
+                const hip = results.poseLandmarks[23];
+
+                // Distance between wrists
+                const dist = Math.hypot(lw.x - rw.x, lw.y - rw.y);
+                const center = { x: (lw.x + rw.x)/2, y: (lw.y + rw.y)/2, z: (lw.z + rw.z)/2 };
+                const pos3D = mapLandmarkToScreen(center);
+
+                // Debug Marker follows hands
+                debugMarker.position.copy(pos3D);
+                debugMarker.visible = true;
+
+                // 1. Charge Phase (Wrists Close)
+                if (dist < 0.15) {
+                    if (!charging) {
+                        charging = true;
+                        chargeStart = Date.now();
+                        
+                        const geo = new THREE.SphereGeometry(1, 32, 32);
+                        const mat = new THREE.MeshBasicMaterial({ color: 0x00aaff, transparent: true, opacity: 0.8 });
+                        chargeOrb = new THREE.Mesh(geo, mat);
+                        fxGroup.add(chargeOrb);
+                    }
+                    if(chargeOrb) chargeOrb.position.copy(pos3D);
+                } 
+                // 2. Fire Phase (Hands separate or push forward after charging)
+                else if (charging && dist > 0.2) {
+                    charging = false;
+                    if(chargeOrb) {
+                        fxGroup.remove(chargeOrb);
+                        chargeOrb = null;
+                        
+                        // Spawn Beam
+                        const geo = new THREE.CylinderGeometry(2, 2, 40, 16);
+                        const mat = new THREE.MeshBasicMaterial({ color: 0x00aaff });
+                        activeBeam = new THREE.Mesh(geo, mat);
+                        activeBeam.rotation.x = Math.PI / 2;
+                        activeBeam.position.copy(pos3D);
+                        fxGroup.add(activeBeam);
+                        success();
+                    }
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // --- 5. Init ---
+        async function startGame() {
+            document.getElementById('start-btn').style.display = 'none';
+            initThree();
+            updateGame();
+
+            holistic = new Holistic({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic@0.5.1675471629/${file}`});
+            holistic.setOptions({
+                modelComplexity: 1,
+                smoothLandmarks: true,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+            holistic.onResults(onResults);
+
+            const video = document.getElementById('webcam');
+            camUtils = new Camera(video, {
+                onFrame: async () => { await holistic.send({image: video}); },
+                width: CONFIG.CAMERA_W,
+                height: CONFIG.CAMERA_H
+            });
+            await camUtils.start();
+            isPlaying = true;
+            switchSkill("SPIRIT_GUN");
+        }
+
+        window.addEventListener('resize', () => {
+            if(camera) {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        });
+    </script>
+</body>
+</html>

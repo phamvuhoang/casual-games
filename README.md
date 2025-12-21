@@ -1,6 +1,6 @@
 # casual-games
 
-Three browser-based AR experiments that run in a webcam tab—each leverages Three.js for rendering plus MediaPipe Hands for gesture tracking to keep your hands at the center of the fun.
+Five browser-based AR experiments that run in a webcam tab—each leverages Three.js for rendering plus MediaPipe Hands for gesture tracking to keep your hands at the center of the fun.
 
 ## ar-gesture-shooting
 The `gesture-shooting.html` experience is a sci-fi shooter: MediaPipe tracks a pistol-like hand pose, a floating crosshair follows your index finger, and pinching with the thumb fires projectiles at 3D targets that spawn in front of you. The HUD shows your score, aim assist kicks in near enemies, and synth-style audio cues reinforce every hit or miss. Allow camera access, raise your hand, and aim with index/trigger with thumb to keep the score climbing.
@@ -13,3 +13,6 @@ The `gesture-shooting.html` experience is a sci-fi shooter: MediaPipe tracks a p
 
 ## ar-balloon-pop-carnival
 `ar-balloon-pop-carnival/balloon-pop-carnival.html` is a time-limited carnival run where index fingers poke the balloons and pinches launch darts. A combo meter rewards rapid pops, a mega meter charges up for bonus fireworks, and a countdown timer keeps the pressure high. Grant webcam access, keep your hands visible, and burst as many balloons as you can before the clock runs out.
+
+## ar-anime-skills
+`ar-anime-skills/anime-skills.html` is a two-skill dojo that alternates between Spirit Gun finger-gun hits and Kamehameha-style wrist coordination. Score points by extending your index to fire a cyan beam, then switch to charging both wrists together to unleash a blue energy wave once you push them apart. The HUD highlights score and timer, a mirrored webcam feed keeps the gestures readable, and the sequence resets automatically after each success—allow camera access and keep hands centered to land every anime punchline.

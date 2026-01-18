@@ -2,12 +2,19 @@ import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { BallData } from '../types';
+import { EnergyBallTrail } from './EnergyBallTrail';
 
 interface EnergyBallProps {
   data: BallData;
+  qualityTier?: 'high' | 'balanced' | 'low';
+  effectsEnabled?: boolean;
 }
 
-export const EnergyBall: React.FC<EnergyBallProps> = ({ data }) => {
+export const EnergyBall: React.FC<EnergyBallProps> = ({
+  data,
+  qualityTier = 'high',
+  effectsEnabled = true
+}) => {
   const groupRef = useRef<THREE.Group>(null);
   const coreRef = useRef<THREE.Mesh>(null);
   const shellRef = useRef<THREE.Mesh>(null);
@@ -17,8 +24,9 @@ export const EnergyBall: React.FC<EnergyBallProps> = ({ data }) => {
   const rotAxis = useMemo(() => new THREE.Vector3(Math.random(), Math.random(), Math.random()).normalize(), []);
   
   // Memoize particle geometry for efficiency
+  const particleCount = qualityTier === 'low' ? 12 : qualityTier === 'balanced' ? 24 : 40;
   const particleGeo = useMemo(() => {
-    const count = 40;
+    const count = particleCount;
     const positions = new Float32Array(count * 3);
     for(let i=0; i<count; i++) {
       const theta = Math.random() * Math.PI * 2;
@@ -31,7 +39,7 @@ export const EnergyBall: React.FC<EnergyBallProps> = ({ data }) => {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     return geo;
-  }, []);
+  }, [particleCount]);
 
   useFrame((state, delta) => {
     if (!groupRef.current) return;
@@ -63,6 +71,7 @@ export const EnergyBall: React.FC<EnergyBallProps> = ({ data }) => {
 
   return (
     <group ref={groupRef}>
+      {effectsEnabled && data.state === 'flying' ? <EnergyBallTrail data={data} /> : null}
       {/* Inner Core - Solid energy */}
       <mesh ref={coreRef}>
         <icosahedronGeometry args={[0.2, 1]} />
@@ -98,15 +107,17 @@ export const EnergyBall: React.FC<EnergyBallProps> = ({ data }) => {
       </mesh>
 
       {/* Floating Particles */}
-      <points ref={particlesRef} geometry={particleGeo}>
-        <pointsMaterial 
-          size={0.03} 
-          color={color} 
-          transparent 
-          opacity={0.6}
-          blending={THREE.AdditiveBlending}
-        />
-      </points>
+      {effectsEnabled ? (
+        <points ref={particlesRef} geometry={particleGeo}>
+          <pointsMaterial 
+            size={qualityTier === 'low' ? 0.02 : 0.03} 
+            color={color} 
+            transparent 
+            opacity={qualityTier === 'low' ? 0.35 : 0.6}
+            blending={THREE.AdditiveBlending}
+          />
+        </points>
+      ) : null}
     </group>
   );
 };

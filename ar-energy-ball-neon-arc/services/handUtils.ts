@@ -26,6 +26,50 @@ export const getPalmCenter = (landmarks: any[]): { x: number; y: number; z: numb
   return { x: x / n, y: y / n, z: z / n };
 };
 
+const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
+
+export const getPalmNormal = (landmarks: any[]): THREE.Vector3 => {
+  const wrist = landmarks[0];
+  const indexMcp = landmarks[5];
+  const pinkyMcp = landmarks[17];
+
+  const v1 = new THREE.Vector3(
+    indexMcp.x - wrist.x,
+    indexMcp.y - wrist.y,
+    indexMcp.z - wrist.z
+  );
+  const v2 = new THREE.Vector3(
+    pinkyMcp.x - wrist.x,
+    pinkyMcp.y - wrist.y,
+    pinkyMcp.z - wrist.z
+  );
+
+  return new THREE.Vector3().crossVectors(v1, v2).normalize();
+};
+
+export const isPalmFacingCamera = (
+  landmarks: any[],
+  handedness: 'Left' | 'Right'
+): boolean => {
+  const normal = getPalmNormal(landmarks);
+  const zThreshold = 0.15;
+  const facing = handedness === 'Right' ? normal.z > zThreshold : normal.z < -zThreshold;
+  return facing;
+};
+
+export const getPinchStrength = (landmarks: any[]): number => {
+  const thumbTip = landmarks[4];
+  const indexTip = landmarks[8];
+  const dx = thumbTip.x - indexTip.x;
+  const dy = thumbTip.y - indexTip.y;
+  const dz = thumbTip.z - indexTip.z;
+  const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  const strength = 1 - clamp01(dist / 0.08);
+  return strength;
+};
+
+export const isPinching = (landmarks: any[]): boolean => getPinchStrength(landmarks) > 0.7;
+
 export const isPalmUp = (landmarks: any[]): boolean => {
   const wrist = landmarks[0];
   const middleTip = landmarks[12];

@@ -1,6 +1,9 @@
 # casual-games
 
-Five browser-based AR experiments that run in a webcam tab—each leverages Three.js for rendering plus MediaPipe Hands for gesture tracking to keep your hands at the center of the fun.
+Six browser-based AR experiments that run in a webcam tab—each leverages MediaPipe Hands for gesture tracking, with most using Three.js for rendering to keep your hands at the center of the fun.
+
+## ar-starbridge-express
+`ar-starbridge-express/starbridge-express.html` is a calm track-drawing sandbox that turns a pinched finger path into glowing rails on your desk. Confirm each line to sync it into the isometric relay yard, where tiny trains loop between the AR outer world and the city slice. Run the isometric city view at `http://localhost:3000/starbridge-express` to see the bridge, then allow camera access, pinch to draw, release to pause, and confirm to send the track across.
 
 ## ar-gesture-shooting
 The `gesture-shooting.html` experience is a sci-fi shooter: MediaPipe tracks a pistol-like hand pose, a floating crosshair follows your index finger, and pinching with the thumb fires projectiles at 3D targets that spawn in front of you. The HUD shows your score, aim assist kicks in near enemies, and synth-style audio cues reinforce every hit or miss. Allow camera access, raise your hand, and aim with index/trigger with thumb to keep the score climbing.

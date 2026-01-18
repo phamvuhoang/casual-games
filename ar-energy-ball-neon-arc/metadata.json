@@ -1,0 +1,7 @@
+{
+  "name": "Neon Arc: Energy Ball AR",
+  "description": "A high-fidelity AR experience where you create mesh-like energy balls with your hands, charge them up, and throw them.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

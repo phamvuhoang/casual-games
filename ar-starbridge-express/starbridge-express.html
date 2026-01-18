@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Starbridge Express</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Syne:wght@600;700&display=swap" rel="stylesheet">
+
+    <script src="https://unpkg.com/@mediapipe/hands@0.4.1646424915/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --ink: #1f1813;
+            --ink-soft: rgba(31, 24, 19, 0.7);
+            --cream: #f7ebd4;
+            --warm: #e4c6a1;
+            --ember: #c55a3a;
+            --teal: #2d8c7e;
+            --glow: rgba(255, 234, 202, 0.85);
+            --panel-shadow: 0 20px 40px rgba(33, 24, 17, 0.25);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+            color: var(--ink);
+            background: radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0) 50%),
+                linear-gradient(155deg, #f8efdb 0%, #e5c7a2 55%, #d1b08d 100%);
+            overflow: hidden;
+        }
+
+        .page {
+            min-height: 100vh;
+            padding: clamp(1.5rem, 4vw, 3rem);
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            position: relative;
+        }
+
+        .page::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(120deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0) 55%),
+                repeating-linear-gradient(90deg, rgba(124, 90, 65, 0.07), rgba(124, 90, 65, 0.07) 1px, transparent 1px, transparent 60px),
+                repeating-linear-gradient(0deg, rgba(124, 90, 65, 0.05), rgba(124, 90, 65, 0.05) 1px, transparent 1px, transparent 60px);
+            opacity: 0.65;
+            pointer-events: none;
+        }
+
+        header {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem 2rem;
+            align-items: center;
+            justify-content: space-between;
+            animation: fadeIn 0.7s ease-out;
+        }
+
+        header .title-block {
+            max-width: 560px;
+        }
+
+        header h1 {
+            font-family: 'Syne', 'Space Grotesk', sans-serif;
+            font-size: clamp(2.2rem, 4vw, 3.4rem);
+            margin: 0 0 0.4rem;
+        }
+
+        header p {
+            margin: 0;
+            color: var(--ink-soft);
+            line-height: 1.6;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.55rem 1.2rem;
+            border-radius: 999px;
+            border: 1px solid rgba(31, 24, 19, 0.2);
+            background: rgba(255, 255, 255, 0.6);
+            font-size: 0.9rem;
+            box-shadow: 0 16px 30px rgba(60, 44, 33, 0.18);
+        }
+
+        main {
+            position: relative;
+            z-index: 2;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            gap: clamp(1rem, 2vw, 2rem);
+            flex: 1;
+            animation: liftIn 0.8s ease-out;
+        }
+
+        .panel {
+            position: relative;
+            border-radius: 24px;
+            overflow: hidden;
+            border: 1px solid rgba(31, 24, 19, 0.2);
+            box-shadow: var(--panel-shadow);
+            background: rgba(251, 246, 236, 0.65);
+            backdrop-filter: blur(6px);
+        }
+
+        .panel-header {
+            position: absolute;
+            top: 18px;
+            left: 18px;
+            right: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        .panel-title {
+            font-family: 'Syne', 'Space Grotesk', sans-serif;
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            color: var(--ink-soft);
+        }
+
+        .panel-status {
+            padding: 0.3rem 0.7rem;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.75);
+            font-size: 0.8rem;
+            color: var(--ink-soft);
+        }
+
+        #ar-panel {
+            min-height: 500px;
+        }
+
+        #city-panel {
+            min-height: 500px;
+        }
+
+        #input_video {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+            filter: saturate(0.95) contrast(1.05);
+        }
+
+        #draw_canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        #city_frame {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: #f8efdb;
+        }
+
+        .hud {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            display: grid;
+            gap: 0.8rem;
+            z-index: 5;
+        }
+
+        .hud-card {
+            background: rgba(255, 255, 255, 0.78);
+            border-radius: 16px;
+            padding: 0.9rem 1rem;
+            color: var(--ink-soft);
+            box-shadow: 0 12px 25px rgba(60, 44, 33, 0.2);
+        }
+
+        .hud-card strong {
+            color: var(--ink);
+            font-weight: 600;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem;
+        }
+
+        button {
+            border: none;
+            border-radius: 999px;
+            padding: 0.6rem 1.2rem;
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            box-shadow: 0 10px 20px rgba(60, 44, 33, 0.2);
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .btn-primary {
+            background: var(--ember);
+            color: #fff6ec;
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.85);
+            color: var(--ink);
+            border: 1px solid rgba(31, 24, 19, 0.15);
+        }
+
+        .btn-ghost {
+            background: rgba(255, 255, 255, 0.6);
+            color: var(--ink-soft);
+            border: 1px solid rgba(31, 24, 19, 0.15);
+        }
+
+        #start-screen {
+            position: fixed;
+            inset: 0;
+            background: rgba(30, 22, 17, 0.7);
+            display: grid;
+            place-items: center;
+            z-index: 20;
+            backdrop-filter: blur(6px);
+        }
+
+        .start-card {
+            background: rgba(255, 255, 255, 0.9);
+            padding: 2rem 2.5rem;
+            border-radius: 24px;
+            max-width: 440px;
+            text-align: center;
+            box-shadow: 0 30px 60px rgba(30, 22, 17, 0.35);
+        }
+
+        .start-card h2 {
+            margin: 0 0 0.8rem;
+            font-family: 'Syne', 'Space Grotesk', sans-serif;
+            font-size: 2rem;
+        }
+
+        .start-card p {
+            margin: 0 0 1.6rem;
+            color: var(--ink-soft);
+            line-height: 1.6;
+        }
+
+        .start-note {
+            font-size: 0.9rem;
+            margin-top: -0.6rem;
+        }
+
+        .train-indicator {
+            position: absolute;
+            top: 18px;
+            right: 18px;
+            background: rgba(255, 255, 255, 0.7);
+            padding: 0.4rem 0.8rem;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            color: var(--ink-soft);
+            box-shadow: 0 10px 20px rgba(60, 44, 33, 0.2);
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes liftIn {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 980px) {
+            main {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <header>
+            <div class="title-block">
+                <h1>Starbridge Express</h1>
+                <p>Pinch to sketch rails on your desk, then sync them into the isometric relay yard.</p>
+            </div>
+            <div class="status-pill" id="sync-status">Outer world idle</div>
+        </header>
+
+        <main>
+            <section class="panel" id="ar-panel">
+                <div class="panel-header">
+                    <div class="panel-title">Outer World</div>
+                    <div class="panel-status" id="gesture-status">Hand offline</div>
+                </div>
+                <div class="train-indicator" id="track-status">No track staged</div>
+                <video id="input_video" playsinline></video>
+                <canvas id="draw_canvas"></canvas>
+                <div class="hud">
+                    <div class="hud-card">
+                        <strong>Draw mode:</strong> pinch thumb and index to lay track. Release to pause. Confirm to sync.
+                    </div>
+                    <div class="controls">
+                        <button class="btn-primary" id="confirm-btn">Confirm track</button>
+                        <button class="btn-secondary" id="reset-btn">Reset all</button>
+                        <button class="btn-ghost" id="audio-btn">Enable audio</button>
+                    </div>
+                </div>
+            </section>
+
+            <section class="panel" id="city-panel">
+                <div class="panel-header">
+                    <div class="panel-title">Isometric Relay</div>
+                    <div class="panel-status" id="city-status">Waiting for city feed</div>
+                </div>
+                <iframe id="city_frame" title="Starbridge City View"></iframe>
+            </section>
+        </main>
+    </div>
+
+    <div id="start-screen">
+        <div class="start-card">
+            <h2>Enter Starbridge</h2>
+            <p>Enable camera access, keep your hand visible, and pinch to trace the rails on your desk.</p>
+            <p class="start-note">Run the isometric city view at <strong>localhost:3000</strong> to see synced rails.</p>
+            <button class="btn-primary" id="start-btn">Start drawing</button>
+        </div>
+    </div>
+
+    <script>
+        const MESSAGE_CHANNEL = 'starbridge-express';
+        const CITY_URL = new URLSearchParams(window.location.search).get('city') || 'http://localhost:3000/starbridge-express?embed=1';
+        const canvas = document.getElementById('draw_canvas');
+        const ctx = canvas.getContext('2d');
+        const videoElement = document.getElementById('input_video');
+        const startScreen = document.getElementById('start-screen');
+        const startButton = document.getElementById('start-btn');
+        const confirmButton = document.getElementById('confirm-btn');
+        const resetButton = document.getElementById('reset-btn');
+        const audioButton = document.getElementById('audio-btn');
+        const gestureStatus = document.getElementById('gesture-status');
+        const trackStatus = document.getElementById('track-status');
+        const syncStatus = document.getElementById('sync-status');
+        const cityStatus = document.getElementById('city-status');
+        const cityFrame = document.getElementById('city_frame');
+
+        cityFrame.src = CITY_URL;
+        let cityOrigin = '*';
+        try {
+            cityOrigin = new URL(CITY_URL).origin;
+        } catch (error) {
+            cityOrigin = '*';
+        }
+
+        const state = {
+            handVisible: false,
+            pinched: false,
+            wasPinched: false,
+            finger: { x: 0.5, y: 0.5 },
+            smoothedFinger: { x: 0.5, y: 0.5 },
+            drawing: false,
+            activePath: [],
+            pendingPath: [],
+            paths: [],
+            lastSend: 0,
+            cityReady: false,
+        };
+
+        let audioCtx = null;
+        let audioNodes = null;
+        let audioEnabled = false;
+
+        function resizeCanvas() {
+            const rect = canvas.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        function planeCorners(width, height) {
+            return {
+                topLeft: { x: width * 0.18, y: height * 0.28 },
+                topRight: { x: width * 0.82, y: height * 0.28 },
+                bottomLeft: { x: width * 0.06, y: height * 0.92 },
+                bottomRight: { x: width * 0.94, y: height * 0.92 },
+            };
+        }
+
+        function planeToScreen(corners, u, v) {
+            const topX = corners.topLeft.x + (corners.topRight.x - corners.topLeft.x) * u;
+            const topY = corners.topLeft.y + (corners.topRight.y - corners.topLeft.y) * u;
+            const bottomX = corners.bottomLeft.x + (corners.bottomRight.x - corners.bottomLeft.x) * u;
+            const bottomY = corners.bottomLeft.y + (corners.bottomRight.y - corners.bottomLeft.y) * u;
+            return {
+                x: topX + (bottomX - topX) * v,
+                y: topY + (bottomY - topY) * v,
+            };
+        }
+
+        function clamp(value, min, max) {
+            return Math.min(max, Math.max(min, value));
+        }
+
+        function distance(a, b) {
+            const dx = a.x - b.x;
+            const dy = a.y - b.y;
+            return Math.hypot(dx, dy);
+        }
+
+        function simplifyPath(points, tolerance) {
+            if (points.length <= 2) return points.slice();
+            const start = points[0];
+            const end = points[points.length - 1];
+            let maxDist = 0;
+            let index = 0;
+            for (let i = 1; i < points.length - 1; i += 1) {
+                const dist = perpendicularDistance(points[i], start, end);
+                if (dist > maxDist) {
+                    maxDist = dist;
+                    index = i;
+                }
+            }
+            if (maxDist > tolerance) {
+                const left = simplifyPath(points.slice(0, index + 1), tolerance);
+                const right = simplifyPath(points.slice(index), tolerance);
+                return left.slice(0, -1).concat(right);
+            }
+            return [start, end];
+        }
+
+        function perpendicularDistance(point, start, end) {
+            const dx = end.x - start.x;
+            const dy = end.y - start.y;
+            if (dx === 0 && dy === 0) return distance(point, start);
+            const t = ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy);
+            const proj = {
+                x: start.x + t * dx,
+                y: start.y + t * dy,
+            };
+            return distance(point, proj);
+        }
+
+        function filterSpacing(points, minSpacing) {
+            const filtered = [];
+            let last = null;
+            for (const point of points) {
+                if (!last || distance(point, last) >= minSpacing) {
+                    filtered.push(point);
+                    last = point;
+                }
+            }
+            return filtered;
+        }
+
+        function pathLength(points) {
+            let total = 0;
+            for (let i = 0; i < points.length - 1; i += 1) {
+                total += distance(points[i], points[i + 1]);
+            }
+            return total;
+        }
+
+        function samplePath(points, distanceAlong) {
+            let remaining = distanceAlong;
+            for (let i = 0; i < points.length - 1; i += 1) {
+                const start = points[i];
+                const end = points[i + 1];
+                const segmentLength = distance(start, end);
+                if (remaining <= segmentLength) {
+                    const t = segmentLength === 0 ? 0 : remaining / segmentLength;
+                    return {
+                        point: {
+                            x: start.x + (end.x - start.x) * t,
+                            y: start.y + (end.y - start.y) * t,
+                        },
+                        direction: {
+                            x: end.x - start.x,
+                            y: end.y - start.y,
+                        },
+                    };
+                }
+                remaining -= segmentLength;
+            }
+            const last = points[points.length - 1];
+            const prev = points[points.length - 2] || last;
+            return {
+                point: { x: last.x, y: last.y },
+                direction: { x: last.x - prev.x, y: last.y - prev.y },
+            };
+        }
+
+        function sendTracks(preview) {
+            if (!cityFrame.contentWindow) return;
+            const payload = {
+                channel: MESSAGE_CHANNEL,
+                type: 'starbridge-track-update',
+                paths: state.paths,
+                previewPath: preview || null,
+            };
+            cityFrame.contentWindow.postMessage(payload, cityOrigin);
+            state.lastSend = performance.now();
+            if (preview) {
+                syncStatus.textContent = 'Track preview staged';
+            } else {
+                syncStatus.textContent = `Synced ${state.paths.length} track${state.paths.length === 1 ? '' : 's'}`;
+            }
+        }
+
+        function clearTracks() {
+            if (!cityFrame.contentWindow) return;
+            cityFrame.contentWindow.postMessage({ channel: MESSAGE_CHANNEL, type: 'starbridge-clear' }, cityOrigin);
+            syncStatus.textContent = 'Outer world idle';
+        }
+
+        function updateIndicators() {
+            gestureStatus.textContent = state.handVisible ? (state.pinched ? 'Pinch active' : 'Hand detected') : 'Hand offline';
+            if (state.pendingPath.length > 1) {
+                trackStatus.textContent = 'Track staged';
+            } else if (state.activePath.length > 1) {
+                trackStatus.textContent = 'Drawing track';
+            } else {
+                trackStatus.textContent = state.paths.length ? 'Tracks synced' : 'No track staged';
+            }
+        }
+
+        function drawPlane(corners) {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 240, 210, 0.4)';
+            ctx.lineWidth = 1;
+            const gridLines = 8;
+            for (let i = 0; i <= gridLines; i += 1) {
+                const t = i / gridLines;
+                const start = planeToScreen(corners, t, 0);
+                const end = planeToScreen(corners, t, 1);
+                ctx.beginPath();
+                ctx.moveTo(start.x, start.y);
+                ctx.lineTo(end.x, end.y);
+                ctx.stroke();
+            }
+            for (let i = 0; i <= gridLines; i += 1) {
+                const t = i / gridLines;
+                const start = planeToScreen(corners, 0, t);
+                const end = planeToScreen(corners, 1, t);
+                ctx.beginPath();
+                ctx.moveTo(start.x, start.y);
+                ctx.lineTo(end.x, end.y);
+                ctx.stroke();
+            }
+
+            ctx.beginPath();
+            ctx.moveTo(corners.topLeft.x, corners.topLeft.y);
+            ctx.lineTo(corners.topRight.x, corners.topRight.y);
+            ctx.lineTo(corners.bottomRight.x, corners.bottomRight.y);
+            ctx.lineTo(corners.bottomLeft.x, corners.bottomLeft.y);
+            ctx.closePath();
+            ctx.strokeStyle = 'rgba(255, 226, 190, 0.8)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        function drawPath(points, corners, options) {
+            if (points.length < 2) return;
+            ctx.save();
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = options.color;
+            ctx.lineWidth = options.width;
+            if (options.dash) {
+                ctx.setLineDash(options.dash);
+            }
+            ctx.beginPath();
+            const start = planeToScreen(corners, points[0].x, points[0].y);
+            ctx.moveTo(start.x, start.y);
+            for (let i = 1; i < points.length; i += 1) {
+                const next = planeToScreen(corners, points[i].x, points[i].y);
+                ctx.lineTo(next.x, next.y);
+            }
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        function drawTrain(points, corners, time, index) {
+            if (points.length < 2) return;
+            const length = pathLength(points);
+            if (length < 0.1) return;
+            const offset = (time * 0.06 + index * 0.17) % 1;
+            const distanceAlong = length * offset;
+            const sampled = samplePath(points, distanceAlong);
+            const nextSample = samplePath(points, Math.min(length, distanceAlong + 0.01));
+            const position = planeToScreen(corners, sampled.point.x, sampled.point.y);
+            const ahead = planeToScreen(corners, nextSample.point.x, nextSample.point.y);
+            const angle = Math.atan2(ahead.y - position.y, ahead.x - position.x);
+
+            ctx.save();
+            ctx.translate(position.x, position.y);
+            ctx.rotate(angle);
+            ctx.fillStyle = '#8b3d2f';
+            ctx.shadowColor = 'rgba(255, 234, 202, 0.7)';
+            ctx.shadowBlur = 12;
+            ctx.fillRect(-10, -4, 20, 8);
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#f5d7a8';
+            ctx.fillRect(-8, -2, 12, 2);
+            ctx.restore();
+        }
+
+        function drawCursor(corners) {
+            const cursor = planeToScreen(corners, state.smoothedFinger.x, state.smoothedFinger.y);
+            ctx.save();
+            ctx.beginPath();
+            ctx.fillStyle = state.pinched ? 'rgba(197, 90, 58, 0.7)' : 'rgba(45, 140, 126, 0.6)';
+            ctx.shadowColor = state.pinched ? 'rgba(197, 90, 58, 0.6)' : 'rgba(45, 140, 126, 0.5)';
+            ctx.shadowBlur = 16;
+            ctx.arc(cursor.x, cursor.y, state.pinched ? 10 : 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        function render(time) {
+            const { width, height } = canvas.getBoundingClientRect();
+            ctx.clearRect(0, 0, width, height);
+            const corners = planeCorners(width, height);
+
+            drawPlane(corners);
+
+            state.paths.forEach((path, index) => {
+                drawPath(path, corners, { color: 'rgba(110, 80, 60, 0.95)', width: 6 });
+                drawPath(path, corners, { color: 'rgba(255, 234, 202, 0.9)', width: 2.4 });
+                drawTrain(path, corners, time / 1000, index);
+            });
+
+            if (state.pendingPath.length > 1) {
+                drawPath(state.pendingPath, corners, { color: 'rgba(197, 90, 58, 0.7)', width: 3, dash: [10, 10] });
+            }
+
+            if (state.activePath.length > 1) {
+                drawPath(state.activePath, corners, { color: 'rgba(45, 140, 126, 0.85)', width: 3 });
+            }
+
+            if (state.handVisible) {
+                drawCursor(corners);
+            }
+
+            updateIndicators();
+            requestAnimationFrame(render);
+        }
+
+        function handleLandmarks(landmarks) {
+            state.handVisible = Boolean(landmarks);
+            if (!landmarks) {
+                state.pinched = false;
+                state.drawing = false;
+                return;
+            }
+
+            const indexTip = landmarks[8];
+            const thumbTip = landmarks[4];
+            const mirroredX = 1 - indexTip.x;
+            const mirroredY = indexTip.y;
+
+            const planeBounds = { left: 0.15, right: 0.85, top: 0.25, bottom: 0.92 };
+            const u = clamp((mirroredX - planeBounds.left) / (planeBounds.right - planeBounds.left), 0, 1);
+            const v = clamp((mirroredY - planeBounds.top) / (planeBounds.bottom - planeBounds.top), 0, 1);
+
+            state.finger.x = u;
+            state.finger.y = v;
+            state.smoothedFinger.x += (state.finger.x - state.smoothedFinger.x) * 0.3;
+            state.smoothedFinger.y += (state.finger.y - state.smoothedFinger.y) * 0.3;
+
+            const pinchDistance = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
+            state.pinched = pinchDistance < 0.045;
+
+            if (state.pinched && !state.wasPinched) {
+                state.drawing = true;
+                state.activePath = [{ x: state.smoothedFinger.x, y: state.smoothedFinger.y }];
+            }
+
+            if (state.pinched && state.drawing) {
+                const lastPoint = state.activePath[state.activePath.length - 1];
+                const nextPoint = { x: state.smoothedFinger.x, y: state.smoothedFinger.y };
+                if (!lastPoint || distance(lastPoint, nextPoint) > 0.015) {
+                    state.activePath.push(nextPoint);
+                }
+            }
+
+            if (!state.pinched && state.wasPinched && state.drawing) {
+                state.drawing = false;
+                const cleaned = filterSpacing(state.activePath, 0.015);
+                state.pendingPath = simplifyPath(cleaned, 0.01);
+                state.activePath = [];
+                if (state.pendingPath.length > 1) {
+                    sendTracks(state.pendingPath);
+                }
+            }
+
+            state.wasPinched = state.pinched;
+        }
+
+        function confirmTrack() {
+            if (state.pendingPath.length < 2) return;
+            state.paths.push(state.pendingPath);
+            state.pendingPath = [];
+            sendTracks(null);
+            playChime();
+        }
+
+        function resetAll() {
+            state.paths = [];
+            state.pendingPath = [];
+            state.activePath = [];
+            clearTracks();
+        }
+
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const ambient = audioCtx.createOscillator();
+            ambient.type = 'sine';
+            ambient.frequency.value = 196;
+            const ambientGain = audioCtx.createGain();
+            ambientGain.gain.value = 0.03;
+
+            const rumble = audioCtx.createOscillator();
+            rumble.type = 'triangle';
+            rumble.frequency.value = 60;
+            const rumbleGain = audioCtx.createGain();
+            rumbleGain.gain.value = 0.02;
+
+            ambient.connect(ambientGain).connect(audioCtx.destination);
+            rumble.connect(rumbleGain).connect(audioCtx.destination);
+
+            ambient.start();
+            rumble.start();
+
+            audioNodes = { ambient, rumble, ambientGain, rumbleGain };
+        }
+
+        function toggleAudio() {
+            if (!audioCtx) {
+                initAudio();
+                audioEnabled = true;
+                audioButton.textContent = 'Audio on';
+                return;
+            }
+            audioEnabled = !audioEnabled;
+            const target = audioEnabled ? 0.03 : 0;
+            const rumbleTarget = audioEnabled ? 0.02 : 0;
+            audioNodes.ambientGain.gain.setTargetAtTime(target, audioCtx.currentTime, 0.2);
+            audioNodes.rumbleGain.gain.setTargetAtTime(rumbleTarget, audioCtx.currentTime, 0.2);
+            audioButton.textContent = audioEnabled ? 'Audio on' : 'Enable audio';
+        }
+
+        function playChime() {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.value = 440;
+            gain.gain.value = 0.001;
+            osc.connect(gain).connect(audioCtx.destination);
+            const now = audioCtx.currentTime;
+            gain.gain.exponentialRampToValueAtTime(0.05, now + 0.05);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+            osc.start(now);
+            osc.stop(now + 0.45);
+        }
+
+        async function startCamera() {
+            const hands = new Hands({
+                locateFile: (file) => `https://unpkg.com/@mediapipe/hands@0.4.1646424915/${file}`,
+            });
+            hands.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.7,
+                minTrackingConfidence: 0.6,
+            });
+
+            hands.onResults((results) => {
+                const landmarks = results.multiHandLandmarks && results.multiHandLandmarks[0];
+                handleLandmarks(landmarks);
+            });
+
+            const camera = new Camera(videoElement, {
+                onFrame: async () => {
+                    await hands.send({ image: videoElement });
+                },
+                width: 1280,
+                height: 720,
+            });
+
+            await camera.start();
+        }
+
+        startButton.addEventListener('click', async () => {
+            startScreen.style.display = 'none';
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            await startCamera();
+            requestAnimationFrame(render);
+        });
+
+        confirmButton.addEventListener('click', confirmTrack);
+        resetButton.addEventListener('click', resetAll);
+        audioButton.addEventListener('click', toggleAudio);
+
+        window.addEventListener('message', (event) => {
+            if (!event.data || event.data.channel !== MESSAGE_CHANNEL) return;
+            if (event.data.type === 'starbridge-ready') {
+                state.cityReady = true;
+                cityStatus.textContent = 'City feed linked';
+            }
+        });
+    </script>
+</body>
+</html>

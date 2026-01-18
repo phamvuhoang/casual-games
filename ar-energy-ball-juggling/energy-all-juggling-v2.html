@@ -1,0 +1,1637 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>AR Energy Ball Juggle (Single-File)</title>
+  <style>
+    :root{
+      --panel: rgba(5,10,20,0.72);
+      --line: rgba(120,220,255,0.22);
+      --text: rgba(235,250,255,0.92);
+      --muted: rgba(235,250,255,0.64);
+      --danger: rgba(255,90,90,0.85);
+    }
+
+    html, body { height: 100%; margin: 0; background:#000; color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+    #stage { position: fixed; inset: 0; overflow: hidden; }
+
+    /* Webcam background */
+    #video{
+      position:absolute; inset:0;
+      width:100%; height:100%;
+      object-fit:cover;
+      transform: scaleX(-1);
+      background:#000;
+      filter: contrast(1.03) saturate(1.05);
+    }
+
+    /* WebGL overlay */
+    #gl{
+      position:absolute; inset:0;
+      width:100%; height:100%;
+      pointer-events:none;
+    }
+
+    /* Top warning banner */
+    #warn {
+      position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+      padding: 8px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,90,90,0.28);
+      background: rgba(30,0,0,0.25);
+      color: rgba(255,210,210,0.92);
+      font-size: 12px;
+      display:none;
+      pointer-events:none;
+      backdrop-filter: blur(4px);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+      max-width: min(760px, calc(100vw - 24px));
+      text-align:center;
+    }
+
+    /* Overlays */
+    .overlay {
+      position:absolute; inset:0;
+      display:grid; place-items:center;
+      background: linear-gradient(180deg, rgba(0,0,0,0.65), rgba(0,0,0,0.35));
+      backdrop-filter: blur(4px);
+    }
+    .panel{
+      width:min(760px, calc(100vw - 28px));
+      border:1px solid var(--line);
+      background: var(--panel);
+      border-radius: 18px;
+      box-shadow: 0 0 0 1px rgba(80,200,255,0.10) inset, 0 10px 40px rgba(0,0,0,0.55);
+      overflow:hidden;
+    }
+    .panel header{
+      padding: 18px 20px;
+      border-bottom:1px solid rgba(120,220,255,0.18);
+      background:
+        radial-gradient(1200px 300px at 20% 0%, rgba(90,240,255,0.10), transparent 55%),
+        radial-gradient(800px 300px at 90% 20%, rgba(255,90,220,0.10), transparent 55%),
+        rgba(0,0,0,0.08);
+    }
+    .title{ margin:0; font-size:22px; letter-spacing:0.6px; }
+    .sub{ margin:8px 0 0; color: var(--muted); font-size:14px; line-height:1.4; }
+    .panel main{ padding: 18px 20px; }
+
+    .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .small{ font-size: 13px; color: var(--muted); line-height: 1.5; }
+    ul{ margin: 10px 0 0 18px; color: var(--muted); }
+    li{ margin: 6px 0; }
+
+    .btn{
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(120,220,255,0.26);
+      background:
+        radial-gradient(600px 180px at 50% 0%, rgba(90,240,255,0.12), transparent 50%),
+        rgba(0,0,0,0.25);
+      color: var(--text);
+      cursor:pointer;
+      user-select:none;
+      transition: transform 120ms ease, border-color 120ms ease;
+    }
+    .btn:hover{ transform: translateY(-1px); border-color: rgba(120,220,255,0.45); }
+    .btn:active{ transform: translateY(0px) scale(0.99); }
+    .btn.primary{
+      border-color: rgba(120,255,210,0.40);
+      background:
+        radial-gradient(700px 220px at 30% 0%, rgba(120,255,170,0.18), transparent 55%),
+        rgba(0,0,0,0.25);
+    }
+    .btn.danger{
+      border-color: rgba(255,90,90,0.35);
+      background:
+        radial-gradient(700px 220px at 30% 0%, rgba(255,90,90,0.12), transparent 55%),
+        rgba(0,0,0,0.25);
+    }
+
+    .pill{
+      display:inline-flex; align-items:center; gap:8px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      border:1px solid rgba(120,220,255,0.18);
+      background: rgba(0,0,0,0.18);
+      color: var(--muted);
+      font-size: 12px;
+      backdrop-filter: blur(4px);
+    }
+    .kbd{
+      font-family: ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      padding: 2px 6px;
+      border-radius: 7px;
+      border: 1px solid rgba(120,220,255,0.22);
+      background: rgba(0,0,0,0.30);
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    /* Loading overlay */
+    #loading .spinner{
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      border: 2px solid rgba(120,220,255,0.22);
+      border-top-color: rgba(90,240,255,0.88);
+      animation: spin 900ms linear infinite;
+      margin-right: 12px;
+      box-shadow: 0 0 18px rgba(90,240,255,0.16);
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* HUD */
+    #hud{
+      position:absolute; inset:0;
+      pointer-events:none;
+      display:none;
+    }
+    #hud .top{
+      position:absolute; top:12px; left:12px; right:12px;
+      display:flex; justify-content:space-between; align-items:flex-start;
+      gap:12px;
+    }
+    .hudBox{
+      border: 1px solid rgba(120,220,255,0.18);
+      background: rgba(0,0,0,0.22);
+      border-radius: 14px;
+      padding: 10px 12px;
+      box-shadow: 0 0 18px rgba(90,240,255,0.08);
+      backdrop-filter: blur(4px);
+      min-width: 150px;
+    }
+    .hudLabel{ font-size:12px; color:var(--muted); }
+    .hudValue{ font-size:18px; margin-top:2px; letter-spacing:0.2px; }
+
+    #centerToast{
+      position:absolute; left:50%; top:50%;
+      transform: translate(-50%,-50%);
+      font-size: 30px;
+      letter-spacing: 1px;
+      text-shadow: 0 0 18px rgba(90,240,255,0.30), 0 0 36px rgba(255,90,220,0.18);
+      opacity: 0;
+      transition: opacity 160ms ease;
+      pointer-events:none;
+      text-align:center;
+      padding: 6px 12px;
+    }
+
+    #bottomBar{
+      position:absolute; left:12px; right:12px; bottom:12px;
+      display:flex; justify-content:space-between; align-items:center; gap:12px;
+    }
+
+    #energyWrap{
+      flex:1;
+      border: 1px solid rgba(120,220,255,0.20);
+      background: rgba(0,0,0,0.22);
+      border-radius: 999px;
+      padding: 10px 12px;
+      backdrop-filter: blur(4px);
+      display:flex; align-items:center; gap: 10px;
+      min-height: 42px;
+    }
+    #energyBar{
+      position:relative;
+      flex:1;
+      height:10px;
+      border-radius:999px;
+      border: 1px solid rgba(120,220,255,0.20);
+      background: rgba(0,0,0,0.30);
+      overflow:hidden;
+    }
+    #energyFill{
+      position:absolute; inset:0 auto 0 0;
+      width: 0%;
+      background: linear-gradient(90deg, rgba(120,255,170,0.95), rgba(90,240,255,0.95), rgba(255,90,220,0.85));
+      box-shadow: 0 0 18px rgba(90,240,255,0.22);
+    }
+    #energyText{ font-size: 12px; color: var(--muted); white-space:nowrap; }
+    #hintPills{ display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+
+    /* Corner controls */
+    #cornerControls{
+      position:absolute; right:12px; bottom:64px;
+      display:flex; flex-direction:column; gap:10px;
+      pointer-events:auto;
+    }
+    .chipBtn{
+      pointer-events:auto;
+      font-size: 12px;
+      padding: 10px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(120,220,255,0.20);
+      background: rgba(0,0,0,0.18);
+      color: var(--text);
+      cursor:pointer;
+      user-select:none;
+      backdrop-filter: blur(4px);
+      box-shadow: 0 0 18px rgba(90,240,255,0.08);
+    }
+    .chipBtn:hover{ border-color: rgba(120,220,255,0.38); }
+
+    /* Small status line for debug */
+    #debugLine{
+      position:absolute; left:12px; bottom:64px;
+      pointer-events:none;
+      font-size: 12px;
+      color: rgba(235,250,255,0.72);
+      background: rgba(0,0,0,0.18);
+      border: 1px solid rgba(120,220,255,0.18);
+      padding: 8px 10px;
+      border-radius: 999px;
+      backdrop-filter: blur(4px);
+      display:none;
+      max-width: min(900px, calc(100vw - 24px));
+      overflow:hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  </style>
+
+  <!-- Three.js -->
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+
+  <!-- MediaPipe Hands (pinned) -->
+  <script src="https://unpkg.com/@mediapipe/hands@0.4.1646424915/hands.js"></script>
+</head>
+<body>
+  <div id="stage">
+    <video id="video" playsinline autoplay muted></video>
+    <canvas id="gl"></canvas>
+
+    <div id="warn"></div>
+    <div id="debugLine"></div>
+
+    <!-- HUD -->
+    <div id="hud">
+      <div class="top">
+        <div class="hudBox">
+          <div class="hudLabel">Score</div>
+          <div class="hudValue" id="scoreText">0</div>
+          <div class="hudLabel" style="margin-top:6px;">Streak</div>
+          <div class="hudValue" id="streakText">0</div>
+        </div>
+
+        <div class="hudBox" style="text-align:center; min-width: 190px;">
+          <div class="hudLabel" id="modeLabel">Mode</div>
+          <div class="hudValue" id="modeValue">—</div>
+          <div class="hudLabel" style="margin-top:6px;">Time</div>
+          <div class="hudValue" id="timeText">—</div>
+        </div>
+
+        <div class="hudBox" style="text-align:right;">
+          <div class="hudLabel">Lives</div>
+          <div class="hudValue" id="livesText">∞</div>
+          <div class="hudLabel" style="margin-top:6px;">Status</div>
+          <div class="hudValue" id="statusText">Ready</div>
+        </div>
+      </div>
+
+      <div id="centerToast">—</div>
+
+      <div id="bottomBar">
+        <div id="energyWrap">
+          <div id="energyText">Energy</div>
+          <div id="energyBar"><div id="energyFill"></div></div>
+          <div id="energyText"><span id="energyPct">0%</span></div>
+        </div>
+        <div id="hintPills">
+          <div class="pill">Spawn: <span class="kbd">Palm-up</span></div>
+          <div class="pill">Throw: <span class="kbd">Flick</span></div>
+          <div class="pill">Pause: <span class="kbd">Esc</span></div>
+        </div>
+      </div>
+
+      <div id="cornerControls">
+        <div class="chipBtn" id="btnPause">Pause</div>
+        <div class="chipBtn" id="btnMute">Mute</div>
+        <div class="chipBtn" id="btnDebug">Debug Dots: Off</div>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div id="loading" class="overlay">
+      <div class="panel">
+        <header>
+          <h1 class="title">Initializing AR Simulator…</h1>
+          <p class="sub">We’ll ask for camera access, then load hand tracking. Keep your hands visible and well-lit.</p>
+        </header>
+        <main>
+          <div class="row" style="align-items:center;">
+            <div class="spinner"></div>
+            <div>
+              <div id="loadText" style="font-weight:600;">Starting…</div>
+              <div class="small" id="loadSub">Waiting for camera permission.</div>
+            </div>
+          </div>
+          <div class="row" style="margin-top: 14px;">
+            <div class="pill">Tip: center your hands, slow movements, good lighting.</div>
+          </div>
+
+          <div id="loadError" style="display:none; margin-top: 14px;">
+            <div style="color: rgba(255,200,200,0.95); font-weight:600; margin-bottom:8px;">Couldn’t start.</div>
+            <div class="small" id="loadErrorText">—</div>
+            <div class="row" style="margin-top: 12px;">
+              <button class="btn primary" id="btnRetry">Retry</button>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- Menu -->
+    <div id="menu" class="overlay" style="display:none;">
+      <div class="panel">
+        <header>
+          <h1 class="title">AR Energy Ball Juggle</h1>
+          <p class="sub">Summon a neon orb with a palm-up gesture. Throw it into the holo-cube. Catch it before it bonks you in the face.</p>
+        </header>
+        <main>
+          <div class="row" style="margin-bottom: 12px;">
+            <button class="btn primary" id="btnStartFree">Start Free Play</button>
+            <button class="btn" id="btnStartScore">Start Score Attack (60s)</button>
+            <button class="btn" id="btnHow">How to Play</button>
+          </div>
+          <div class="row">
+            <span class="pill">One orb at a time</span>
+            <span class="pill">If tracking shaky, move slower</span>
+            <span class="pill">Debug dots help calibrate</span>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- How -->
+    <div id="how" class="overlay" style="display:none;">
+      <div class="panel">
+        <header>
+          <h1 class="title">How to Play</h1>
+          <p class="sub">You’re in a sci-fi training cube. The cube wants chaos. You want style.</p>
+        </header>
+        <main>
+          <div class="small">
+            <ul>
+              <li><b>Spawn:</b> show an <b>open palm facing upward</b>. A tiny spark appears and grows.</li>
+              <li><b>Charge:</b> keep your palm up to increase energy & size.</li>
+              <li><b>Throw:</b> a <b>fast flick</b> of the holding hand launches the orb into the cube.</li>
+              <li><b>Catch:</b> hold a palm-up under the orb when it slows down.</li>
+              <li><b>Front wall:</b> if it hits the wall closest to the camera → <b>face boom</b> and the orb ends.</li>
+              <li><b>Debug:</b> turn on <b>Debug Dots</b> to see landmark mapping.</li>
+            </ul>
+          </div>
+          <div class="row" style="margin-top: 14px;">
+            <button class="btn primary" id="btnHowBack">Back</button>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- Pause -->
+    <div id="pause" class="overlay" style="display:none;">
+      <div class="panel">
+        <header>
+          <h1 class="title">Paused</h1>
+          <p class="sub">The cube is patiently waiting to explode something.</p>
+        </header>
+        <main>
+          <div class="row" style="margin-bottom: 12px;">
+            <button class="btn primary" id="btnResume">Resume</button>
+            <button class="btn" id="btnRestart">Restart</button>
+            <button class="btn" id="btnMainMenu">Main Menu</button>
+          </div>
+          <div class="row">
+            <span class="pill">Keyboard: <span class="kbd">Esc</span></span>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- Game Over -->
+    <div id="over" class="overlay" style="display:none;">
+      <div class="panel">
+        <header>
+          <h1 class="title" id="overTitle">Simulation Complete</h1>
+          <p class="sub" id="overSub">The cube approves. (Or does it?)</p>
+        </header>
+        <main>
+          <div class="row" style="gap: 14px; flex-wrap: wrap;">
+            <div class="pill">Score: <b id="finalScore">0</b></div>
+            <div class="pill">Max Streak: <b id="finalStreak">0</b></div>
+            <div class="pill">Bounces: <b id="finalBounces">0</b></div>
+            <div class="pill">Face-Booms: <b id="finalFace">0</b></div>
+          </div>
+          <div class="row" style="margin-top: 14px;">
+            <button class="btn primary" id="btnPlayAgain">Play Again</button>
+            <button class="btn" id="btnOverMenu">Main Menu</button>
+          </div>
+        </main>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  /********************************************************************
+   * AR Energy Ball Juggle - Single-file HTML
+   * - Three.js overlay
+   * - MediaPipe Hands pinned @0.4.1646424915
+   *
+   * Includes:
+   * ✅ in-flight guard + downscaled tracking input
+   * ✅ improved ball scaling state (no multiplicative drift)
+   * ✅ hand debug dots toggle (landmark spheres)
+   * ✅ more reliable throw detector using palm-center velocity history + dwell
+   ********************************************************************/
+
+  // ---------- DOM ----------
+  const el = (id) => document.getElementById(id);
+  const video = el('video');
+  const glCanvas = el('gl');
+
+  const warn = el('warn');
+  const debugLine = el('debugLine');
+
+  const loading = el('loading');
+  const loadText = el('loadText');
+  const loadSub  = el('loadSub');
+  const loadErrorWrap = el('loadError');
+  const loadErrorText = el('loadErrorText');
+  const btnRetry = el('btnRetry');
+
+  const menu = el('menu');
+  const how  = el('how');
+  const pause = el('pause');
+  const over = el('over');
+
+  const hud = el('hud');
+  const btnPause = el('btnPause');
+  const btnMute = el('btnMute');
+  const btnDebug = el('btnDebug');
+
+  const btnStartFree = el('btnStartFree');
+  const btnStartScore = el('btnStartScore');
+  const btnHow = el('btnHow');
+  const btnHowBack = el('btnHowBack');
+
+  const btnResume = el('btnResume');
+  const btnRestart = el('btnRestart');
+  const btnMainMenu = el('btnMainMenu');
+
+  const btnPlayAgain = el('btnPlayAgain');
+  const btnOverMenu = el('btnOverMenu');
+
+  const scoreText = el('scoreText');
+  const streakText = el('streakText');
+  const livesText = el('livesText');
+  const timeText = el('timeText');
+  const statusText = el('statusText');
+  const modeLabel = el('modeLabel');
+  const modeValue = el('modeValue');
+  const centerToast = el('centerToast');
+
+  const energyFill = el('energyFill');
+  const energyPct = el('energyPct');
+
+  const finalScore = el('finalScore');
+  const finalStreak = el('finalStreak');
+  const finalBounces = el('finalBounces');
+  const finalFace = el('finalFace');
+  const overTitle = el('overTitle');
+  const overSub = el('overSub');
+
+  // ---------- Utils ----------
+  const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+  const lerp = (a,b,t)=>a+(b-a)*t;
+  const nowMs = ()=>performance.now();
+
+  function showWarn(text, ms=1500){
+    warn.textContent = text;
+    warn.style.display = 'block';
+    clearTimeout(showWarn._t);
+    showWarn._t = setTimeout(()=> warn.style.display='none', ms);
+  }
+  function toast(text, ms=700){
+    centerToast.textContent = text;
+    centerToast.style.opacity = '1';
+    clearTimeout(toast._t);
+    toast._t = setTimeout(()=> centerToast.style.opacity = '0', ms);
+  }
+
+  // ---------- Lightweight Audio (optional) ----------
+  // Keeping it minimal here; you can expand later.
+  const AudioSys = (() => {
+    let ctx=null, master=null, muted=false;
+    function ensure(){
+      if (ctx) return;
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctx = new AC();
+      master = ctx.createGain();
+      master.gain.value = 0.75;
+      master.connect(ctx.destination);
+    }
+    async function resume(){
+      ensure();
+      if (ctx.state !== 'running') await ctx.resume();
+    }
+    function toggleMute(){
+      ensure();
+      muted = !muted;
+      master.gain.value = muted ? 0 : 0.75;
+      btnMute.textContent = muted ? 'Unmute' : 'Mute';
+    }
+    function blip(freq=440, dur=0.08, gain=0.18, type='sine'){
+      if (!ctx || muted) return;
+      const t = ctx.currentTime;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(freq, t);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(gain, t+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+      o.connect(g); g.connect(master);
+      o.start(t); o.stop(t+dur+0.02);
+    }
+    function boom(big=false){
+      if (!ctx || muted) return;
+      const t = ctx.currentTime;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type='sine';
+      o.frequency.setValueAtTime(big?90:140, t);
+      o.frequency.exponentialRampToValueAtTime(big?35:70, t+(big?0.35:0.18));
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(big?0.6:0.35, t+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t+(big?0.5:0.25));
+      o.connect(g); g.connect(master);
+      o.start(t); o.stop(t+(big?0.55:0.3));
+    }
+    return { resume, toggleMute, blip, boom, get muted(){return muted;} };
+  })();
+
+  // ---------- Three.js ----------
+  let renderer, scene, camera, clock;
+  let arenaLines;
+  let arena = { w: 4.0, h: 3.6, d: 5.0 };
+
+  // Ball
+  let ballMesh=null, ballGlow=null;
+  let ballActive=false, ballAttached=false;
+  let ballHand=null;
+  let ballEnergy=0, ballMaxEnergy=0;
+  let ballCharge=0; // 0..1
+  let ballVel=new THREE.Vector3();
+  let ballPos=new THREE.Vector3();
+  let lastImpactMs=0;
+
+  // Better scaling handling: we keep a target scale and set it directly.
+  let ballScaleTarget=0.35;
+
+  // Particles
+  const bursts=[];
+
+  // Debug dots
+  let debugDotsEnabled=false;
+  let debugGroup=null; // THREE.Group with small spheres
+  const debugSpheres = []; // 2 hands * 21 spheres
+  const DEBUG_HANDS_MAX=2, DEBUG_LM=21;
+
+  // Shake
+  let shakeMag=0, shakeUntil=0;
+
+  // ---------- Game ----------
+  const GameMode = { NONE:'none', FREE:'free', SCORE:'score' };
+  let mode=GameMode.NONE;
+  let running=false, paused=false;
+
+  let score=0, streak=0, maxStreak=0, bounces=0, faceBooms=0;
+  let lives=Infinity, timeLeft=0, lastSecondTickMs=0;
+
+  function setHUDVisible(v){ hud.style.display = v ? 'block' : 'none'; }
+  function setPanel(elm, show){ elm.style.display = show ? 'grid' : 'none'; }
+  function updateHUD(){
+    scoreText.textContent = `${score}`;
+    streakText.textContent = `${streak}`;
+    livesText.textContent = (lives===Infinity) ? '∞' : `${lives}`;
+    timeText.textContent = (mode===GameMode.SCORE) ? `${Math.ceil(timeLeft)}s` : '—';
+    modeLabel.textContent = 'Mode';
+    modeValue.textContent = (mode===GameMode.FREE) ? 'Free Play' : (mode===GameMode.SCORE ? 'Score Attack' : '—');
+  }
+  function updateEnergyUI(){
+    const pct = (ballMaxEnergy>0) ? clamp(ballEnergy/ballMaxEnergy,0,1) : 0;
+    energyFill.style.width = `${Math.round(pct*100)}%`;
+    energyPct.textContent = `${Math.round(pct*100)}%`;
+  }
+  function resetStats(){
+    score=0; streak=0; maxStreak=0; bounces=0; faceBooms=0;
+    updateHUD();
+  }
+
+  // ---------- MediaPipe Hands ----------
+  let hands=null, mpReady=false;
+  let cameraStream=null;
+  let detectTimer=null;
+  let mpInFlight=false;
+  let mpLastOkMs=0;
+
+  let lastHandsResult=null;
+  let lastDetectMs=0;
+
+  // Downscaled tracking canvas (prevents overload + reduces crash risk)
+  const mpCanvas = document.createElement('canvas');
+  const mpCtx = mpCanvas.getContext('2d', { willReadFrequently: false });
+  const MP_W = 640, MP_H = 360;
+  mpCanvas.width = MP_W; mpCanvas.height = MP_H;
+
+  // Hand velocity history (palm center)
+  const handHist = { Left: [], Right: [] }; // {t, p:Vec3}
+  function pushHandHistory(handedness, worldPos){
+    const h = handHist[handedness];
+    const t = nowMs();
+    h.push({ t, p: worldPos.clone() });
+    while (h.length && (t - h[0].t) > 320) h.shift(); // keep ~320ms
+  }
+  function estimateVelocity(handedness){
+    const h = handHist[handedness];
+    if (h.length < 2) return new THREE.Vector3();
+    const a = h[0], b = h[h.length-1];
+    const dt = Math.max(0.001, (b.t - a.t)/1000);
+    return b.p.clone().sub(a.p).multiplyScalar(1/dt);
+  }
+  function estimateSpeed(handedness){ return estimateVelocity(handedness).length(); }
+
+  // ---------- Gesture helpers ----------
+  function dist3(a,b){
+    const dx=a.x-b.x, dy=a.y-b.y, dz=(a.z||0)-(b.z||0);
+    return Math.hypot(dx,dy,dz);
+  }
+  function isFingerExtended(lm, tip, pip){
+    const wrist = lm[0];
+    return dist3(wrist, lm[tip]) > dist3(wrist, lm[pip]) + 0.015;
+  }
+  function isHandOpen(lm){
+    const idx = isFingerExtended(lm, 8, 6);
+    const mid = isFingerExtended(lm, 12, 10);
+    const ring = isFingerExtended(lm, 16, 14);
+    const pink = isFingerExtended(lm, 20, 18);
+    return (idx && mid && ring && pink);
+  }
+  function palmCenter(lm){
+    const ids = [0,5,9,13,17];
+    let x=0,y=0,z=0;
+    for (const i of ids){ x+=lm[i].x; y+=lm[i].y; z+=lm[i].z; }
+    const n=ids.length;
+    return { x:x/n, y:y/n, z:z/n };
+  }
+
+  // More forgiving palm-up: open, palm center above wrist a bit, not "stop sign"
+  function isPalmUp(lm){
+    if (!lm) return false;
+    if (!isHandOpen(lm)) return false;
+
+    const wrist = lm[0];
+    const pc = palmCenter(lm);
+
+    const tipAvgY = (lm[8].y + lm[12].y + lm[16].y + lm[20].y)/4;
+
+    const palmAboveWrist = (pc.y < wrist.y - 0.03);
+    const notStopSign = Math.abs(tipAvgY - wrist.y) < 0.28;
+    const depthOk = (pc.z <= wrist.z + 0.04);
+
+    return palmAboveWrist && notStopSign && depthOk;
+  }
+
+  // Map MediaPipe normalized coords to our 3D arena (approx)
+  function toWorld(p){
+    // x,y in [0..1], selfieMode makes it already mirrored
+    const x = (p.x - 0.5) * arena.w;
+    const y = -(p.y - 0.5) * arena.h;
+    // z is small; add a mild front bias
+    const zScale = 2.0;
+    const z = clamp(((-p.z) * zScale) + (arena.d * 0.25), -arena.d/2 + 0.2, arena.d/2 - 0.2);
+    return new THREE.Vector3(x,y,z);
+  }
+
+  // ---------- Debug dots (landmarks) ----------
+  function initDebugDots(){
+    debugGroup = new THREE.Group();
+    scene.add(debugGroup);
+
+    const sphereGeo = new THREE.SphereGeometry(0.03, 10, 10);
+    for (let h=0; h<DEBUG_HANDS_MAX; h++){
+      for (let i=0; i<DEBUG_LM; i++){
+        const mat = new THREE.MeshBasicMaterial({
+          color: (h===0) ? 0x66ffff : 0xff55cc,
+          transparent: true,
+          opacity: 0.9
+        });
+        const s = new THREE.Mesh(sphereGeo, mat);
+        s.visible = false;
+        debugGroup.add(s);
+        debugSpheres.push(s);
+      }
+    }
+    debugGroup.visible = false;
+  }
+
+  function setDebugDots(on){
+    debugDotsEnabled = on;
+    if (debugGroup) debugGroup.visible = on;
+    debugLine.style.display = on ? 'block' : 'none';
+    btnDebug.textContent = on ? 'Debug Dots: On' : 'Debug Dots: Off';
+  }
+
+  function updateDebugDots(res){
+    if (!debugDotsEnabled || !res) return;
+
+    const lmsArr = res.multiHandLandmarks || [];
+    const handedArr = res.multiHandedness || [];
+
+    // hide all
+    for (const s of debugSpheres) s.visible = false;
+
+    let lineParts = [];
+    for (let h=0; h<Math.min(lmsArr.length, DEBUG_HANDS_MAX); h++){
+      const lm = lmsArr[h];
+      const label = (handedArr[h]?.label === 'Left' || handedArr[h]?.label === 'Right')
+        ? handedArr[h].label
+        : (h===0 ? 'Right' : 'Left');
+
+      // update 21 spheres
+      for (let i=0;i<DEBUG_LM;i++){
+        const idx = h*DEBUG_LM + i;
+        const s = debugSpheres[idx];
+        const p = toWorld(lm[i]);
+        s.position.copy(p);
+        s.visible = true;
+      }
+
+      // show some simple debug info
+      const pc = toWorld(palmCenter(lm));
+      const palmUp = isPalmUp(lm);
+      lineParts.push(`${label}: palmUp=${palmUp?'Y':'N'} pc=(${pc.x.toFixed(2)},${pc.y.toFixed(2)},${pc.z.toFixed(2)})`);
+    }
+    debugLine.textContent = lineParts.join(' | ') || 'No hands';
+  }
+
+  // ---------- Particles ----------
+  function spawnBurst(pos, big=false){
+    const count = big ? 220 : 90;
+    const life = big ? 0.7 : 0.35;
+
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(count*3);
+    const velocities = new Float32Array(count*3);
+
+    for (let i=0;i<count;i++){
+      const i3 = i*3;
+      positions[i3]=pos.x; positions[i3+1]=pos.y; positions[i3+2]=pos.z;
+
+      const theta = Math.random()*Math.PI*2;
+      const phi = Math.acos(2*Math.random()-1);
+      const spd = (big?2.8:2.0)*(0.4+0.6*Math.random());
+      velocities[i3]   = Math.cos(theta)*Math.sin(phi)*spd;
+      velocities[i3+1] = Math.sin(theta)*Math.sin(phi)*spd;
+      velocities[i3+2] = Math.cos(phi)*spd;
+    }
+
+    geo.setAttribute('position', new THREE.BufferAttribute(positions,3));
+    const mat = new THREE.PointsMaterial({
+      size: big ? 0.05 : 0.035,
+      color: big ? 0xff55cc : 0x66ffff,
+      transparent:true,
+      opacity:0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite:false
+    });
+
+    const pts = new THREE.Points(geo, mat);
+    scene.add(pts);
+
+    bursts.push({ points: pts, vel: velocities, life: 0, maxLife: life });
+  }
+
+  function updateBursts(dt){
+    for (let i=bursts.length-1; i>=0; i--){
+      const b = bursts[i];
+      b.life += dt;
+      const t = b.life / b.maxLife;
+
+      const geo = b.points.geometry;
+      const posAttr = geo.getAttribute('position');
+      const arr = posAttr.array;
+      const vel = b.vel;
+
+      const drag = 1 - 0.9*dt;
+      for (let j=0;j<arr.length;j+=3){
+        vel[j] *= drag; vel[j+1] *= drag; vel[j+2] *= drag;
+        arr[j] += vel[j]*dt;
+        arr[j+1] += vel[j+1]*dt;
+        arr[j+2] += vel[j+2]*dt;
+      }
+      posAttr.needsUpdate = true;
+      b.points.material.opacity = lerp(0.85, 0.0, clamp(t,0,1));
+
+      if (b.life >= b.maxLife){
+        scene.remove(b.points);
+        b.points.geometry.dispose();
+        b.points.material.dispose();
+        bursts.splice(i,1);
+      }
+    }
+  }
+
+  // ---------- Arena / ball ----------
+  function ballRadius(){
+    return 0.22 * ballMesh.scale.x; // base geo radius 0.22
+  }
+  function showBall(v){
+    ballMesh.visible = v;
+    ballGlow.visible = v;
+  }
+  function resetBall(){
+    ballActive=false; ballAttached=false; ballHand=null;
+    ballEnergy=0; ballMaxEnergy=0;
+    ballCharge=0;
+    ballVel.set(0,0,0);
+    ballPos.set(0,0,0);
+    ballScaleTarget=0.35;
+    showBall(false);
+    updateEnergyUI();
+  }
+
+  function spawnBallAt(handedness, worldPos){
+    ballActive=true;
+    ballAttached=true;
+    ballHand=handedness;
+    ballVel.set(0,0,0);
+    ballPos.copy(worldPos);
+
+    ballCharge=0.08;
+    ballScaleTarget=0.35;
+    ballMesh.scale.setScalar(ballScaleTarget);
+    ballGlow.scale.setScalar(ballScaleTarget);
+
+    ballEnergy=45;
+    ballMaxEnergy=120;
+
+    ballMesh.position.copy(ballPos);
+    ballGlow.position.copy(ballPos);
+
+    ballMesh.material.color.setHex(0x77ffff);
+    ballMesh.material.emissive.setHex(0x22ddff);
+    ballMesh.material.emissiveIntensity = 1.0;
+    ballGlow.material.color.setHex(0x66ffff);
+    ballGlow.material.opacity = 0.18;
+
+    showBall(true);
+    statusText.textContent = `Charging (${handedness})`;
+    AudioSys.blip(520,0.09,0.16,'triangle');
+    toast('✨ Spark!', 500);
+    updateEnergyUI();
+  }
+
+  function attachBall(handedness, worldPos){
+    ballAttached=true;
+    ballHand=handedness;
+    ballVel.set(0,0,0);
+    ballPos.lerp(worldPos, 0.65);
+    statusText.textContent = `Held (${handedness})`;
+    AudioSys.blip(620,0.07,0.14,'sine');
+    toast('Caught!', 450);
+  }
+
+  function throwBallFrom(handedness, v){
+    ballAttached=false;
+
+    // clamp + ensure it goes "into" cube a bit
+    const maxSpd=9.0;
+    if (v.length()>maxSpd) v.setLength(maxSpd);
+    if (v.length()<1.2){
+      v.z -= 2.2;
+      v.x += (Math.random()*2-1)*0.4;
+      v.y += (Math.random()*2-1)*0.4;
+    }
+
+    ballVel.copy(v);
+    statusText.textContent = 'In flight';
+    AudioSys.blip(280,0.08,0.12,'square');
+    toast('WHOOSH', 420);
+  }
+
+  function explodeBall(pos, big=false, reason=''){
+    spawnBurst(pos, big);
+    AudioSys.boom(big);
+    if (big){
+      shake(0.26, 260);
+      flashArena(0.75, 200, true);
+      if (reason) toast(reason, 850);
+    } else {
+      shake(0.10, 120);
+    }
+    resetBall();
+  }
+
+  function shake(mag, ms){
+    shakeMag = Math.max(shakeMag, mag);
+    shakeUntil = nowMs() + ms;
+  }
+
+  function flashArena(amount=0.5, ms=160, danger=false){
+    const start = nowMs();
+    const baseOpacity = arenaLines.material.opacity;
+    const target = clamp(baseOpacity + amount, 0, 1);
+
+    const origColor = arenaLines.material.color.getHex();
+    if (danger) arenaLines.material.color.setHex(0xff4466);
+
+    const tick = () => {
+      const t = clamp((nowMs()-start)/ms, 0, 1);
+      arenaLines.material.opacity = lerp(target, baseOpacity, t);
+      if (t < 1) requestAnimationFrame(tick);
+      else{
+        arenaLines.material.opacity = baseOpacity;
+        arenaLines.material.color.setHex(origColor);
+      }
+    };
+    tick();
+  }
+
+  // ---------- Improved throw detector state ----------
+  // The issue: if palmUp toggles due to noise, it triggers accidental throws.
+  // Fix: require (A) a minimum "hold dwell" duration + (B) a velocity spike to throw.
+  // Also allow "release throw" if palmUp is lost AND speed is moderate.
+  const throwState = {
+    holdingSinceMs: 0,
+    lastPalmUpMs: 0,
+    lastThrowMs: 0
+  };
+
+  function maybeThrow(holder, handedness){
+    const t = nowMs();
+    const v = estimateVelocity(handedness);
+    const speed = v.length();
+
+    // thresholds tuned for world space mapping
+    const MIN_HOLD_MS = 180;           // must hold for a moment before throw triggers
+    const SPIKE_SPEED = 3.0;           // strong flick
+    const RELEASE_SPEED = 2.2;         // palmUp lost but still moving = throw
+    const THROW_COOLDOWN_MS = 260;     // avoid double-throws
+
+    const heldMs = (throwState.holdingSinceMs>0) ? (t - throwState.holdingSinceMs) : 0;
+    const sinceThrow = t - throwState.lastThrowMs;
+
+    if (sinceThrow < THROW_COOLDOWN_MS) return {throwNow:false, v};
+
+    // A) strong flick while still palmUp
+    if (holder.palmUp && heldMs >= MIN_HOLD_MS && speed >= SPIKE_SPEED){
+      throwState.lastThrowMs = t;
+      return {throwNow:true, v: v.clone().multiplyScalar(0.35).setZ(v.z - 1.2)};
+    }
+
+    // B) release + motion = throw
+    if (!holder.palmUp && heldMs >= MIN_HOLD_MS && speed >= RELEASE_SPEED){
+      throwState.lastThrowMs = t;
+      return {throwNow:true, v: v.clone().multiplyScalar(0.35).setZ(v.z - 1.2)};
+    }
+
+    return {throwNow:false, v};
+  }
+
+  // ---------- Hands processing ----------
+  function processHands(res){
+    const lmsArr = res.multiHandLandmarks || [];
+    const handedArr = res.multiHandedness || [];
+
+    // tracking status
+    const since = nowMs() - lastDetectMs;
+    if (since > 700 && running && !paused){
+      statusText.textContent = 'Tracking lost (show hands)';
+    }
+
+    const handsNow = [];
+    for (let i=0;i<lmsArr.length;i++){
+      const lm = lmsArr[i];
+      const label = (handedArr[i]?.label === 'Left' || handedArr[i]?.label === 'Right')
+        ? handedArr[i].label
+        : (i===0 ? 'Right' : 'Left');
+
+      const open = isHandOpen(lm);
+      const palmUp = isPalmUp(lm);
+      const pc = palmCenter(lm);
+      const world = toWorld(pc);
+
+      pushHandHistory(label, world);
+
+      handsNow.push({ handedness: label, landmarks: lm, open, palmUp, world });
+    }
+
+    // update debug dots if enabled
+    updateDebugDots(res);
+
+    // Spawn: if no ball active, any palmUp spawns (with simple debounce)
+    if (!ballActive){
+      const candidate = handsNow.find(h => h.palmUp);
+      if (candidate){
+        spawnBallAt(candidate.handedness, candidate.world);
+        throwState.holdingSinceMs = nowMs();
+        throwState.lastPalmUpMs = nowMs();
+      }
+      return;
+    }
+
+    // If attached
+    if (ballAttached && ballHand){
+      const holder = handsNow.find(h => h.handedness === ballHand);
+
+      if (holder){
+        // smooth follow to reduce jitter
+        ballPos.lerp(holder.world, 0.55);
+        ballMesh.position.copy(ballPos);
+        ballGlow.position.copy(ballPos);
+
+        // track dwell
+        if (holder.palmUp){
+          if (throwState.holdingSinceMs === 0) throwState.holdingSinceMs = nowMs();
+          throwState.lastPalmUpMs = nowMs();
+        } else {
+          // keep holdingSinceMs as-is; we use it for release throw
+        }
+
+        // charge growth while palmUp (actual growth in updateBallAttached)
+        // throw?
+        const {throwNow, v} = maybeThrow(holder, ballHand);
+        if (throwNow){
+          throwBallFrom(ballHand, v);
+          throwState.holdingSinceMs = 0;
+          return;
+        }
+
+        // if holder exists but hand disappears from palmUp for long, auto-release gently
+        if (!holder.palmUp && (nowMs() - throwState.lastPalmUpMs) > 520){
+          const v2 = estimateVelocity(ballHand).multiplyScalar(0.25);
+          v2.z -= 1.2;
+          throwBallFrom(ballHand, v2);
+          throwState.holdingSinceMs = 0;
+        }
+      } else {
+        // hand not found => release with last velocity
+        const v = estimateVelocity(ballHand).multiplyScalar(0.25);
+        v.z -= 1.2;
+        throwBallFrom(ballHand, v);
+        throwState.holdingSinceMs = 0;
+      }
+      return;
+    }
+
+    // In flight: catch check
+    if (!ballAttached){
+      const speed = ballVel.length();
+      const catchable = speed < 4.2;
+      if (catchable){
+        let best=null, bestD=Infinity;
+        for (const h of handsNow){
+          if (!h.palmUp) continue;
+          const d = h.world.distanceTo(ballPos);
+          if (d < bestD){ bestD=d; best=h; }
+        }
+        if (best){
+          const r = ballRadius();
+          if (bestD < (0.55 + r)){
+            attachBall(best.handedness, best.world);
+            // small reward
+            ballEnergy = Math.min(ballMaxEnergy, ballEnergy + 10);
+            updateEnergyUI();
+            throwState.holdingSinceMs = nowMs();
+            throwState.lastPalmUpMs = nowMs();
+          }
+        }
+      }
+    }
+  }
+
+  // ---------- Ball updates ----------
+  function updateBallAttached(dt){
+    // Size grows as charge increases; we set scale directly (no multiplicative drift)
+    const minScale=0.35, maxScale=1.65;
+    ballCharge = clamp(ballCharge + dt*0.55, 0, 1);
+
+    ballScaleTarget = lerp(minScale, maxScale, ballCharge);
+
+    ballMesh.scale.setScalar(ballScaleTarget);
+    ballGlow.scale.setScalar(ballScaleTarget);
+
+    // Energy grows while holding
+    const desiredMax = lerp(90, 160, ballCharge);
+    ballMaxEnergy = Math.max(ballMaxEnergy, desiredMax);
+    ballEnergy = Math.min(ballMaxEnergy, ballEnergy + dt*14);
+
+    // Visual intensity
+    const pct = (ballMaxEnergy>0) ? clamp(ballEnergy/ballMaxEnergy,0,1) : 0;
+    ballMesh.material.emissiveIntensity = 0.9 + 0.9*pct;
+    ballGlow.material.opacity = 0.14 + 0.16*pct;
+
+    // Overcharge fun: if full charge held too long, pop (optional)
+    if (ballCharge > 0.995){
+      // tiny warning shimmer
+      ballGlow.material.opacity = 0.20 + 0.10*Math.sin(nowMs()*0.05);
+    }
+
+    ballMesh.position.copy(ballPos);
+    ballGlow.position.copy(ballPos);
+    updateEnergyUI();
+  }
+
+  function updateBallFlight(dt){
+    // integrate
+    ballPos.addScaledVector(ballVel, dt);
+
+    // drag
+    ballVel.multiplyScalar(1 - 0.08*dt);
+
+    // drain
+    ballEnergy -= dt*7;
+
+    // collisions
+    const r = ballRadius();
+    const halfW=arena.w/2, halfH=arena.h/2, halfD=arena.d/2;
+
+    let hit=false, hitBig=false;
+    const hitPos = ballPos.clone();
+
+    if (ballPos.x < -halfW + r){ ballPos.x = -halfW + r; ballVel.x = Math.abs(ballVel.x)*0.88; hit=true; }
+    else if (ballPos.x > halfW - r){ ballPos.x = halfW - r; ballVel.x = -Math.abs(ballVel.x)*0.88; hit=true; }
+
+    if (ballPos.y < -halfH + r){ ballPos.y = -halfH + r; ballVel.y = Math.abs(ballVel.y)*0.88; hit=true; }
+    else if (ballPos.y > halfH - r){ ballPos.y = halfH - r; ballVel.y = -Math.abs(ballVel.y)*0.88; hit=true; }
+
+    // back wall
+    if (ballPos.z < -halfD + r){ ballPos.z = -halfD + r; ballVel.z = Math.abs(ballVel.z)*0.88; hit=true; }
+
+    // FRONT wall (closest to camera) => face boom end
+    if (ballPos.z > halfD - r){
+      ballPos.z = halfD - r;
+      hit=true; hitBig=true;
+    }
+
+    if (hit){
+      const t=nowMs();
+      const spamGuard = (t - lastImpactMs) < 75;
+      lastImpactMs = t;
+
+      if (!spamGuard){
+        if (hitBig){
+          faceBooms++;
+          spawnBurst(ballPos.clone(), true);
+          AudioSys.boom(true);
+          shake(0.28, 260);
+          flashArena(0.75, 200, true);
+          toast('IN YOUR FACE 💥', 900);
+
+          if (mode===GameMode.SCORE){
+            lives = Math.max(0, lives-1);
+            streak = 0;
+            if (lives<=0){
+              resetBall();
+              endGame('Out of Lives!');
+              return;
+            }
+          }
+          resetBall();
+          statusText.textContent = 'Orb popped (spawn again)';
+          return;
+        } else {
+          // normal bounce
+          bounces++;
+          streak++;
+          maxStreak = Math.max(maxStreak, streak);
+
+          if (mode===GameMode.SCORE){
+            const pts = 10 + Math.min(20, Math.floor(streak/3)*5);
+            score += pts;
+            toast(`+${pts}`, 360);
+          } else {
+            if (streak % 4 === 0) toast(`${streak}x`, 360);
+          }
+
+          ballEnergy -= 12;
+          spawnBurst(hitPos, false);
+          AudioSys.boom(false);
+          shake(0.10, 120);
+          flashArena(0.25, 120, false);
+        }
+      }
+    }
+
+    // energy gone => fizzle
+    if (ballEnergy <= 0){
+      spawnBurst(ballPos.clone(), false);
+      AudioSys.blip(240,0.14,0.16,'sine');
+      shake(0.08, 90);
+      toast('…fizzle…', 650);
+
+      streak = 0;
+      resetBall();
+      statusText.textContent = 'Energy drained (spawn again)';
+      return;
+    }
+
+    // color shift by energy
+    const pct = (ballMaxEnergy>0) ? clamp(ballEnergy/ballMaxEnergy,0,1) : 0;
+    const hot = clamp(1 - pct, 0, 1);
+    const c1 = new THREE.Color(0x66ffff);
+    const c2 = new THREE.Color(0xff55cc);
+    const col = c1.clone().lerp(c2, hot);
+
+    ballMesh.material.color.copy(col);
+    ballMesh.material.emissive.copy(col);
+    ballMesh.material.emissiveIntensity = 0.6 + 1.3*pct;
+    ballGlow.material.color.copy(col);
+    ballGlow.material.opacity = 0.10 + 0.22*pct;
+
+    // smooth scale stays at last target (no multiplying)
+    ballMesh.scale.setScalar(ballScaleTarget);
+    ballGlow.scale.setScalar(ballScaleTarget);
+
+    // place
+    ballMesh.position.copy(ballPos);
+    ballGlow.position.copy(ballPos);
+
+    updateEnergyUI();
+  }
+
+  function updateBall(dt){
+    if (!ballActive) return;
+    if (ballAttached) updateBallAttached(dt);
+    else updateBallFlight(dt);
+  }
+
+  // ---------- Game flow ----------
+  function startGame(newMode){
+    mode = newMode;
+    running = true;
+    paused = false;
+    resetStats();
+    resetBall();
+
+    lives = (mode===GameMode.SCORE) ? 3 : Infinity;
+    timeLeft = (mode===GameMode.SCORE) ? 60 : 0;
+    lastSecondTickMs = nowMs();
+
+    setHUDVisible(true);
+    setPanel(menu,false);
+    setPanel(how,false);
+    setPanel(over,false);
+    setPanel(pause,false);
+
+    statusText.textContent = 'Ready (palm-up to spawn)';
+    toast('Ready!', 550);
+    updateHUD();
+  }
+
+  function endGame(reason='Simulation Complete'){
+    running=false; paused=false;
+    resetBall();
+    setHUDVisible(false);
+
+    overTitle.textContent = reason;
+    overSub.textContent = (faceBooms>0) ? 'The cube laughed. Politely. Probably.' : 'Elegant! The cube is mildly impressed.';
+    finalScore.textContent = `${score}`;
+    finalStreak.textContent = `${maxStreak}`;
+    finalBounces.textContent = `${bounces}`;
+    finalFace.textContent = `${faceBooms}`;
+
+    setPanel(over,true);
+  }
+
+  function doPause(on){
+    if (!running) return;
+    paused = on;
+    setPanel(pause, paused);
+    statusText.textContent = paused ? 'Paused' : (ballActive ? (ballAttached ? `Held (${ballHand})` : 'In flight') : 'Ready');
+  }
+
+  // ---------- Init camera / three / hands ----------
+  async function initCamera(){
+    // Use a slightly lower ideal resolution to reduce CPU + MP strain.
+    const constraints = {
+      audio:false,
+      video:{
+        facingMode:'user',
+        width:{ ideal: 960 },
+        height:{ ideal: 540 }
+      }
+    };
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    cameraStream = stream;
+    video.srcObject = stream;
+
+    await new Promise(res => video.onloadedmetadata = () => res());
+    await video.play();
+  }
+
+  function initThree(){
+    renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias:true, alpha:true, powerPreference:'high-performance' });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+    renderer.setClearColor(0x000000, 0);
+
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.01, 100);
+    camera.position.set(0,0,6);
+
+    clock = new THREE.Clock();
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.45);
+    scene.add(ambient);
+
+    const point = new THREE.PointLight(0x66ffff, 1.15, 40);
+    point.position.set(0,2.2,3.5);
+    scene.add(point);
+
+    // Arena sizing
+    const aspect = window.innerWidth/window.innerHeight;
+    arena.w = 3.6*aspect;
+    arena.h = 3.6;
+    arena.d = 5.0;
+
+    const boxGeo = new THREE.BoxGeometry(arena.w, arena.h, arena.d);
+    const edges = new THREE.EdgesGeometry(boxGeo);
+    arenaLines = new THREE.LineSegments(
+      edges,
+      new THREE.LineBasicMaterial({ color: 0x44ddff, transparent:true, opacity:0.22 })
+    );
+    scene.add(arenaLines);
+
+    // Ball meshes
+    const geo = new THREE.SphereGeometry(0.22, 32, 32);
+    const mat = new THREE.MeshStandardMaterial({
+      color:0x77ffff, emissive:0x22ddff, emissiveIntensity:1.0,
+      roughness:0.22, metalness:0.15, transparent:true, opacity:0.95
+    });
+    ballMesh = new THREE.Mesh(geo, mat);
+    ballMesh.visible=false;
+
+    const glowGeo = new THREE.SphereGeometry(0.30, 32, 32);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color:0x66ffff, transparent:true, opacity:0.18,
+      blending:THREE.AdditiveBlending, depthWrite:false
+    });
+    ballGlow = new THREE.Mesh(glowGeo, glowMat);
+    ballGlow.visible=false;
+
+    scene.add(ballMesh);
+    scene.add(ballGlow);
+
+    // Debug dots
+    initDebugDots();
+
+    window.addEventListener('resize', onResize);
+  }
+
+  function onResize(){
+    if (!renderer || !camera) return;
+    const w=window.innerWidth, h=window.innerHeight;
+    renderer.setSize(w,h,false);
+    camera.aspect = w/h;
+    camera.updateProjectionMatrix();
+
+    const aspect = w/h;
+    arena.w = 3.6*aspect;
+
+    const boxGeo = new THREE.BoxGeometry(arena.w, arena.h, arena.d);
+    const edges = new THREE.EdgesGeometry(boxGeo);
+    arenaLines.geometry.dispose();
+    arenaLines.geometry = edges;
+  }
+
+  async function initHands(){
+    hands = new Hands({
+      locateFile: (file) => `https://unpkg.com/@mediapipe/hands@0.4.1646424915/${file}`
+    });
+
+    hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.6,
+      minTrackingConfidence: 0.6,
+      selfieMode: true
+    });
+
+    hands.onResults((res) => {
+      lastHandsResult = res;
+      lastDetectMs = nowMs();
+    });
+
+    mpReady = true;
+
+    // ✅ Throttle + ✅ In-flight guard + ✅ Downscaled input
+    if (detectTimer) clearInterval(detectTimer);
+    detectTimer = setInterval(async () => {
+      if (!mpReady || paused || !running) return;
+      if (mpInFlight) return;
+      if (video.readyState < 2) return;
+
+      mpInFlight = true;
+      try{
+        mpCtx.drawImage(video, 0, 0, MP_W, MP_H);
+        await hands.send({ image: mpCanvas });
+        mpLastOkMs = nowMs();
+      } catch(e){
+        console.warn('MediaPipe send error:', e);
+        if (nowMs() - mpLastOkMs > 1200){
+          showWarn('Hand tracking stalled/crashed. Reload, reduce lighting flicker, or close other tabs.', 1600);
+        }
+      } finally{
+        mpInFlight = false;
+      }
+    }, 66);
+  }
+
+  // ---------- Main loop ----------
+  function animate(){
+    requestAnimationFrame(animate);
+    if (!renderer || !scene || !camera) return;
+
+    const dt = Math.min(0.033, clock.getDelta());
+    const t = nowMs()*0.001;
+
+    // arena shimmer
+    arenaLines.material.opacity = 0.18 + 0.06*(0.5 + 0.5*Math.sin(t*0.7));
+
+    // camera shake
+    if (shakeUntil > nowMs()){
+      const s = shakeMag * (0.5 + 0.5*Math.sin(nowMs()*0.09));
+      camera.position.x = (Math.random()*2-1)*s;
+      camera.position.y = (Math.random()*2-1)*s;
+    } else {
+      camera.position.x = lerp(camera.position.x, 0, 0.18);
+      camera.position.y = lerp(camera.position.y, 0, 0.18);
+      shakeMag = lerp(shakeMag, 0, 0.12);
+    }
+
+    if (running && !paused){
+      // time
+      if (mode===GameMode.SCORE){
+        const ms = nowMs();
+        if (ms - lastSecondTickMs >= 1000){
+          const steps = Math.floor((ms - lastSecondTickMs)/1000);
+          timeLeft -= steps;
+          lastSecondTickMs += steps*1000;
+          if (timeLeft <= 0){
+            timeLeft = 0;
+            updateHUD();
+            endGame('Time Up!');
+          }
+        }
+      }
+
+      // process hands results (if any)
+      try{
+        if (lastHandsResult) processHands(lastHandsResult);
+      } catch(e){
+        console.warn('Gesture processing error:', e);
+        showWarn('Gesture logic error (skipped frame).', 900);
+      }
+
+      // ball physics
+      if (ballActive) updateBall(dt);
+
+      updateBursts(dt);
+      updateHUD();
+    } else {
+      updateBursts(dt);
+    }
+
+    renderer.render(scene, camera);
+  }
+
+  // ---------- UI bindings ----------
+  function resetToMenu(){
+    running=false; paused=false;
+    resetBall();
+    setHUDVisible(false);
+    setPanel(pause,false);
+    setPanel(how,false);
+    setPanel(over,false);
+    setPanel(menu,true);
+  }
+
+  btnStartFree.addEventListener('click', async () => {
+    await AudioSys.resume();
+    startGame(GameMode.FREE);
+  });
+  btnStartScore.addEventListener('click', async () => {
+    await AudioSys.resume();
+    startGame(GameMode.SCORE);
+  });
+  btnHow.addEventListener('click', () => {
+    setPanel(menu,false);
+    setPanel(how,true);
+  });
+  btnHowBack.addEventListener('click', () => {
+    setPanel(how,false);
+    setPanel(menu,true);
+  });
+
+  btnResume.addEventListener('click', () => doPause(false));
+  btnRestart.addEventListener('click', () => startGame(mode));
+  btnMainMenu.addEventListener('click', () => resetToMenu());
+
+  btnPlayAgain.addEventListener('click', async () => {
+    await AudioSys.resume();
+    startGame(GameMode.SCORE);
+  });
+  btnOverMenu.addEventListener('click', () => resetToMenu());
+
+  btnPause.addEventListener('click', () => doPause(!paused));
+  btnMute.addEventListener('click', () => AudioSys.toggleMute());
+  btnDebug.addEventListener('click', () => setDebugDots(!debugDotsEnabled));
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && running) doPause(!paused);
+  });
+
+  // Must resume audio on gesture in most browsers
+  document.addEventListener('pointerdown', async () => {
+    try{ await AudioSys.resume(); } catch {}
+  }, { passive:true });
+
+  // ---------- Loading / bootstrap ----------
+  function failLoad(msg){
+    console.error(msg);
+    loadErrorText.textContent = msg;
+    loadErrorWrap.style.display = 'block';
+    loadSub.textContent = 'Fix camera permission or try another browser.';
+    showWarn('Initialization failed. See message on screen.', 2500);
+  }
+
+  btnRetry.addEventListener('click', () => {
+    try{
+      if (cameraStream){
+        cameraStream.getTracks().forEach(t => t.stop());
+        cameraStream = null;
+      }
+    } catch {}
+    loadErrorWrap.style.display='none';
+    loading.style.display='grid';
+    initAll();
+  });
+
+  async function initAll(){
+    loadErrorWrap.style.display='none';
+    loadText.textContent = 'Requesting camera…';
+    loadSub.textContent = 'Please allow camera access.';
+
+    try{
+      await initCamera();
+    } catch(e){
+      failLoad(`Camera error: ${e?.message || e}`);
+      return;
+    }
+
+    try{
+      loadText.textContent = 'Starting 3D…';
+      loadSub.textContent = 'Booting the holo-cube.';
+      initThree();
+    } catch(e){
+      failLoad(`Three.js error: ${e?.message || e}`);
+      return;
+    }
+
+    try{
+      loadText.textContent = 'Loading hand tracking…';
+      loadSub.textContent = 'Downloading MediaPipe Hands model.';
+      await initHands();
+    } catch(e){
+      failLoad(`Hand tracking error: ${e?.message || e}`);
+      return;
+    }
+
+    // ready
+    loading.style.display='none';
+    setPanel(menu,true);
+    setHUDVisible(false);
+  }
+
+  (async () => {
+    if (!navigator.mediaDevices?.getUserMedia){
+      failLoad('getUserMedia not supported in this browser.');
+      return;
+    }
+    if (!window.THREE){
+      failLoad('Three.js failed to load.');
+      return;
+    }
+    if (!window.Hands){
+      failLoad('MediaPipe Hands failed to load.');
+      return;
+    }
+    initAll();
+    animate();
+  })();
+
+  </script>
+</body>
+</html>

@@ -1,0 +1,1909 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>AR Energy Ball Juggle (Single-File)</title>
+  <style>
+    :root{
+      --bg: rgba(0,0,0,0.55);
+      --panel: rgba(5,10,20,0.72);
+      --line: rgba(120,220,255,0.22);
+      --glow: rgba(90,240,255,0.85);
+      --glow2: rgba(255,90,220,0.75);
+      --text: rgba(235,250,255,0.92);
+      --muted: rgba(235,250,255,0.64);
+      --danger: rgba(255,90,90,0.85);
+      --ok: rgba(120,255,170,0.85);
+    }
+
+    html, body { height: 100%; margin: 0; background:#000; color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+    #stage { position: fixed; inset: 0; overflow: hidden; }
+
+    /* Webcam background */
+    #video {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1); /* selfie mirror */
+      filter: contrast(1.03) saturate(1.05);
+      background: #000;
+    }
+
+    /* WebGL canvas on top */
+    #gl {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+    }
+
+    /* UI overlay */
+    .overlay {
+      position: absolute; inset: 0;
+      display: grid; place-items: center;
+      background: linear-gradient(180deg, rgba(0,0,0,0.65), rgba(0,0,0,0.35));
+      backdrop-filter: blur(4px);
+    }
+
+    .panel {
+      width: min(720px, calc(100vw - 28px));
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 18px;
+      box-shadow:
+        0 0 0 1px rgba(80,200,255,0.10) inset,
+        0 10px 40px rgba(0,0,0,0.55);
+      overflow: hidden;
+    }
+    .panel header{
+      padding: 18px 20px;
+      border-bottom: 1px solid rgba(120,220,255,0.18);
+      background:
+        radial-gradient(1200px 300px at 20% 0%, rgba(90,240,255,0.10), transparent 55%),
+        radial-gradient(800px 300px at 90% 20%, rgba(255,90,220,0.10), transparent 55%),
+        rgba(0,0,0,0.08);
+    }
+    .title{
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: 0.6px;
+      text-shadow: 0 0 18px rgba(90,240,255,0.22);
+    }
+    .sub{
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    .panel main { padding: 18px 20px; }
+    .row { display:flex; gap: 10px; flex-wrap: wrap; align-items:center; }
+
+    button, input[type="range"]{
+      font: inherit;
+    }
+    .btn {
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(120,220,255,0.26);
+      background:
+        radial-gradient(600px 180px at 50% 0%, rgba(90,240,255,0.12), transparent 50%),
+        rgba(0,0,0,0.25);
+      color: var(--text);
+      cursor: pointer;
+      transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+      user-select: none;
+    }
+    .btn:hover { transform: translateY(-1px); border-color: rgba(120,220,255,0.45); }
+    .btn:active { transform: translateY(0px) scale(0.99); }
+    .btn.primary{
+      border-color: rgba(120,255,210,0.40);
+      background:
+        radial-gradient(700px 220px at 30% 0%, rgba(120,255,170,0.18), transparent 55%),
+        rgba(0,0,0,0.25);
+    }
+    .btn.danger{
+      border-color: rgba(255,90,90,0.35);
+      background:
+        radial-gradient(700px 220px at 30% 0%, rgba(255,90,90,0.12), transparent 55%),
+        rgba(0,0,0,0.25);
+    }
+    .pill{
+      display:inline-flex; align-items:center; gap:8px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      border:1px solid rgba(120,220,255,0.18);
+      background: rgba(0,0,0,0.18);
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .kbd{
+      font-family: ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      padding: 2px 6px;
+      border-radius: 7px;
+      border: 1px solid rgba(120,220,255,0.22);
+      background: rgba(0,0,0,0.30);
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    /* HUD */
+    #hud {
+      position: absolute; inset: 0;
+      pointer-events: none;
+      display: none;
+    }
+    #hud .top {
+      position: absolute; top: 12px; left: 12px; right: 12px;
+      display: flex; justify-content: space-between; align-items: flex-start;
+      gap: 12px;
+    }
+    .hudBox{
+      border: 1px solid rgba(120,220,255,0.18);
+      background: rgba(0,0,0,0.22);
+      border-radius: 14px;
+      padding: 10px 12px;
+      box-shadow: 0 0 18px rgba(90,240,255,0.08);
+      backdrop-filter: blur(4px);
+      min-width: 150px;
+    }
+    .hudLabel{ font-size: 12px; color: var(--muted); }
+    .hudValue{ font-size: 18px; margin-top: 2px; letter-spacing: 0.2px; }
+    #centerToast{
+      position:absolute; left:50%; top:50%;
+      transform: translate(-50%,-50%);
+      font-size: 30px;
+      letter-spacing: 1px;
+      text-shadow: 0 0 18px rgba(90,240,255,0.30), 0 0 36px rgba(255,90,220,0.18);
+      opacity: 0;
+      transition: opacity 160ms ease;
+      pointer-events: none;
+      text-align:center;
+      padding: 6px 12px;
+    }
+    #bottomBar{
+      position:absolute; left: 12px; right: 12px; bottom: 12px;
+      display:flex; justify-content: space-between; align-items: center; gap: 12px;
+    }
+    #energyWrap{
+      flex: 1;
+      border: 1px solid rgba(120,220,255,0.20);
+      background: rgba(0,0,0,0.22);
+      border-radius: 999px;
+      padding: 10px 12px;
+      backdrop-filter: blur(4px);
+      display:flex; align-items:center; gap: 10px;
+      min-height: 42px;
+    }
+    #energyBar{
+      position: relative;
+      flex: 1;
+      height: 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(120,220,255,0.20);
+      background: rgba(0,0,0,0.30);
+      overflow:hidden;
+    }
+    #energyFill{
+      position:absolute; inset:0 auto 0 0;
+      width: 0%;
+      background: linear-gradient(90deg, rgba(120,255,170,0.95), rgba(90,240,255,0.95), rgba(255,90,220,0.85));
+      box-shadow: 0 0 18px rgba(90,240,255,0.22);
+    }
+    #energyText{ font-size: 12px; color: var(--muted); white-space: nowrap; }
+    #hintPills{ display:flex; gap: 8px; flex-wrap: wrap; justify-content:flex-end; }
+
+    /* Mini banner */
+    #warn {
+      position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+      padding: 8px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,90,90,0.28);
+      background: rgba(30,0,0,0.25);
+      color: rgba(255,210,210,0.92);
+      font-size: 12px;
+      display:none;
+      pointer-events:none;
+    }
+
+    /* Loading overlay */
+    #loading .spinner{
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      border: 2px solid rgba(120,220,255,0.22);
+      border-top-color: rgba(90,240,255,0.88);
+      animation: spin 900ms linear infinite;
+      margin-right: 12px;
+      box-shadow: 0 0 18px rgba(90,240,255,0.16);
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .hidden { display:none !important; }
+    .small { font-size: 13px; color: var(--muted); line-height: 1.5; }
+    ul { margin: 10px 0 0 18px; color: var(--muted); }
+    li { margin: 6px 0; }
+
+    /* Range */
+    .rangeRow{ display:flex; gap: 12px; align-items:center; width: 100%; }
+    input[type="range"]{ width: 240px; }
+
+    /* Clickable tiny controls */
+    #cornerControls{
+      position:absolute; right: 12px; bottom: 64px;
+      display:flex; flex-direction:column; gap: 10px;
+      pointer-events: auto;
+    }
+    .chipBtn{
+      pointer-events:auto;
+      font-size: 12px;
+      padding: 10px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(120,220,255,0.20);
+      background: rgba(0,0,0,0.18);
+      color: var(--text);
+      cursor: pointer;
+      user-select: none;
+      backdrop-filter: blur(4px);
+      box-shadow: 0 0 18px rgba(90,240,255,0.08);
+    }
+    .chipBtn:hover{ border-color: rgba(120,220,255,0.38); }
+  </style>
+
+  <!-- Three.js (pinned-ish) -->
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+
+  <!-- MediaPipe Hands (version pinned per requirement) -->
+  <script src="https://unpkg.com/@mediapipe/hands@0.4.1646424915/hands.js"></script>
+</head>
+<body>
+  <div id="stage">
+    <video id="video" playsinline autoplay muted></video>
+    <canvas id="gl"></canvas>
+
+    <div id="warn"></div>
+
+    <!-- HUD -->
+    <div id="hud">
+      <div class="top">
+        <div class="hudBox">
+          <div class="hudLabel">Score</div>
+          <div class="hudValue" id="scoreText">0</div>
+          <div class="hudLabel" style="margin-top:6px;">Streak</div>
+          <div class="hudValue" id="streakText">0</div>
+        </div>
+
+        <div class="hudBox" style="text-align:center; min-width: 190px;">
+          <div class="hudLabel" id="modeLabel">Mode</div>
+          <div class="hudValue" id="modeValue">—</div>
+          <div class="hudLabel" style="margin-top:6px;">Time</div>
+          <div class="hudValue" id="timeText">—</div>
+        </div>
+
+        <div class="hudBox" style="text-align:right;">
+          <div class="hudLabel">Lives</div>
+          <div class="hudValue" id="livesText">∞</div>
+          <div class="hudLabel" style="margin-top:6px;">Status</div>
+          <div class="hudValue" id="statusText">Ready</div>
+        </div>
+      </div>
+
+      <div id="centerToast">—</div>
+
+      <div id="bottomBar">
+        <div id="energyWrap">
+          <div id="energyText">Energy</div>
+          <div id="energyBar"><div id="energyFill"></div></div>
+          <div id="energyText"><span id="energyPct">0%</span></div>
+        </div>
+        <div id="hintPills">
+          <div class="pill">Spawn: <span class="kbd">Palm-up</span></div>
+          <div class="pill">Throw: <span class="kbd">Flick</span></div>
+          <div class="pill">Pause: <span class="kbd">Esc</span></div>
+        </div>
+      </div>
+
+      <div id="cornerControls">
+        <div class="chipBtn" id="btnPause">Pause</div>
+        <div class="chipBtn" id="btnMute">Mute</div>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div id="loading" class="overlay">
+      <div class="panel">
+        <header>
+          <h1 class="title">Initializing AR Simulator…</h1>
+          <p class="sub">We’ll ask for camera access, then load hand tracking. Keep your hands visible and well-lit.</p>
+        </header>
+        <main>
+          <div class="row" style="align-items:center;">
+            <div class="spinner"></div>
+            <div>
+              <div id="loadText" style="font-weight:600;">Starting…</div>
+              <div class="small" id="loadSub">Waiting for camera permission.</div>
+            </div>
+          </div>
+          <div class="row" style="margin-top: 14px;">
+            <div class="pill">Tip: hold your palm like you’re offering a snack to a tiny alien 👽</div>
+          </div>
+
+          <div id="loadError" class="hidden" style="margin-top: 14px;">
+            <div style="color: rgba(255,200,200,0.95); font-weight:600; margin-bottom:8px;">Couldn’t start.</div>
+            <div class="small" id="loadErrorText">—</div>
+            <div class="row" style="margin-top: 12px;">
+              <button class="btn primary" id="btnRetry">Retry</button>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- Start Menu -->
+    <div id="menu" class="overlay hidden">
+      <div class="panel">
+        <header>
+          <h1 class="title">AR Energy Ball Juggle</h1>
+          <p class="sub">Summon a neon orb with a palm-up gesture. Throw it into the holo-cube. Catch it before it bonks you in the face. (The cube judges you.)</p>
+        </header>
+        <main>
+          <div class="row" style="margin-bottom: 12px;">
+            <button class="btn primary" id="btnStartFree">Start Free Play</button>
+            <button class="btn" id="btnStartScore">Start Score Attack (60s)</button>
+            <button class="btn" id="btnHow">How to Play</button>
+          </div>
+
+          <div class="row" style="margin-top: 10px;">
+            <span class="pill">Best viewed in good lighting</span>
+            <span class="pill">One ball at a time</span>
+            <span class="pill">If tracking is shaky, move slower</span>
+          </div>
+
+          <div class="rangeRow" style="margin-top: 14px;">
+            <div class="small" style="min-width: 120px;">Music Volume</div>
+            <input type="range" id="musicVol" min="0" max="1" value="0.25" step="0.01" />
+            <div class="small" id="musicVolText">25%</div>
+          </div>
+          <div class="rangeRow" style="margin-top: 10px;">
+            <div class="small" style="min-width: 120px;">SFX Volume</div>
+            <input type="range" id="sfxVol" min="0" max="1" value="0.8" step="0.01" />
+            <div class="small" id="sfxVolText">80%</div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- How to Play -->
+    <div id="how" class="overlay hidden">
+      <div class="panel">
+        <header>
+          <h1 class="title">How to Play</h1>
+          <p class="sub">You’re in a sci-fi training cube. The cube wants chaos. You want style.</p>
+        </header>
+        <main>
+          <div class="small">
+            <ul>
+              <li><b>Spawn:</b> show an <b>open palm facing upward</b>. A tiny spark appears and grows.</li>
+              <li><b>Charge:</b> keep your palm up to grow the orb (up to a cap). Don’t over-hold at max… it gets grumpy.</li>
+              <li><b>Throw:</b> <b>flick</b> the hand holding the orb. It launches into the cube and bounces.</li>
+              <li><b>Catch:</b> place an open palm under the orb <b>when it slows down</b>. Catching is extra cool.</li>
+              <li><b>Danger:</b> if it hits the <b>front wall</b> (near the camera), it explodes and the orb ends.</li>
+              <li><b>Score Attack:</b> bounce + catch for points. Avoid face-booms.</li>
+            </ul>
+            <div style="margin-top: 12px;" class="row">
+              <span class="pill">Keyboard: <span class="kbd">Esc</span> pause</span>
+              <span class="pill">Tip: keep hands centered and avoid background clutter</span>
+            </div>
+          </div>
+          <div class="row" style="margin-top: 14px;">
+            <button class="btn primary" id="btnHowBack">Back</button>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- Pause Menu -->
+    <div id="pause" class="overlay hidden">
+      <div class="panel">
+        <header>
+          <h1 class="title">Paused</h1>
+          <p class="sub">The cube is patiently waiting to explode something.</p>
+        </header>
+        <main>
+          <div class="row" style="margin-bottom: 12px;">
+            <button class="btn primary" id="btnResume">Resume</button>
+            <button class="btn" id="btnRestart">Restart</button>
+            <button class="btn" id="btnMainMenu">Main Menu</button>
+          </div>
+          <div class="rangeRow" style="margin-top: 8px;">
+            <div class="small" style="min-width: 120px;">Music Volume</div>
+            <input type="range" id="musicVol2" min="0" max="1" value="0.25" step="0.01" />
+            <div class="small" id="musicVolText2">25%</div>
+          </div>
+          <div class="rangeRow" style="margin-top: 8px;">
+            <div class="small" style="min-width: 120px;">SFX Volume</div>
+            <input type="range" id="sfxVol2" min="0" max="1" value="0.8" step="0.01" />
+            <div class="small" id="sfxVolText2">80%</div>
+          </div>
+          <div class="row" style="margin-top: 10px;">
+            <button class="btn" id="btnToggleMute">Toggle Mute</button>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- Game Over -->
+    <div id="over" class="overlay hidden">
+      <div class="panel">
+        <header>
+          <h1 class="title" id="overTitle">Simulation Complete</h1>
+          <p class="sub" id="overSub">The cube approves. (Or does it?)</p>
+        </header>
+        <main>
+          <div class="row" style="gap: 14px; flex-wrap: wrap;">
+            <div class="pill">Score: <b id="finalScore">0</b></div>
+            <div class="pill">Max Streak: <b id="finalStreak">0</b></div>
+            <div class="pill">Bounces: <b id="finalBounces">0</b></div>
+            <div class="pill">Face-Booms: <b id="finalFace">0</b></div>
+          </div>
+          <div class="row" style="margin-top: 14px;">
+            <button class="btn primary" id="btnPlayAgain">Play Again</button>
+            <button class="btn" id="btnOverMenu">Main Menu</button>
+          </div>
+        </main>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  /********************************************************************
+   * AR Energy Ball Juggle - Single-file HTML
+   * - Three.js 3D overlay
+   * - MediaPipe Hands (pinned) for webcam hand landmarks
+   * - Web Audio API for SFX + ambient
+   *
+   * Notes:
+   * - "Palm up" detection is heuristic; lighting / camera angle matter.
+   * - We throttle MediaPipe to ~15 FPS, render at ~60 FPS.
+   ********************************************************************/
+
+  // ---------- DOM ----------
+  const el = (id) => document.getElementById(id);
+  const video = el('video');
+  const canvas = el('gl');
+
+  const loading = el('loading');
+  const loadText = el('loadText');
+  const loadSub = el('loadSub');
+  const loadError = el('loadError');
+  const loadErrorText = el('loadErrorText');
+  const btnRetry = el('btnRetry');
+
+  const menu = el('menu');
+  const how = el('how');
+  const pause = el('pause');
+  const over = el('over');
+
+  const hud = el('hud');
+  const warn = el('warn');
+
+  const scoreText = el('scoreText');
+  const streakText = el('streakText');
+  const livesText = el('livesText');
+  const timeText = el('timeText');
+  const statusText = el('statusText');
+  const modeLabel = el('modeLabel');
+  const modeValue = el('modeValue');
+  const centerToast = el('centerToast');
+
+  const energyFill = el('energyFill');
+  const energyPct = el('energyPct');
+
+  const btnStartFree = el('btnStartFree');
+  const btnStartScore = el('btnStartScore');
+  const btnHow = el('btnHow');
+  const btnHowBack = el('btnHowBack');
+
+  const btnResume = el('btnResume');
+  const btnRestart = el('btnRestart');
+  const btnMainMenu = el('btnMainMenu');
+
+  const btnPlayAgain = el('btnPlayAgain');
+  const btnOverMenu = el('btnOverMenu');
+
+  const btnPause = el('btnPause');
+  const btnMute = el('btnMute');
+  const btnToggleMute = el('btnToggleMute');
+
+  const musicVol = el('musicVol');
+  const sfxVol = el('sfxVol');
+  const musicVolText = el('musicVolText');
+  const sfxVolText = el('sfxVolText');
+
+  const musicVol2 = el('musicVol2');
+  const sfxVol2 = el('sfxVol2');
+  const musicVolText2 = el('musicVolText2');
+  const sfxVolText2 = el('sfxVolText2');
+
+  const finalScore = el('finalScore');
+  const finalStreak = el('finalStreak');
+  const finalBounces = el('finalBounces');
+  const finalFace = el('finalFace');
+  const overTitle = el('overTitle');
+  const overSub = el('overSub');
+
+  // ---------- Utility ----------
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const nowMs = () => performance.now();
+
+  function showWarn(text, ms = 1500) {
+    warn.textContent = text;
+    warn.style.display = 'block';
+    clearTimeout(showWarn._t);
+    showWarn._t = setTimeout(()=> warn.style.display = 'none', ms);
+  }
+
+  function toast(text, ms = 700) {
+    centerToast.textContent = text;
+    centerToast.style.opacity = '1';
+    clearTimeout(toast._t);
+    toast._t = setTimeout(()=> centerToast.style.opacity = '0', ms);
+  }
+
+  // ---------- Audio (Web Audio API) ----------
+  const AudioSys = (() => {
+    let ctx = null;
+    let master = null;
+    let musicGain = null;
+    let sfxGain = null;
+    let muted = false;
+
+    // ambient nodes
+    let musicNodes = [];
+
+    function ensure() {
+      if (ctx) return;
+      const AC = window.AudioContext || window.webkitAudioContext;
+      ctx = new AC();
+      master = ctx.createGain();
+      musicGain = ctx.createGain();
+      sfxGain = ctx.createGain();
+      master.connect(ctx.destination);
+      musicGain.connect(master);
+      sfxGain.connect(master);
+
+      setMusicVol(parseFloat(musicVol.value));
+      setSfxVol(parseFloat(sfxVol.value));
+
+      // Build a simple ambient drone (2 oscillators + filter)
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 320;
+      filter.Q.value = 0.7;
+      filter.connect(musicGain);
+
+      const o1 = ctx.createOscillator();
+      o1.type = 'sine';
+      o1.frequency.value = 55;
+
+      const o2 = ctx.createOscillator();
+      o2.type = 'triangle';
+      o2.frequency.value = 110;
+
+      const lfo = ctx.createOscillator();
+      lfo.type = 'sine';
+      lfo.frequency.value = 0.12;
+
+      const lfoGain = ctx.createGain();
+      lfoGain.gain.value = 18;
+
+      lfo.connect(lfoGain);
+      lfoGain.connect(filter.frequency);
+
+      const mg = ctx.createGain();
+      mg.gain.value = 0.0001; // fade in later
+      o1.connect(mg);
+      o2.connect(mg);
+      mg.connect(filter);
+
+      o1.start();
+      o2.start();
+      lfo.start();
+
+      musicNodes = [filter, o1, o2, lfo, lfoGain, mg];
+    }
+
+    async function resume() {
+      ensure();
+      if (ctx.state !== 'running') {
+        await ctx.resume();
+      }
+      // Fade in ambient once user interacted
+      const mg = musicNodes.find(n => n instanceof GainNode);
+      if (mg && mg.gain) {
+        mg.gain.cancelScheduledValues(ctx.currentTime);
+        mg.gain.setValueAtTime(mg.gain.value, ctx.currentTime);
+        mg.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 0.6);
+      }
+    }
+
+    function setMusicVol(v) {
+      ensure();
+      musicGain.gain.value = muted ? 0 : clamp(v, 0, 1);
+      musicVolText.textContent = `${Math.round(musicGain.gain.value * 100)}%`;
+      musicVolText2.textContent = musicVolText.textContent;
+    }
+
+    function setSfxVol(v) {
+      ensure();
+      sfxGain.gain.value = muted ? 0 : clamp(v, 0, 1);
+      sfxVolText.textContent = `${Math.round(sfxGain.gain.value * 100)}%`;
+      sfxVolText2.textContent = sfxVolText.textContent;
+    }
+
+    function toggleMute() {
+      ensure();
+      muted = !muted;
+      setMusicVol(parseFloat(musicVol.value));
+      setSfxVol(parseFloat(sfxVol.value));
+      btnMute.textContent = muted ? 'Unmute' : 'Mute';
+    }
+
+    // simple one-shot helpers
+    function blip({freq=440, dur=0.08, type='sine', gain=0.25, detune=0}={}) {
+      if (!ctx || muted) return;
+      const t = ctx.currentTime;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(freq, t);
+      if (detune) o.detune.setValueAtTime(detune, t);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(gain, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g);
+      g.connect(sfxGain);
+      o.start(t);
+      o.stop(t + dur + 0.02);
+    }
+
+    function whoosh(strength=1) {
+      if (!ctx || muted) return;
+      const t = ctx.currentTime;
+      const noise = ctx.createBufferSource();
+      const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.25), ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i=0;i<data.length;i++){
+        data[i] = (Math.random()*2-1) * (1 - i/data.length);
+      }
+      noise.buffer = buffer;
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(800 + 900*strength, t);
+      filter.Q.value = 0.9;
+
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(0.22 * clamp(strength,0.2,2), t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+
+      noise.connect(filter);
+      filter.connect(g);
+      g.connect(sfxGain);
+
+      noise.start(t);
+      noise.stop(t + 0.26);
+    }
+
+    function boom(big=false) {
+      if (!ctx || muted) return;
+      const t = ctx.currentTime;
+
+      // low thump
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(big ? 90 : 140, t);
+      o.frequency.exponentialRampToValueAtTime(big ? 35 : 70, t + (big ? 0.35 : 0.18));
+
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(big ? 0.6 : 0.35, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + (big ? 0.5 : 0.25));
+      o.connect(g);
+      g.connect(sfxGain);
+      o.start(t);
+      o.stop(t + (big ? 0.55 : 0.3));
+
+      // spark crackle
+      blip({freq: big ? 220 : 320, dur: big ? 0.16 : 0.1, type:'square', gain: big ? 0.25 : 0.18, detune: big? -120 : -40});
+      blip({freq: big ? 560 : 480, dur: big ? 0.12 : 0.08, type:'triangle', gain: big ? 0.18 : 0.14, detune: big? 80 : 20});
+    }
+
+    function humPulse(level=1) {
+      if (!ctx || muted) return;
+      const t = ctx.currentTime;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(180 + 120*level, t);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(0.12 * clamp(level,0.2,2), t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+      o.connect(g);
+      g.connect(sfxGain);
+      o.start(t);
+      o.stop(t + 0.16);
+    }
+
+    return {
+      resume,
+      setMusicVol,
+      setSfxVol,
+      toggleMute,
+      blip, whoosh, boom, humPulse,
+      get muted(){ return muted; },
+      get ctx(){ return ctx; }
+    };
+  })();
+
+  // Keep sliders in sync (menu <-> pause)
+  function syncSliders() {
+    musicVol2.value = musicVol.value;
+    sfxVol2.value = sfxVol.value;
+    AudioSys.setMusicVol(parseFloat(musicVol.value));
+    AudioSys.setSfxVol(parseFloat(sfxVol.value));
+  }
+  function bindSliders() {
+    const onMusic = (v) => {
+      musicVol.value = v;
+      musicVol2.value = v;
+      AudioSys.setMusicVol(parseFloat(v));
+    };
+    const onSfx = (v) => {
+      sfxVol.value = v;
+      sfxVol2.value = v;
+      AudioSys.setSfxVol(parseFloat(v));
+    };
+    musicVol.addEventListener('input', e => { onMusic(e.target.value); musicVolText.textContent = `${Math.round(e.target.value*100)}%`; musicVolText2.textContent = musicVolText.textContent; });
+    sfxVol.addEventListener('input', e => { onSfx(e.target.value); sfxVolText.textContent = `${Math.round(e.target.value*100)}%`; sfxVolText2.textContent = sfxVolText.textContent; });
+    musicVol2.addEventListener('input', e => { onMusic(e.target.value); musicVolText2.textContent = `${Math.round(e.target.value*100)}%`; musicVolText.textContent = musicVolText2.textContent; });
+    sfxVol2.addEventListener('input', e => { onSfx(e.target.value); sfxVolText2.textContent = `${Math.round(e.target.value*100)}%`; sfxVolText.textContent = sfxVolText2.textContent; });
+  }
+
+  // ---------- Three.js ----------
+  let renderer, scene, camera, clock;
+  let arena; // dimensions
+  let arenaLines;
+  let ambientLight, pointLight;
+
+  // ball
+  let ballMesh = null;
+  let ballGlow = null;
+  let ballActive = false;
+  let ballAttached = false;
+  let ballHand = null; // which hand currently holds it: 'Left'/'Right'
+  let ballEnergy = 0;
+  let ballMaxEnergy = 0;
+  let ballCharge = 0; // 0..1 growth while holding
+  let ballVel = new THREE.Vector3();
+  let ballPos = new THREE.Vector3();
+  let lastBallImpactMs = 0;
+  let overchargeStartMs = 0;
+  let wasMaxCharged = false;
+
+  // particles
+  const particleBursts = []; // {points, vel:Array, life, maxLife}
+  const tmpV = new THREE.Vector3();
+
+  // shake
+  let shakeMag = 0;
+  let shakeUntil = 0;
+
+  // ---------- Game State ----------
+  const GameMode = {
+    NONE: 'none',
+    FREE: 'free',
+    SCORE: 'score'
+  };
+
+  let mode = GameMode.NONE;
+  let running = false;
+  let paused = false;
+
+  let score = 0;
+  let streak = 0;
+  let maxStreak = 0;
+  let bounces = 0;
+  let faceBooms = 0;
+
+  let lives = Infinity;
+  let timeLeft = 0; // seconds
+  let lastSecondTickMs = 0;
+
+  // ---------- MediaPipe Hands ----------
+  let hands = null;
+  let mpReady = false;
+  let cameraStream = null;
+  let detectTimer = null;
+  let lastHandsResult = null;
+  let lastDetectMs = 0;
+
+  // per-hand history for velocity
+  const handHist = {
+    Left: [],
+    Right: []
+  };
+
+  // ---------- Init ----------
+  async function initAll() {
+    loadError.classList.add('hidden');
+    loadText.textContent = 'Requesting camera…';
+    loadSub.textContent = 'Please allow camera access.';
+
+    try {
+      await initCamera();
+    } catch (e) {
+      failLoad(`Camera error: ${e?.message || e}`);
+      return;
+    }
+
+    try {
+      loadText.textContent = 'Starting 3D…';
+      loadSub.textContent = 'Booting the holo-cube.';
+      initThree();
+    } catch (e) {
+      failLoad(`Three.js error: ${e?.message || e}`);
+      return;
+    }
+
+    try {
+      loadText.textContent = 'Loading hand tracking…';
+      loadSub.textContent = 'Downloading MediaPipe Hands model.';
+      await initHands();
+    } catch (e) {
+      failLoad(`Hand tracking error: ${e?.message || e}`);
+      return;
+    }
+
+    // ready
+    loading.classList.add('hidden');
+    menu.classList.remove('hidden');
+  }
+
+  function failLoad(msg) {
+    console.error(msg);
+    loadErrorText.textContent = msg;
+    loadError.classList.remove('hidden');
+    loadSub.textContent = 'Fix camera permission or try another browser.';
+    showWarn('Initialization failed. See message on screen.', 2500);
+  }
+
+  btnRetry.addEventListener('click', () => {
+    // Tear down existing stream if any
+    try {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(t => t.stop());
+        cameraStream = null;
+      }
+    } catch {}
+    loading.classList.remove('hidden');
+    initAll();
+  });
+
+  async function initCamera() {
+    const constraints = {
+      audio: false,
+      video: {
+        facingMode: 'user',
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }
+    };
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    cameraStream = stream;
+    video.srcObject = stream;
+
+    await new Promise((res) => {
+      video.onloadedmetadata = () => res();
+    });
+
+    await video.play();
+  }
+
+  function initThree() {
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+    renderer.setClearColor(0x000000, 0);
+
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.01, 100);
+    camera.position.set(0, 0, 6);
+
+    clock = new THREE.Clock();
+
+    ambientLight = new THREE.AmbientLight(0xffffff, 0.45);
+    scene.add(ambientLight);
+
+    pointLight = new THREE.PointLight(0x66ffff, 1.15, 40);
+    pointLight.position.set(0, 2.2, 3.5);
+    scene.add(pointLight);
+
+    // Arena size is tied to aspect ratio
+    const aspect = window.innerWidth / window.innerHeight;
+    arena = {
+      w: 3.6 * aspect,
+      h: 3.6,
+      d: 5.0
+    };
+
+    // Wireframe cube "holo walls"
+    const boxGeo = new THREE.BoxGeometry(arena.w, arena.h, arena.d);
+    const edges = new THREE.EdgesGeometry(boxGeo);
+    arenaLines = new THREE.LineSegments(
+      edges,
+      new THREE.LineBasicMaterial({ color: 0x44ddff, transparent: true, opacity: 0.22 })
+    );
+    arenaLines.position.set(0, 0, 0);
+    scene.add(arenaLines);
+
+    // Ball (reused)
+    buildBall();
+
+    window.addEventListener('resize', onResize);
+    animate();
+  }
+
+  function onResize() {
+    if (!renderer || !camera) return;
+    const w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+
+    const aspect = w / h;
+    arena.w = 3.6 * aspect;
+    // update arena lines geometry
+    const boxGeo = new THREE.BoxGeometry(arena.w, arena.h, arena.d);
+    const edges = new THREE.EdgesGeometry(boxGeo);
+    arenaLines.geometry.dispose();
+    arenaLines.geometry = edges;
+  }
+
+  function buildBall() {
+    const geo = new THREE.SphereGeometry(0.22, 32, 32);
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x77ffff,
+      emissive: 0x22ddff,
+      emissiveIntensity: 1.0,
+      roughness: 0.22,
+      metalness: 0.15,
+      transparent: true,
+      opacity: 0.95
+    });
+
+    ballMesh = new THREE.Mesh(geo, mat);
+    ballMesh.visible = false;
+
+    // a bigger, softer glow shell
+    const glowGeo = new THREE.SphereGeometry(0.30, 32, 32);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: 0x66ffff,
+      transparent: true,
+      opacity: 0.18,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    ballGlow = new THREE.Mesh(glowGeo, glowMat);
+    ballGlow.visible = false;
+
+    scene.add(ballMesh);
+    scene.add(ballGlow);
+  }
+
+  // ---------- MediaPipe Hands ----------
+  async function initHands() {
+    // Hands is loaded via script tag; Hands constructor should exist.
+    hands = new Hands({
+      locateFile: (file) => `https://unpkg.com/@mediapipe/hands@0.4.1646424915/${file}`
+    });
+
+    hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.6,
+      minTrackingConfidence: 0.6,
+      selfieMode: true
+    });
+
+    hands.onResults((res) => {
+      lastHandsResult = res;
+      lastDetectMs = nowMs();
+    });
+
+    // Warm-up send once (can fail if video not ready)
+    mpReady = true;
+
+    // Throttle detection to ~15 FPS
+    if (detectTimer) clearInterval(detectTimer);
+    detectTimer = setInterval(async () => {
+      if (!mpReady || paused || !running) return;
+      try {
+        if (video.readyState >= 2) {
+          await hands.send({ image: video });
+        }
+      } catch (e) {
+        // Don’t crash the game loop
+        console.warn('MediaPipe send error:', e);
+        showWarn('Hand tracking hiccup (recovering)…', 900);
+      }
+    }, 66);
+  }
+
+  // ---------- Hand math / gesture heuristics ----------
+  function palmCenter(landmarks) {
+    // Use average of wrist + MCPs for a stable center
+    const ids = [0, 5, 9, 13, 17];
+    let x=0,y=0,z=0;
+    for (const i of ids) {
+      x += landmarks[i].x; y += landmarks[i].y; z += landmarks[i].z;
+    }
+    const n = ids.length;
+    return { x: x/n, y: y/n, z: z/n };
+  }
+
+  function toWorld(p) {
+    // MediaPipe x,y in [0..1] (mirrored already in selfieMode)
+    // We'll map into arena box with some fixed "hand plane" bias toward the front.
+    const x = (p.x - 0.5) * arena.w;
+    const y = -(p.y - 0.5) * arena.h;
+    // z from mediapipe is small; treat it as subtle depth + front bias
+    const zScale = 2.0;
+    const z = clamp(((-p.z) * zScale) + (arena.d * 0.25), -arena.d/2 + 0.2, arena.d/2 - 0.2);
+    return new THREE.Vector3(x, y, z);
+  }
+
+  function dist3(a,b){
+    const dx=a.x-b.x, dy=a.y-b.y, dz=(a.z||0)-(b.z||0);
+    return Math.hypot(dx,dy,dz);
+  }
+
+  function isFingerExtended(landmarks, tip, pip) {
+    // 3D distance wrist->tip vs wrist->pip (more robust than y check)
+    const wrist = landmarks[0];
+    return dist3(wrist, landmarks[tip]) > dist3(wrist, landmarks[pip]) + 0.015;
+  }
+
+  function isHandOpen(landmarks) {
+    // Index, middle, ring, pinky extended (thumb optional)
+    const idx = isFingerExtended(landmarks, 8, 6);
+    const mid = isFingerExtended(landmarks, 12, 10);
+    const ring = isFingerExtended(landmarks, 16, 14);
+    const pink = isFingerExtended(landmarks, 20, 18);
+    return (idx && mid && ring && pink);
+  }
+
+  function palmNormal(landmarks) {
+    // Normal from wrist->index_mcp and wrist->pinky_mcp
+    const w = new THREE.Vector3(landmarks[0].x, landmarks[0].y, landmarks[0].z);
+    const i = new THREE.Vector3(landmarks[5].x, landmarks[5].y, landmarks[5].z);
+    const p = new THREE.Vector3(landmarks[17].x, landmarks[17].y, landmarks[17].z);
+    const v1 = i.clone().sub(w);
+    const v2 = p.clone().sub(w);
+    return v1.cross(v2).normalize(); // in camera-ish coords
+  }
+
+  function isPalmUp(landmarks) {
+    // Heuristic:
+    // - Hand open
+    // - Palm normal points "upward" in camera coords (y axis down, so upward is negative y)
+    // - Also prefer hand roughly horizontal: fingertips not far above wrist (avoid "stop" gesture)
+    if (!landmarks) return false;
+    if (!isHandOpen(landmarks)) return false;
+
+    const n = palmNormal(landmarks);
+    // n.y < -0.10 suggests "upward" tilt (camera coords y down)
+    const upish = (n.y < -0.10);
+
+    // Avoid flat palm facing camera ("stop"): that's usually n.z magnitude large.
+    const notCameraFacing = Math.abs(n.z) < 0.55;
+
+    // Additional check: palm should be "cuppable": fingertips not extremely above wrist
+    const wrist = landmarks[0];
+    const tipAvgY = (landmarks[8].y + landmarks[12].y + landmarks[16].y + landmarks[20].y) / 4;
+    const notVerticalStop = Math.abs(tipAvgY - wrist.y) < 0.22;
+
+    return upish && notCameraFacing && notVerticalStop;
+  }
+
+  function pushHandHistory(handedness, worldPos) {
+    const h = handHist[handedness];
+    const t = nowMs();
+    h.push({ t, p: worldPos.clone() });
+    // keep last ~250ms
+    while (h.length && (t - h[0].t) > 260) h.shift();
+  }
+
+  function estimateVelocity(handedness) {
+    const h = handHist[handedness];
+    if (h.length < 2) return new THREE.Vector3();
+    const a = h[0], b = h[h.length - 1];
+    const dt = Math.max(0.001, (b.t - a.t) / 1000);
+    return b.p.clone().sub(a.p).multiplyScalar(1/dt);
+  }
+
+  // ---------- Particles ----------
+  function spawnBurst(pos, intensity = 1, big = false) {
+    const count = big ? 220 : 90;
+    const life = big ? 0.7 : 0.35;
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const velocities = new Float32Array(count * 3);
+
+    for (let i=0;i<count;i++){
+      const i3 = i*3;
+      positions[i3+0] = pos.x;
+      positions[i3+1] = pos.y;
+      positions[i3+2] = pos.z;
+
+      // random direction
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2*Math.random()-1);
+      const spd = (big ? 2.8 : 2.0) * intensity * (0.4 + 0.6*Math.random());
+      velocities[i3+0] = Math.cos(theta) * Math.sin(phi) * spd;
+      velocities[i3+1] = Math.sin(theta) * Math.sin(phi) * spd;
+      velocities[i3+2] = Math.cos(phi) * spd;
+    }
+
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({
+      size: big ? 0.05 : 0.035,
+      color: big ? 0xff55cc : 0x66ffff,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+
+    const pts = new THREE.Points(geo, mat);
+    scene.add(pts);
+
+    particleBursts.push({
+      points: pts,
+      vel: velocities,
+      life: 0,
+      maxLife: life
+    });
+  }
+
+  function updateBursts(dt) {
+    for (let i = particleBursts.length - 1; i >= 0; i--) {
+      const b = particleBursts[i];
+      b.life += dt;
+      const t = b.life / b.maxLife;
+
+      const geo = b.points.geometry;
+      const pos = geo.getAttribute('position');
+      const arr = pos.array;
+      const vel = b.vel;
+
+      const drag = 1 - 0.9*dt;
+      for (let j=0;j<arr.length;j+=3){
+        vel[j+0] *= drag;
+        vel[j+1] *= drag;
+        vel[j+2] *= drag;
+
+        arr[j+0] += vel[j+0] * dt;
+        arr[j+1] += vel[j+1] * dt;
+        arr[j+2] += vel[j+2] * dt;
+      }
+      pos.needsUpdate = true;
+
+      b.points.material.opacity = lerp(0.85, 0.0, clamp(t,0,1));
+
+      if (b.life >= b.maxLife) {
+        scene.remove(b.points);
+        b.points.geometry.dispose();
+        b.points.material.dispose();
+        particleBursts.splice(i, 1);
+      }
+    }
+  }
+
+  // ---------- Ball control ----------
+  function ballRadius() {
+    // base geometry radius is 0.22; multiply by mesh scale
+    return 0.22 * ballMesh.scale.x;
+  }
+
+  function showBall(visible) {
+    ballMesh.visible = visible;
+    ballGlow.visible = visible;
+  }
+
+  function resetBall() {
+    ballActive = false;
+    ballAttached = false;
+    ballHand = null;
+    ballEnergy = 0;
+    ballMaxEnergy = 0;
+    ballCharge = 0;
+    ballVel.set(0,0,0);
+    ballPos.set(0,0,0);
+    overchargeStartMs = 0;
+    wasMaxCharged = false;
+    showBall(false);
+    updateEnergyUI();
+  }
+
+  function spawnBallAt(handedness, worldPos) {
+    // Create a tiny spark that grows
+    ballActive = true;
+    ballAttached = true;
+    ballHand = handedness;
+    ballVel.set(0,0,0);
+    ballPos.copy(worldPos);
+
+    ballCharge = 0.08; // start small
+    const initialEnergy = 45; // base energy points
+    ballEnergy = initialEnergy;
+    ballMaxEnergy = 120; // increased as it charges
+    overchargeStartMs = 0;
+    wasMaxCharged = false;
+
+    ballMesh.scale.setScalar(0.35);
+    ballMesh.position.copy(ballPos);
+    ballGlow.scale.setScalar(0.35);
+    ballGlow.position.copy(ballPos);
+
+    // Color fresh
+    ballMesh.material.color.setHex(0x77ffff);
+    ballMesh.material.emissive.setHex(0x22ddff);
+    ballMesh.material.emissiveIntensity = 1.0;
+    ballGlow.material.color.setHex(0x66ffff);
+
+    showBall(true);
+    statusText.textContent = `Charging (${handedness})`;
+    AudioSys.humPulse(0.7);
+    toast('✨ Spark!', 500);
+    updateEnergyUI();
+  }
+
+  function attachBall(handedness, worldPos) {
+    ballAttached = true;
+    ballHand = handedness;
+    ballVel.set(0,0,0);
+    // Smooth attach to reduce jitter
+    ballPos.lerp(worldPos, 0.65);
+    statusText.textContent = `Held (${handedness})`;
+    AudioSys.blip({freq: 520, dur: 0.08, type:'triangle', gain: 0.18});
+    toast('Caught!', 450);
+  }
+
+  function throwBallFrom(handedness, vel) {
+    ballAttached = false;
+
+    // clamp velocity for sanity
+    const maxSpd = 9.0;
+    if (vel.length() > maxSpd) vel.setLength(maxSpd);
+
+    // If velocity is too tiny, add a gentle push into the cube so it moves.
+    if (vel.length() < 1.2) {
+      vel.z -= 2.2; // into the cube (negative z is "away" from camera in our setup? Here camera at +z looking to origin; so negative z is into screen)
+      vel.x += (Math.random()*2-1)*0.4;
+      vel.y += (Math.random()*2-1)*0.4;
+    }
+
+    ballVel.copy(vel);
+    statusText.textContent = `In flight`;
+    AudioSys.whoosh(clamp(vel.length()/6, 0.4, 1.6));
+    toast('WHOOSH', 420);
+  }
+
+  function explodeBall(pos, big=false, reason='') {
+    spawnBurst(pos, 1.0, big);
+    AudioSys.boom(big);
+    if (big) {
+      shake(0.22, 260);
+      flashArena(0.55, 180, true);
+      if (reason) toast(reason, 750);
+    } else {
+      shake(0.08, 120);
+    }
+    resetBall();
+  }
+
+  function shake(mag, ms) {
+    shakeMag = Math.max(shakeMag, mag);
+    shakeUntil = nowMs() + ms;
+  }
+
+  function flashArena(amount=0.5, ms=160, danger=false) {
+    const start = nowMs();
+    const base = arenaLines.material.opacity;
+    const target = clamp(base + amount, 0, 1);
+
+    // temporarily tint line color
+    const origColor = arenaLines.material.color.getHex();
+    if (danger) arenaLines.material.color.setHex(0xff4466);
+
+    const tick = () => {
+      const t = clamp((nowMs() - start) / ms, 0, 1);
+      arenaLines.material.opacity = lerp(target, base, t);
+      if (t < 1) requestAnimationFrame(tick);
+      else {
+        arenaLines.material.opacity = base;
+        arenaLines.material.color.setHex(origColor);
+      }
+    };
+    tick();
+  }
+
+  function updateEnergyUI() {
+    const pct = (ballMaxEnergy > 0) ? clamp(ballEnergy / ballMaxEnergy, 0, 1) : 0;
+    energyFill.style.width = `${Math.round(pct * 100)}%`;
+    energyPct.textContent = `${Math.round(pct * 100)}%`;
+  }
+
+  function setHUDVisible(v) {
+    hud.style.display = v ? 'block' : 'none';
+  }
+
+  function setStatus(text) {
+    statusText.textContent = text;
+  }
+
+  // ---------- Game flow ----------
+  function resetStats() {
+    score = 0;
+    streak = 0;
+    maxStreak = 0;
+    bounces = 0;
+    faceBooms = 0;
+    updateHUD();
+  }
+
+  function updateHUD() {
+    scoreText.textContent = `${score}`;
+    streakText.textContent = `${streak}`;
+    livesText.textContent = (lives === Infinity) ? '∞' : `${lives}`;
+    timeText.textContent = (mode === GameMode.SCORE) ? `${Math.ceil(timeLeft)}s` : '—';
+    modeLabel.textContent = 'Mode';
+    modeValue.textContent = (mode === GameMode.FREE) ? 'Free Play' : (mode === GameMode.SCORE ? 'Score Attack' : '—');
+  }
+
+  function startGame(newMode) {
+    mode = newMode;
+    running = true;
+    paused = false;
+
+    resetStats();
+    resetBall();
+
+    lives = (mode === GameMode.SCORE) ? 3 : Infinity;
+    timeLeft = (mode === GameMode.SCORE) ? 60 : 0;
+
+    lastSecondTickMs = nowMs();
+
+    setHUDVisible(true);
+    menu.classList.add('hidden');
+    how.classList.add('hidden');
+    over.classList.add('hidden');
+    pause.classList.add('hidden');
+
+    setStatus('Ready (show palm-up to spawn)');
+    toast('Ready!', 550);
+    AudioSys.blip({freq: 520, dur: 0.09, type:'sine', gain: 0.15});
+
+    updateHUD();
+  }
+
+  function endGame(reason='Simulation Complete') {
+    running = false;
+    paused = false;
+    resetBall();
+
+    setHUDVisible(false);
+
+    overTitle.textContent = reason;
+    overSub.textContent = (faceBooms > 0)
+      ? 'The cube laughed. Politely. Probably.'
+      : 'Elegant! The cube is mildly impressed.';
+
+    finalScore.textContent = `${score}`;
+    finalStreak.textContent = `${maxStreak}`;
+    finalBounces.textContent = `${bounces}`;
+    finalFace.textContent = `${faceBooms}`;
+
+    over.classList.remove('hidden');
+  }
+
+  function doPause(on) {
+    if (!running) return;
+    paused = on;
+    if (paused) {
+      pause.classList.remove('hidden');
+      setStatus('Paused');
+    } else {
+      pause.classList.add('hidden');
+      setStatus(ballActive ? (ballAttached ? `Held (${ballHand})` : 'In flight') : 'Ready');
+    }
+  }
+
+  // ---------- UI bindings ----------
+  btnStartFree.addEventListener('click', async () => {
+    await AudioSys.resume();
+    startGame(GameMode.FREE);
+  });
+  btnStartScore.addEventListener('click', async () => {
+    await AudioSys.resume();
+    startGame(GameMode.SCORE);
+  });
+  btnHow.addEventListener('click', () => {
+    menu.classList.add('hidden');
+    how.classList.remove('hidden');
+  });
+  btnHowBack.addEventListener('click', () => {
+    how.classList.add('hidden');
+    menu.classList.remove('hidden');
+  });
+
+  btnResume.addEventListener('click', () => doPause(false));
+  btnRestart.addEventListener('click', () => startGame(mode));
+  btnMainMenu.addEventListener('click', () => {
+    doPause(false);
+    running = false;
+    resetBall();
+    setHUDVisible(false);
+    pause.classList.add('hidden');
+    menu.classList.remove('hidden');
+  });
+
+  btnPlayAgain.addEventListener('click', async () => {
+    await AudioSys.resume();
+    startGame(GameMode.SCORE);
+  });
+  btnOverMenu.addEventListener('click', () => {
+    over.classList.add('hidden');
+    menu.classList.remove('hidden');
+  });
+
+  btnPause.addEventListener('click', () => doPause(!paused));
+  btnMute.addEventListener('click', () => AudioSys.toggleMute());
+  btnToggleMute.addEventListener('click', () => AudioSys.toggleMute());
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (running) doPause(!paused);
+    }
+  });
+
+  bindSliders();
+  syncSliders();
+
+  // ---------- Main loop ----------
+  function animate() {
+    requestAnimationFrame(animate);
+    if (!renderer || !scene || !camera) return;
+
+    const dt = Math.min(0.033, clock.getDelta()); // cap dt for stability
+
+    // subtle arena "breathing" shimmer
+    const t = performance.now() * 0.001;
+    arenaLines.material.opacity = 0.18 + 0.06 * (0.5 + 0.5*Math.sin(t*0.7));
+
+    // camera shake
+    if (shakeUntil > nowMs()) {
+      const s = shakeMag * (0.5 + 0.5*Math.sin(nowMs()*0.09));
+      camera.position.x = (Math.random()*2-1) * s;
+      camera.position.y = (Math.random()*2-1) * s;
+    } else {
+      camera.position.x = lerp(camera.position.x, 0, 0.18);
+      camera.position.y = lerp(camera.position.y, 0, 0.18);
+      shakeMag = lerp(shakeMag, 0, 0.12);
+    }
+
+    if (running && !paused) {
+      // timer tick for score mode
+      if (mode === GameMode.SCORE) {
+        const ms = nowMs();
+        if (ms - lastSecondTickMs >= 1000) {
+          const steps = Math.floor((ms - lastSecondTickMs)/1000);
+          timeLeft -= steps;
+          lastSecondTickMs += steps*1000;
+          if (timeLeft <= 0) {
+            timeLeft = 0;
+            updateHUD();
+            endGame('Time Up!');
+          }
+        }
+      }
+
+      // Update from latest hand results (gesture logic)
+      try {
+        if (lastHandsResult) processHands(lastHandsResult);
+      } catch (e) {
+        console.warn('Gesture processing error:', e);
+        showWarn('Gesture logic error (skipped frame).', 900);
+      }
+
+      // Ball physics
+      if (ballActive) {
+        updateBall(dt);
+      }
+
+      updateBursts(dt);
+      updateHUD();
+    } else {
+      // still update particles for nice fades, but slower
+      updateBursts(dt);
+    }
+
+    renderer.render(scene, camera);
+  }
+
+  function processHands(res) {
+    // res.multiHandLandmarks: array of landmarks arrays
+    // res.multiHandedness: array of {label: 'Left'|'Right', score}
+    const lmsArr = res.multiHandLandmarks || [];
+    const handedArr = res.multiHandedness || [];
+
+    // mark tracking status
+    const since = nowMs() - lastDetectMs;
+    if (since > 600 && running && !paused) {
+      setStatus('Tracking lost (show hands)');
+    }
+
+    // gather candidate hands
+    const handsNow = [];
+    for (let i=0;i<lmsArr.length;i++){
+      const landmarks = lmsArr[i];
+      const handedness = (handedArr[i]?.label === 'Left' || handedArr[i]?.label === 'Right')
+        ? handedArr[i].label
+        : (i === 0 ? 'Right' : 'Left');
+
+      const open = isHandOpen(landmarks);
+      const palmUp = isPalmUp(landmarks);
+      const c = palmCenter(landmarks);
+      const world = toWorld(c);
+
+      // history for velocity
+      pushHandHistory(handedness, world);
+
+      handsNow.push({ handedness, landmarks, open, palmUp, world });
+    }
+
+    // Spawn logic: if no active ball, any palmUp can spawn
+    if (!ballActive) {
+      const candidate = handsNow.find(h => h.palmUp);
+      if (candidate) {
+        spawnBallAt(candidate.handedness, candidate.world);
+      }
+      updateEnergyUI();
+      return;
+    }
+
+    // If ball is attached: follow the holding hand (if still palmUp)
+    if (ballAttached && ballHand) {
+      const holder = handsNow.find(h => h.handedness === ballHand);
+      const stillPalmUp = holder?.palmUp;
+
+      if (holder) {
+        // follow holder position with smoothing
+        ballPos.lerp(holder.world, 0.55);
+
+        // charge growth while palm stays up
+        if (stillPalmUp) {
+          const growRate = 0.55; // per second
+          ballCharge = clamp(ballCharge + growRate * 0.016, 0, 1); // approximate; refined in updateBall too
+        }
+      }
+
+      // Throw detection:
+      // - if palmUp becomes false OR hand velocity spikes, treat as throw.
+      // - We use holder's estimated velocity from recent history.
+      let throwNow = false;
+      let v = new THREE.Vector3();
+
+      if (holder) {
+        v = estimateVelocity(ballHand);
+        const speed = v.length();
+
+        // quick motion threshold
+        if (speed > 3.4) throwNow = true;
+
+        // if palmUp lost, throw after a short grace to avoid jitter
+        if (!stillPalmUp) {
+          // if the hand disappeared completely (no holder), we also throw
+          throwNow = true;
+        }
+      } else {
+        // hand not found: release (throw) with last known velocity (if any)
+        v = estimateVelocity(ballHand);
+        throwNow = true;
+      }
+
+      if (throwNow) {
+        // convert to "into cube" a bit (negative z) if not enough depth motion
+        v.z -= 1.2;
+        throwBallFrom(ballHand, v.multiplyScalar(0.35)); // scale to feel right
+      }
+
+      updateEnergyUI();
+      return;
+    }
+
+    // If ball is in flight: check catch
+    if (!ballAttached) {
+      const r = ballRadius();
+      const speed = ballVel.length();
+
+      // ball should be catchable if it's not too fast
+      const catchable = speed < 4.2;
+
+      if (catchable) {
+        // find nearest palmUp hand
+        let best = null;
+        let bestD = Infinity;
+        for (const h of handsNow) {
+          if (!h.palmUp) continue;
+          const d = h.world.distanceTo(ballPos);
+          if (d < bestD) { bestD = d; best = h; }
+        }
+
+        if (best && bestD < (0.55 + r)) {
+          // catch!
+          attachBall(best.handedness, best.world);
+          streak = Math.max(streak, 0); // keep streak
+          // tiny recharge reward
+          ballEnergy = Math.min(ballMaxEnergy, ballEnergy + 10);
+          updateEnergyUI();
+        }
+      }
+    }
+  }
+
+  function updateBall(dt) {
+    // energy visuals
+    const pct = (ballMaxEnergy > 0) ? clamp(ballEnergy / ballMaxEnergy, 0, 1) : 0;
+
+    // If attached, grow + add energy (up to cap)
+    if (ballAttached) {
+      // Growth from tiny -> bigger (cap)
+      const maxScale = 1.65;
+      const minScale = 0.35;
+
+      // Smooth growth rate
+      ballCharge = clamp(ballCharge + dt * 0.55, 0, 1);
+
+      const scale = lerp(minScale, maxScale, ballCharge);
+      ballMesh.scale.setScalar(scale);
+      ballGlow.scale.setScalar(scale);
+
+      // Increase max energy as it charges, and refill a bit while holding
+      const desiredMax = lerp(90, 160, ballCharge);
+      ballMaxEnergy = Math.max(ballMaxEnergy, desiredMax);
+      ballEnergy = Math.min(ballMaxEnergy, ballEnergy + dt * 14);
+
+      // Overcharge behavior (funny): if fully charged too long, BOOM in hand
+      const maxed = ballCharge >= 0.995;
+      if (maxed && !wasMaxCharged) {
+        wasMaxCharged = true;
+        overchargeStartMs = nowMs();
+        toast('⚠ MAX CHARGE', 850);
+        AudioSys.blip({freq: 760, dur: 0.12, type:'square', gain: 0.16});
+      }
+
+      if (maxed) {
+        const heldMs = nowMs() - overchargeStartMs;
+        // flicker / jitter glow as warning
+        const flick = 0.65 + 0.35 * Math.sin(nowMs()*0.05);
+        ballGlow.material.opacity = 0.12 + 0.12*flick;
+
+        // if held too long at max, explode
+        if (heldMs > 2000) {
+          explodeBall(ballPos, true, 'Overcooked! 💥');
+          // In score mode, count as a "bad" loss? We'll treat as life loss.
+          if (mode === GameMode.SCORE) {
+            lives = Math.max(0, lives - 1);
+            faceBooms += 1;
+            if (lives <= 0) endGame('Out of Lives!');
+          }
+          return;
+        }
+      } else {
+        ballGlow.material.opacity = 0.18;
+      }
+
+      // Position
+      ballMesh.position.copy(ballPos);
+      ballGlow.position.copy(ballPos);
+
+      // Visual intensity by energy (while holding, keep it bright)
+      const glow = 0.8 + 0.8 * pct;
+      ballMesh.material.emissiveIntensity = glow;
+      updateEnergyUI();
+      return;
+    }
+
+    // In flight: integrate motion
+    ballPos.addScaledVector(ballVel, dt);
+
+    // small drag + slow energy drain
+    ballVel.multiplyScalar(1 - 0.08*dt);
+    ballEnergy -= dt * 7;
+
+    // collision against arena cube
+    const r = ballRadius();
+    const halfW = arena.w / 2;
+    const halfH = arena.h / 2;
+    const halfD = arena.d / 2;
+
+    // Which side is "front wall"? Since camera at +z looking toward origin, the front wall is +halfD (closest to camera).
+    // We treat hitting front wall as immediate end (face boom).
+    let hit = false;
+    let hitBig = false;
+    let hitPos = ballPos.clone();
+
+    // left/right
+    if (ballPos.x < -halfW + r) {
+      ballPos.x = -halfW + r;
+      ballVel.x = Math.abs(ballVel.x) * 0.88;
+      hit = true;
+    } else if (ballPos.x > halfW - r) {
+      ballPos.x = halfW - r;
+      ballVel.x = -Math.abs(ballVel.x) * 0.88;
+      hit = true;
+    }
+
+    // bottom/top
+    if (ballPos.y < -halfH + r) {
+      ballPos.y = -halfH + r;
+      ballVel.y = Math.abs(ballVel.y) * 0.88;
+      hit = true;
+    } else if (ballPos.y > halfH - r) {
+      ballPos.y = halfH - r;
+      ballVel.y = -Math.abs(ballVel.y) * 0.88;
+      hit = true;
+    }
+
+    // back wall (farther into screen) is -halfD
+    if (ballPos.z < -halfD + r) {
+      ballPos.z = -halfD + r;
+      ballVel.z = Math.abs(ballVel.z) * 0.88;
+      hit = true;
+    }
+
+    // FRONT wall (closest to camera): +halfD
+    if (ballPos.z > halfD - r) {
+      ballPos.z = halfD - r;
+      // This is the "it bounced back to you" case: BIG BOOM and end.
+      hit = true;
+      hitBig = true;
+      hitPos = ballPos.clone();
+    }
+
+    if (hit) {
+      const ms = nowMs();
+      const spamGuard = (ms - lastBallImpactMs) < 75;
+      lastBallImpactMs = ms;
+
+      if (!spamGuard) {
+        if (hitBig) {
+          faceBooms += 1;
+          flashArena(0.75, 200, true);
+          spawnBurst(hitPos, 1.2, true);
+          AudioSys.boom(true);
+          shake(0.28, 260);
+          toast('IN YOUR FACE 💥', 900);
+
+          // lose life in score mode
+          if (mode === GameMode.SCORE) {
+            lives = Math.max(0, lives - 1);
+            streak = 0;
+            if (lives <= 0) {
+              resetBall();
+              endGame('Out of Lives!');
+              return;
+            } else {
+              resetBall();
+              setStatus('Lost orb (spawn another)');
+              return;
+            }
+          } else {
+            // free play: just lose orb
+            resetBall();
+            setStatus('Orb popped (spawn another)');
+            return;
+          }
+        } else {
+          // normal bounce
+          bounces += 1;
+          streak += 1;
+          maxStreak = Math.max(maxStreak, streak);
+
+          // Score rules
+          if (mode === GameMode.SCORE) {
+            const pts = 10 + Math.min(20, Math.floor(streak / 3) * 5);
+            score += pts;
+            toast(`+${pts}`, 360);
+          } else {
+            // free play: still show a tiny toast sometimes
+            if (streak % 4 === 0) toast(`${streak}x`, 360);
+          }
+
+          ballEnergy -= 12; // lose energy each hit
+          spawnBurst(hitPos, 0.75, false);
+          AudioSys.boom(false);
+          shake(0.09, 120);
+          flashArena(0.25, 120, false);
+        }
+      }
+    }
+
+    // Dissipation (energy gone)
+    if (ballEnergy <= 0) {
+      // fizzle out in mid-air
+      spawnBurst(ballPos.clone(), 0.9, false);
+      AudioSys.blip({freq: 240, dur: 0.14, type:'sine', gain: 0.18});
+      shake(0.06, 90);
+      toast('…fizzle…', 650);
+
+      // In score mode, this is a "neutral" end: allow spawn again without losing life
+      streak = 0;
+      resetBall();
+      setStatus('Energy drained (spawn again)');
+      return;
+    }
+
+    // Visual: color shift by energy
+    const hot = clamp(1 - pct, 0, 1); // as energy goes down, get pink/red
+    const c1 = new THREE.Color(0x66ffff);
+    const c2 = new THREE.Color(0xff55cc);
+    const col = c1.clone().lerp(c2, hot);
+
+    ballMesh.material.color.copy(col);
+    ballMesh.material.emissive.copy(col);
+    ballMesh.material.emissiveIntensity = 0.6 + 1.3 * pct;
+    ballGlow.material.color.copy(col);
+    ballGlow.material.opacity = 0.10 + 0.22 * pct;
+
+    // slight pulse
+    const pulse = 1 + 0.05 * Math.sin(performance.now() * 0.02);
+    ballMesh.scale.multiplyScalar(pulse);
+    ballGlow.scale.copy(ballMesh.scale);
+
+    // Place meshes
+    ballMesh.position.copy(ballPos);
+    ballGlow.position.copy(ballPos);
+
+    updateEnergyUI();
+  }
+
+  // ---------- Bootstrap ----------
+  (async () => {
+    // quick feature checks
+    if (!navigator.mediaDevices?.getUserMedia) {
+      failLoad('getUserMedia not supported in this browser.');
+      return;
+    }
+    if (!window.THREE) {
+      failLoad('Three.js failed to load.');
+      return;
+    }
+    if (!window.Hands) {
+      failLoad('MediaPipe Hands failed to load.');
+      return;
+    }
+
+    // UX: Tap/click anywhere to resume audio context (browser requires gesture)
+    document.addEventListener('pointerdown', async () => {
+      try { await AudioSys.resume(); } catch {}
+    }, { once: false });
+
+    initAll();
+  })();
+
+  </script>
+</body>
+</html>

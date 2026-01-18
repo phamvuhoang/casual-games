@@ -43,9 +43,13 @@ export const EnergyBall: React.FC<EnergyBallProps> = ({ data }) => {
     const targetScale = data.scale * (1 + Math.sin(state.clock.elapsedTime * 8) * 0.05);
     groupRef.current.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.2);
 
-    // Rotations
-    if (coreRef.current) coreRef.current.rotateOnAxis(rotAxis, delta * 2);
-    if (shellRef.current) shellRef.current.rotateOnAxis(rotAxis, -delta);
+    // Rotations - Spin faster when flying based on velocity
+    const speed = data.velocity.length();
+    const baseSpeed = data.state === 'flying' ? 5.0 : 1.5;
+    const rotationSpeed = baseSpeed + speed * 0.5;
+
+    if (coreRef.current) coreRef.current.rotateOnAxis(rotAxis, delta * rotationSpeed);
+    if (shellRef.current) shellRef.current.rotateOnAxis(rotAxis, -delta * (rotationSpeed * 0.6));
     if (particlesRef.current) particlesRef.current.rotation.y += delta * 0.5;
 
     // Color pulsing

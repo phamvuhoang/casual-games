@@ -20,6 +20,13 @@ const GameLogic: React.FC<SceneContentProps> = ({ hands, setScore, setBallsCount
   const ballsRef = useRef<BallData[]>([]); // Ref for physics loop to avoid re-renders
   const lastSpawnTime = useRef<number>(0);
 
+  // Helper for haptics
+  const triggerHaptic = (pattern: number | number[]) => {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate(pattern);
+    }
+  };
+
   // Sync state for rendering
   useFrame((state, delta) => {
     const now = state.clock.elapsedTime;
@@ -47,6 +54,7 @@ const GameLogic: React.FC<SceneContentProps> = ({ hands, setScore, setBallsCount
         lastSpawnTime.current = now;
         needsUpdate = true;
         setStatus('Charging Orb...');
+        triggerHaptic(20); // Subtle haptic on spawn
       }
     });
 
@@ -67,38 +75,62 @@ const GameLogic: React.FC<SceneContentProps> = ({ hands, setScore, setBallsCount
           nextBall.scale = 0.3 + (nextBall.energy * 0.5); 
 
           // --- Throw Mechanics ---
-          const speed = hand.velocity.length();
-          const forwardSpeed = -hand.velocity.z; // Positive = away from camera
+          // We analyze both Velocity and Acceleration for a "Physics-based" throw feeling.
+          
+          const vel = hand.velocity;
+          const accel = hand.acceleration;
+          
+          const forwardVel = -vel.z; // Speed towards screen/world (away from user)
+          const forwardAccel = -accel.z; // Acceleration towards screen
+          
+          // A "Throw" is defined by high forward velocity OR a significant forward acceleration impulse (flick)
+          // while not moving backwards.
+          const isMovingForward = forwardVel > 0.5;
+          const isRapidAcceleration = forwardAccel > 8.0; // Sharp flick
+          const isHighVelocity = forwardVel > 3.0;
           
           // Visual Squash/Stretch based on velocity
-          if (speed > 1) {
-             // Stretch along movement vector (simplified effect)
-             nextBall.scale = (0.3 + nextBall.energy * 0.5) * (1 - speed * 0.05);
+          if (vel.length() > 1) {
+             nextBall.scale = (0.3 + nextBall.energy * 0.5) * (1 - vel.length() * 0.05);
           }
 
-          // Throw Trigger Conditions:
-          // 1. Moving fast away from camera
-          // 2. Minimum energy
-          // 3. Not holding palm perfectly flat up (natural throw rotates hand)
-          const isThrowingMotion = forwardSpeed > 2.5; 
+          const isThrowingMotion = isMovingForward && (isHighVelocity || isRapidAcceleration);
           const isEnergySufficient = nextBall.energy > 0.25;
 
           if (isThrowingMotion && isEnergySufficient) {
             nextBall.state = 'flying';
             nextBall.heldBy = null;
             
-            // Transfer momentum with a boost
-            // We use the hand's velocity but amplify the forward component
-            const throwVelocity = hand.velocity.clone().multiplyScalar(1.4); 
+            // --- Physics Impulse Calculation ---
+            // Base velocity from hand movement
+            const throwVelocity = vel.clone();
             
-            // Ensure minimum forward velocity if the gesture was detected
-            if (throwVelocity.z > -3.0) throwVelocity.z = -3.0 - (speed * 0.2);
+            // Add "Snap" Impulse from acceleration
+            // This makes the throw feel responsive to the *force* of the flick, not just the speed.
+            // We project acceleration onto the forward vector to boost z-axis primarily.
+            if (forwardAccel > 0) {
+                 const impulse = accel.clone().multiplyScalar(0.15);
+                 throwVelocity.add(impulse);
+            }
             
+            // General Throw Boost
+            throwVelocity.multiplyScalar(1.3);
+
+            // Enforce minimum satisfaction speed for throws
+            if (throwVelocity.z > -4.0) {
+                // If the user flicked but physical tracking was slow, ensure it still flies
+                throwVelocity.z = -4.0 - (forwardAccel * 0.1); 
+            }
+            
+            // Add a slight upward arc if thrown mostly straight, to help it travel
+            throwVelocity.y += 0.5;
+
             nextBall.velocity = throwVelocity;
             
-            setStatus('Throw!');
+            setStatus('Flick Throw!');
+            triggerHaptic(50); // Throw release haptic
             needsUpdate = true;
-          } else if (!hand.palmUp && now - lastSpawnTime.current > 1.0 && speed < 1.0) {
+          } else if (!hand.palmUp && now - lastSpawnTime.current > 1.0 && vel.length() < 1.0) {
              // Dropped (slow movement + hand turned over)
              nextBall.state = 'flying';
              nextBall.heldBy = null;
@@ -119,8 +151,8 @@ const GameLogic: React.FC<SceneContentProps> = ({ hands, setScore, setBallsCount
         // Air Drag
         nextBall.velocity.multiplyScalar(0.995);
         
-        // Spin effect
-        nextBall.scale = Math.min(nextBall.scale + delta, 0.3 + (nextBall.energy * 0.5)); // Restore scale if squashed
+        // Spin effect recovery (if squashed)
+        nextBall.scale = Math.min(nextBall.scale + delta, 0.3 + (nextBall.energy * 0.5)); 
 
         // --- Catching Logic ---
         hands.forEach(hand => {
@@ -136,6 +168,7 @@ const GameLogic: React.FC<SceneContentProps> = ({ hands, setScore, setBallsCount
                     nextBall.energy = Math.min(nextBall.energy + 0.2, 1.0);
                     setScore(s => s + 10);
                     setStatus('Caught!');
+                    triggerHaptic(100); // Solid catch haptic
                     needsUpdate = true;
                 }
             }
@@ -158,6 +191,7 @@ const GameLogic: React.FC<SceneContentProps> = ({ hands, setScore, setBallsCount
                     
                     // FX
                     setStatus('Impact!');
+                    triggerHaptic(40); // Impact haptic
                     needsUpdate = true;
                 }
             }
@@ -167,14 +201,17 @@ const GameLogic: React.FC<SceneContentProps> = ({ hands, setScore, setBallsCount
         if (nextBall.position.y < -2.5) { // Floor
            nextBall.velocity.y *= -0.6;
            nextBall.position.y = -2.5;
+           triggerHaptic(15); // Floor bounce
         }
         if (Math.abs(nextBall.position.x) > 4) { // Side walls
            nextBall.velocity.x *= -0.8;
            nextBall.position.x = Math.sign(nextBall.position.x) * 4;
+           triggerHaptic(15); // Wall bounce
         }
         if (nextBall.position.z < -8) { // Back wall
            nextBall.velocity.z *= -0.8;
            nextBall.position.z = -8;
+           triggerHaptic(15); // Back wall bounce
         }
         
         // Cleanup when behind camera

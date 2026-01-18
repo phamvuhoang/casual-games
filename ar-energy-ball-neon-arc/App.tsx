@@ -26,22 +26,33 @@ const App: React.FC = () => {
 
   // Velocity Calculation helper
   const updateHandsWithVelocity = useCallback((newHands: any[], results: any) => {
-    const timestamp = Date.now();
     const aspect = results.image.width / results.image.height;
 
     const processedHands: HandData[] = newHands.map((landmarks, index) => {
       const handedness = results.multiHandedness[index].label as 'Left' | 'Right';
       const worldPos = toWorld(landmarks[9], aspect); // Using middle finger knuckle (9) as center approx
 
-      // Calculate velocity based on previous frame
       let velocity = new THREE.Vector3(0, 0, 0);
-      const prevHand = handsRef.current.find(h => h.handedness === handedness);
+      let acceleration = new THREE.Vector3(0, 0, 0);
+
+      // Find previous data for this hand
+      // Note: We match by handedness. If multiple people have "Right" hands, this might flicker, 
+      // but MediaPipe usually handles tracking IDs internally. For this demo, handedness label is used.
+      // In a robust multi-user setup, we would use multiHandedness[index].index or trackingId if available.
+      const prevHandIndex = handsRef.current.findIndex(h => h.handedness === handedness);
+      const prevHand = handsRef.current[prevHandIndex];
       
       if (prevHand) {
-        // Simple discrete differentiation
-        velocity = worldPos.clone().sub(prevHand.worldPos).multiplyScalar(10); // scale up for readable units
-        // Smoothing
-        velocity.lerp(prevHand.velocity, 0.5); 
+        // Calculate raw velocity (Units per frame approx, scaled up)
+        const deltaPos = worldPos.clone().sub(prevHand.worldPos);
+        const rawVelocity = deltaPos.multiplyScalar(20); // Scale for usable units
+
+        // Smooth velocity: Higher alpha (0.6) means we trust new data more (responsive)
+        // Lower alpha (0.3) means smoother but laggy
+        velocity.copy(prevHand.velocity).lerp(rawVelocity, 0.6);
+
+        // Calculate Acceleration: Change in velocity
+        acceleration.subVectors(velocity, prevHand.velocity).multiplyScalar(20);
       }
 
       const palmUp = isPalmUp(landmarks);
@@ -52,7 +63,8 @@ const App: React.FC = () => {
         worldPos,
         palmUp,
         velocity,
-        isPinching: false // Not implemented specifically
+        acceleration,
+        isPinching: false 
       };
     });
 
@@ -81,7 +93,7 @@ const App: React.FC = () => {
         });
 
         handsModule.setOptions({
-          maxNumHands: 2, // Supports 2 hands (single user) or 4 if we bump this up for multi-user
+          maxNumHands: 4, // Increased to support multiple people
           modelComplexity: 1,
           minDetectionConfidence: 0.5,
           minTrackingConfidence: 0.5,
@@ -190,7 +202,7 @@ const App: React.FC = () => {
             <div className="text-xs font-bold text-cyan-400 mb-1">CONTROLS</div>
             <ul className="text-sm text-white/80 space-y-1">
               <li><span className="text-cyan-300">PALM UP</span> to spawn & charge</li>
-              <li><span className="text-cyan-300">FLICK</span> to throw</li>
+              <li><span className="text-cyan-300">FLICK FAST</span> to throw</li>
               <li><span className="text-cyan-300">CATCH</span> with open hand</li>
             </ul>
           </div>

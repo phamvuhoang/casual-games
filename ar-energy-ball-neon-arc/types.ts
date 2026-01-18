@@ -6,6 +6,7 @@ export interface HandData {
   worldPos: THREE.Vector3;
   palmUp: boolean;
   velocity: THREE.Vector3;
+  acceleration: THREE.Vector3;
   isPinching: boolean;
 }
 

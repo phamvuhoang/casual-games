@@ -30,25 +30,22 @@ const App: React.FC = () => {
 
     const processedHands: HandData[] = newHands.map((landmarks, index) => {
       const handedness = results.multiHandedness[index].label as 'Left' | 'Right';
+      const id = `${handedness}-${index}`; // Unique ID per frame index
       const worldPos = toWorld(landmarks[9], aspect); // Using middle finger knuckle (9) as center approx
 
       let velocity = new THREE.Vector3(0, 0, 0);
       let acceleration = new THREE.Vector3(0, 0, 0);
 
       // Find previous data for this hand
-      // Note: We match by handedness. If multiple people have "Right" hands, this might flicker, 
-      // but MediaPipe usually handles tracking IDs internally. For this demo, handedness label is used.
-      // In a robust multi-user setup, we would use multiHandedness[index].index or trackingId if available.
-      const prevHandIndex = handsRef.current.findIndex(h => h.handedness === handedness);
-      const prevHand = handsRef.current[prevHandIndex];
+      // We try to match by ID if possible, or just handedness/index stability
+      const prevHand = handsRef.current.find(h => h.id === id);
       
       if (prevHand) {
         // Calculate raw velocity (Units per frame approx, scaled up)
         const deltaPos = worldPos.clone().sub(prevHand.worldPos);
         const rawVelocity = deltaPos.multiplyScalar(20); // Scale for usable units
 
-        // Smooth velocity: Higher alpha (0.6) means we trust new data more (responsive)
-        // Lower alpha (0.3) means smoother but laggy
+        // Smooth velocity
         velocity.copy(prevHand.velocity).lerp(rawVelocity, 0.6);
 
         // Calculate Acceleration: Change in velocity
@@ -58,6 +55,7 @@ const App: React.FC = () => {
       const palmUp = isPalmUp(landmarks);
 
       return {
+        id,
         handedness,
         landmarks,
         worldPos,
@@ -204,6 +202,7 @@ const App: React.FC = () => {
               <li><span className="text-cyan-300">PALM UP</span> to spawn & charge</li>
               <li><span className="text-cyan-300">FLICK FAST</span> to throw</li>
               <li><span className="text-cyan-300">CATCH</span> with open hand</li>
+              <li><span className="text-cyan-300">HIT OPPONENT</span> for points</li>
             </ul>
           </div>
         </div>

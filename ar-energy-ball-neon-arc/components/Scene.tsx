@@ -1,5 +1,5 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import React, { useRef, useState, useMemo } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { BallData, HandData } from '../types';
@@ -15,19 +15,66 @@ interface SceneContentProps {
 
 const BALL_COLORS = ['#00ffff', '#ff00ff', '#00ff00', '#ffff00'];
 
+const RoomGrid: React.FC = () => {
+  const lines = useMemo(() => {
+    const vertices: number[] = [];
+    const width = 8;    // x: -4 to 4
+    const height = 6;   // y: -2.5 to 3.5
+    const depth = 14;   // z: -10 to 4
+    
+    const xMin = -4, xMax = 4;
+    const yMin = -2.5, yMax = 3.5;
+    const zMin = -10, zMax = 2; // End grid slightly in front of camera
+
+    // Helper to add line
+    const addLine = (p1: number[], p2: number[]) => vertices.push(...p1, ...p2);
+
+    // 1. Floor (y = yMin) - Horizontal & Depth lines
+    for (let x = xMin; x <= xMax; x += 2) addLine([x, yMin, zMin], [x, yMin, zMax]);
+    for (let z = zMin; z <= zMax; z += 2) addLine([xMin, yMin, z], [xMax, yMin, z]);
+
+    // 2. Ceiling (y = yMax)
+    for (let x = xMin; x <= xMax; x += 2) addLine([x, yMax, zMin], [x, yMax, zMax]);
+    for (let z = zMin; z <= zMax; z += 2) addLine([xMin, yMax, z], [xMax, yMax, z]);
+
+    // 3. Left Wall (x = xMin)
+    for (let y = yMin; y <= yMax; y += 1.5) addLine([xMin, y, zMin], [xMin, y, zMax]);
+    for (let z = zMin; z <= zMax; z += 2) addLine([xMin, yMin, z], [xMin, yMax, z]);
+
+    // 4. Right Wall (x = xMax)
+    for (let y = yMin; y <= yMax; y += 1.5) addLine([xMax, y, zMin], [xMax, y, zMax]);
+    for (let z = zMin; z <= zMax; z += 2) addLine([xMax, yMin, z], [xMax, yMax, z]);
+
+    // 5. Back Wall (z = zMin)
+    for (let x = xMin; x <= xMax; x += 2) addLine([x, yMin, zMin], [x, yMax, zMin]);
+    for (let y = yMin; y <= yMax; y += 1.5) addLine([xMin, y, zMin], [xMax, y, zMin]);
+
+    return new Float32Array(vertices);
+  }, []);
+
+  return (
+    <group>
+        <lineSegments>
+            <bufferGeometry>
+                <bufferAttribute attach="attributes-position" count={lines.length / 3} array={lines} itemSize={3} />
+            </bufferGeometry>
+            <lineBasicMaterial color="#0088ff" transparent opacity={0.15} blending={THREE.AdditiveBlending} />
+        </lineSegments>
+    </group>
+  );
+}
+
 const GameLogic: React.FC<SceneContentProps> = ({ hands, setScore, setBallsCount, setStatus }) => {
   const [balls, setBalls] = useState<BallData[]>([]);
-  const ballsRef = useRef<BallData[]>([]); // Ref for physics loop to avoid re-renders
+  const ballsRef = useRef<BallData[]>([]); 
   const lastSpawnTime = useRef<number>(0);
 
-  // Helper for haptics
   const triggerHaptic = (pattern: number | number[]) => {
     if (typeof navigator !== 'undefined' && navigator.vibrate) {
       navigator.vibrate(pattern);
     }
   };
 
-  // Sync state for rendering
   useFrame((state, delta) => {
     const now = state.clock.elapsedTime;
     let activeBalls = [...ballsRef.current];
@@ -35,26 +82,27 @@ const GameLogic: React.FC<SceneContentProps> = ({ hands, setScore, setBallsCount
 
     // --- 1. Spawning Logic ---
     hands.forEach(hand => {
-      // Find if this hand is holding a ball
-      const holdingBall = activeBalls.find(b => b.heldBy === hand.handedness);
+      const holdingBall = activeBalls.find(b => b.heldBy === hand.id);
       
       // Spawn condition: Palm Up + No ball + Cooldown
       if (!holdingBall && hand.palmUp && (now - lastSpawnTime.current > 0.5)) {
         const newBall: BallData = {
           id: uuidv4(),
+          ownerId: hand.id,
           position: hand.worldPos.clone().add(new THREE.Vector3(0, 0.2, 0)),
           velocity: new THREE.Vector3(0,0,0),
           scale: 0.1,
           energy: 0.1,
           state: 'charging',
-          heldBy: hand.handedness,
+          heldBy: hand.id,
           color: BALL_COLORS[Math.floor(Math.random() * BALL_COLORS.length)],
+          spawnTime: now
         };
         activeBalls.push(newBall);
         lastSpawnTime.current = now;
         needsUpdate = true;
         setStatus('Charging Orb...');
-        triggerHaptic(20); // Subtle haptic on spawn
+        triggerHaptic(20); 
       }
     });
 
@@ -62,160 +110,185 @@ const GameLogic: React.FC<SceneContentProps> = ({ hands, setScore, setBallsCount
     activeBalls = activeBalls.map(ball => {
       let nextBall = { ...ball };
 
+      // Handle terminal states
+      if (ball.state === 'exploded' || ball.state === 'fizzle') {
+          // Remove after animation duration
+          const lifeTime = (ball as any).terminalTime || now;
+          if ((ball as any).terminalTime === undefined) (nextBall as any).terminalTime = now;
+          
+          if (now - lifeTime > 0.8) return null; // Remove logic
+          return nextBall;
+      }
+
+      // --- HOLDING / CHARGING STATE ---
       if (ball.state === 'charging' && ball.heldBy) {
-        const hand = hands.find(h => h.handedness === ball.heldBy);
+        const hand = hands.find(h => h.id === ball.heldBy);
         
         if (hand) {
-          // Stick to hand position with slight lag for weight
           const targetPos = hand.worldPos.clone().add(new THREE.Vector3(0, 0.15, 0));
-          nextBall.position.lerp(targetPos, 0.3);
+          nextBall.position.lerp(targetPos, 0.4); 
           
           // Charge up
-          nextBall.energy = Math.min(nextBall.energy + delta * 0.5, 1.0);
+          nextBall.energy = Math.min(nextBall.energy + delta * 0.8, 1.0);
           nextBall.scale = 0.3 + (nextBall.energy * 0.5); 
 
-          // --- Throw Mechanics ---
-          // We analyze both Velocity and Acceleration for a "Physics-based" throw feeling.
-          
+          // --- Throw Mechanics (Bi-directional) ---
           const vel = hand.velocity;
           const accel = hand.acceleration;
           
-          const forwardVel = -vel.z; // Speed towards screen/world (away from user)
-          const forwardAccel = -accel.z; // Acceleration towards screen
+          const zVel = vel.z;
+          const zAcc = accel.z;
           
-          // A "Throw" is defined by high forward velocity OR a significant forward acceleration impulse (flick)
-          // while not moving backwards.
-          const isMovingForward = forwardVel > 0.5;
-          const isRapidAcceleration = forwardAccel > 8.0; // Sharp flick
-          const isHighVelocity = forwardVel > 3.0;
-          
-          // Visual Squash/Stretch based on velocity
-          if (vel.length() > 1) {
-             nextBall.scale = (0.3 + nextBall.energy * 0.5) * (1 - vel.length() * 0.05);
-          }
+          // Throw Away (Negative Z)
+          const isThrowAway = zVel < -2.5 || zAcc < -8.0;
+          // Throw At Camera (Positive Z)
+          const isThrowAtCamera = zVel > 2.5 || zAcc > 8.0;
 
-          const isThrowingMotion = isMovingForward && (isHighVelocity || isRapidAcceleration);
-          const isEnergySufficient = nextBall.energy > 0.25;
+          const speed = vel.length();
+          const isMoving = speed > 0.5;
 
-          if (isThrowingMotion && isEnergySufficient) {
+          if (isMoving && (isThrowAway || isThrowAtCamera) && nextBall.energy > 0.15) {
             nextBall.state = 'flying';
             nextBall.heldBy = null;
+            nextBall.ownerId = hand.id;
             
-            // --- Physics Impulse Calculation ---
-            // Base velocity from hand movement
             const throwVelocity = vel.clone();
             
-            // Add "Snap" Impulse from acceleration
-            // This makes the throw feel responsive to the *force* of the flick, not just the speed.
-            // We project acceleration onto the forward vector to boost z-axis primarily.
-            if (forwardAccel > 0) {
-                 const impulse = accel.clone().multiplyScalar(0.15);
+            // Add Impulse from acceleration for "snap"
+            if (Math.abs(zAcc) > 5.0) {
+                 const impulse = accel.clone().multiplyScalar(0.2); 
                  throwVelocity.add(impulse);
             }
             
-            // General Throw Boost
-            throwVelocity.multiplyScalar(1.3);
+            // Boost speed
+            throwVelocity.multiplyScalar(1.4);
 
-            // Enforce minimum satisfaction speed for throws
-            if (throwVelocity.z > -4.0) {
-                // If the user flicked but physical tracking was slow, ensure it still flies
-                throwVelocity.z = -4.0 - (forwardAccel * 0.1); 
-            }
-            
-            // Add a slight upward arc if thrown mostly straight, to help it travel
+            // Min Speed Enforcement
+            if (isThrowAway && throwVelocity.z > -5.0) throwVelocity.z = -5.0;
+            if (isThrowAtCamera && throwVelocity.z < 5.0) throwVelocity.z = 5.0;
+
+            // Arc for visual weight
             throwVelocity.y += 0.5;
 
             nextBall.velocity = throwVelocity;
-            
-            setStatus('Flick Throw!');
-            triggerHaptic(50); // Throw release haptic
+            setStatus(isThrowAtCamera ? 'Incoming!' : 'Away!');
+            triggerHaptic(50);
             needsUpdate = true;
-          } else if (!hand.palmUp && now - lastSpawnTime.current > 1.0 && vel.length() < 1.0) {
-             // Dropped (slow movement + hand turned over)
+          } 
+          // Drop Logic
+          else if (!hand.palmUp && now - lastSpawnTime.current > 1.0 && speed < 1.0) {
              nextBall.state = 'flying';
              nextBall.heldBy = null;
-             nextBall.velocity = new THREE.Vector3(0, -2, 0); // Drop down
+             nextBall.velocity = new THREE.Vector3(0, -2, 0); 
              needsUpdate = true;
           }
         } else {
-            // Hand lost tracking
+            // Hand lost
             nextBall.state = 'flying';
             nextBall.heldBy = null;
         }
 
-      } else if (ball.state === 'flying') {
-        // Apply Gravity
-        nextBall.velocity.y -= 9.8 * delta * 0.2; // Low gravity
+      } 
+      // --- FLYING STATE ---
+      else if (ball.state === 'flying') {
+        // 1. Gravity & Drag
+        nextBall.velocity.y -= 9.8 * delta * 0.4;
+        nextBall.velocity.multiplyScalar(0.99);
         nextBall.position.add(nextBall.velocity.clone().multiplyScalar(delta));
-
-        // Air Drag
-        nextBall.velocity.multiplyScalar(0.995);
         
-        // Spin effect recovery (if squashed)
-        nextBall.scale = Math.min(nextBall.scale + delta, 0.3 + (nextBall.energy * 0.5)); 
+        // 2. Energy Decay
+        nextBall.energy -= delta * 0.08; // Lose 8% energy per second flying
+        nextBall.scale = Math.max(0.1, 0.3 + (nextBall.energy * 0.5));
 
-        // --- Catching Logic ---
+        // 3. Fizzle out if energy empty
+        if (nextBall.energy <= 0) {
+            nextBall.state = 'fizzle';
+            setStatus('Fizzled out...');
+            needsUpdate = true;
+            return nextBall;
+        }
+
+        // 4. Collision with Hand (Catch or Hit)
         hands.forEach(hand => {
-            // Can only catch if palm is up and not holding another ball
-            if (hand.palmUp && !activeBalls.find(b => b.heldBy === hand.handedness)) {
-                const dist = hand.worldPos.distanceTo(nextBall.position);
-                // Catch radius
-                if (dist < 0.6) {
-                    nextBall.state = 'charging';
-                    nextBall.heldBy = hand.handedness;
-                    nextBall.velocity.set(0,0,0);
-                    // Bonus energy on catch
-                    nextBall.energy = Math.min(nextBall.energy + 0.2, 1.0);
-                    setScore(s => s + 10);
-                    setStatus('Caught!');
-                    triggerHaptic(100); // Solid catch haptic
-                    needsUpdate = true;
+            const dist = hand.worldPos.distanceTo(nextBall.position);
+            
+            if (dist < 0.5) {
+                const isOwner = ball.ownerId === hand.id;
+                const gracePeriodPassed = (now - (ball as any).spawnTime > 0.5);
+
+                if (!isOwner || gracePeriodPassed) {
+                    if (hand.palmUp && !activeBalls.find(b => b.heldBy === hand.id)) {
+                        // CATCH
+                        nextBall.state = 'charging';
+                        nextBall.heldBy = hand.id;
+                        nextBall.velocity.set(0,0,0);
+                        nextBall.energy = Math.min(nextBall.energy + 0.3, 1.0); // Boost energy on catch
+                        setScore(s => s + 10);
+                        setStatus('Caught!');
+                        triggerHaptic(100);
+                        needsUpdate = true;
+                    } else if (!hand.palmUp) {
+                        // HIT HAND
+                        nextBall.state = 'exploded';
+                        setScore(s => s + 50);
+                        setStatus('Hand Hit!');
+                        triggerHaptic([40, 40, 40]);
+                        needsUpdate = true;
+                    }
                 }
             }
         });
 
-        // --- Multi-Ball Collision ---
+        // 5. Collision with SCREEN (User)
+        // If ball is moving towards camera (z > 0) and gets very close (z > 3.0)
+        // (Camera is usually at 4)
+        if (nextBall.velocity.z > 0 && nextBall.position.z > 3.0 && Math.abs(nextBall.position.x) < 2.0 && Math.abs(nextBall.position.y) < 2.0) {
+            nextBall.state = 'exploded';
+            setScore(s => s + 100); // Bonus for hitting screen
+            setStatus('SCREEN CRACK!');
+            triggerHaptic([80, 50, 80, 50]); // Strong pattern
+            needsUpdate = true;
+        }
+
+        // 6. Ball-Ball Collision
         activeBalls.forEach(other => {
             if (other.id !== nextBall.id && other.state === 'flying') {
                 const dist = nextBall.position.distanceTo(other.position);
-                const minDist = (nextBall.scale + other.scale) * 0.4; // Approximate radius
+                const minDist = (nextBall.scale + other.scale) * 0.4; 
                 if (dist < minDist) {
-                    // Elastic collision
                     const dir = nextBall.position.clone().sub(other.position).normalize();
                     const vRelative = nextBall.velocity.clone().sub(other.velocity);
                     const speed = vRelative.length();
                     
-                    // Simple bounce impulse
                     nextBall.velocity.add(dir.multiplyScalar(speed * 0.5 + 1));
                     other.velocity.sub(dir.multiplyScalar(speed * 0.5 + 1));
                     
-                    // FX
-                    setStatus('Impact!');
-                    triggerHaptic(40); // Impact haptic
+                    triggerHaptic(30);
                     needsUpdate = true;
                 }
             }
         });
 
-        // --- Boundaries ---
-        if (nextBall.position.y < -2.5) { // Floor
-           nextBall.velocity.y *= -0.6;
+        // 7. Wall Bounces
+        if (nextBall.position.y < -2.5) { 
+           nextBall.velocity.y = Math.abs(nextBall.velocity.y) * 0.6;
            nextBall.position.y = -2.5;
-           triggerHaptic(15); // Floor bounce
         }
-        if (Math.abs(nextBall.position.x) > 4) { // Side walls
+        if (nextBall.position.y > 3.5) { 
+           nextBall.velocity.y = -Math.abs(nextBall.velocity.y) * 0.6;
+           nextBall.position.y = 3.5;
+        }
+        if (Math.abs(nextBall.position.x) > 4) {
            nextBall.velocity.x *= -0.8;
            nextBall.position.x = Math.sign(nextBall.position.x) * 4;
-           triggerHaptic(15); // Wall bounce
         }
-        if (nextBall.position.z < -8) { // Back wall
-           nextBall.velocity.z *= -0.8;
-           nextBall.position.z = -8;
-           triggerHaptic(15); // Back wall bounce
+        if (nextBall.position.z < -10) { 
+           nextBall.velocity.z = Math.abs(nextBall.velocity.z) * 0.8;
+           nextBall.position.z = -10;
         }
         
-        // Cleanup when behind camera
-        if (nextBall.position.z > 3) {
+        // Remove if way out of bounds
+        if (nextBall.position.z > 5 || nextBall.position.y < -10) {
              return null; 
         }
       }
@@ -235,16 +308,15 @@ const GameLogic: React.FC<SceneContentProps> = ({ hands, setScore, setBallsCount
 
   return (
     <>
-      <ambientLight intensity={0.5} />
-      <pointLight position={[10, 10, 10]} intensity={1} />
-      <directionalLight position={[0, 5, 5]} intensity={0.5} />
+      <ambientLight intensity={0.4} />
+      <pointLight position={[0, 4, 0]} intensity={0.8} />
+      <directionalLight position={[0, 0, 5]} intensity={0.5} />
 
       {balls.map(ball => (
         <EnergyBall key={ball.id} data={ball} />
       ))}
       
-      {/* Environment Grid */}
-      <gridHelper args={[20, 20, 0x303030, 0x101010]} position={[0, -2.5, -4]} />
+      <RoomGrid />
     </>
   );
 };
@@ -252,10 +324,10 @@ const GameLogic: React.FC<SceneContentProps> = ({ hands, setScore, setBallsCount
 export const Scene: React.FC<SceneContentProps> = (props) => {
   return (
     <div className="absolute inset-0 z-10">
-      <Canvas camera={{ position: [0, 0, 4], fov: 60 }} gl={{ alpha: true, antialias: true }}>
+      <Canvas camera={{ position: [0, 0, 4], fov: 65 }} gl={{ alpha: true, antialias: true }}>
         <GameLogic {...props} />
         <EffectComposer>
-          <Bloom luminanceThreshold={1} mipmapBlur intensity={1.5} radius={0.6} />
+          <Bloom luminanceThreshold={0.8} mipmapBlur intensity={1.8} radius={0.5} />
         </EffectComposer>
       </Canvas>
     </div>

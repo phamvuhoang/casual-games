@@ -9,6 +9,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import { createSupabaseClient } from '@/lib/supabase/client';
+import { ensureProfile } from '@/lib/supabase/profile';
 
 const schema = z.object({
   email: z.string().email(),
@@ -36,6 +37,16 @@ export default function LoginClient() {
       setStatus(error.message);
       return;
     }
+
+    const { data: userData } = await supabase.auth.getUser();
+    if (userData.user) {
+      try {
+        await ensureProfile(supabase, userData.user);
+      } catch (profileError) {
+        console.warn('Profile setup failed.', profileError);
+      }
+    }
+
     setStatus('Signed in. Redirecting...');
     if (redirectTo) {
       router.replace(redirectTo);

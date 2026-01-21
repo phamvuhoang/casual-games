@@ -5,14 +5,17 @@ import { useEffect, useMemo, useState } from 'react';
 import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
 import WaveformVisualizer, { type VisualizerType } from '@/components/audio/WaveformVisualizer';
+import ThreeVisualizer from '@/components/audio/ThreeVisualizer';
 import { FrequencyGenerator } from '@/lib/audio/FrequencyGenerator';
 import { exportAudio } from '@/lib/audio/AudioExporter';
 import { DEFAULT_EFFECTS } from '@/lib/audio/effects';
 import { createSupabaseClient } from '@/lib/supabase/client';
+import { ensureProfile } from '@/lib/supabase/profile';
 import type { Json } from '@/lib/supabase/types';
 import {
   AMBIENT_SOUNDS,
   AUDIO_BUCKET,
+  AUDIO_FORMATS,
   DEFAULT_DURATION,
   MAX_FREQUENCIES,
   PRESET_FREQUENCIES,
@@ -31,6 +34,7 @@ type DraftState = {
   duration: number;
   visualizationType: VisualizerType;
   ambientSound: (typeof AMBIENT_SOUNDS)[number];
+  audioFormat: (typeof AUDIO_FORMATS)[number];
   title: string;
   description: string;
   isPublic: boolean;
@@ -44,6 +48,7 @@ export default function FrequencyCreator() {
   const [duration, setDuration] = useState(DEFAULT_DURATION);
   const [visualizationType, setVisualizationType] = useState<VisualizerType>('waveform');
   const [ambientSound, setAmbientSound] = useState<(typeof AMBIENT_SOUNDS)[number]>('none');
+  const [audioFormat, setAudioFormat] = useState<(typeof AUDIO_FORMATS)[number]>('webm');
   const [title, setTitle] = useState('Untitled Session');
   const [description, setDescription] = useState('');
   const [isPublic, setIsPublic] = useState(true);
@@ -116,6 +121,9 @@ export default function FrequencyCreator() {
       if (draft.ambientSound) {
         setAmbientSound(draft.ambientSound);
       }
+      if (draft.audioFormat) {
+        setAudioFormat(draft.audioFormat);
+      }
       if (draft.title) {
         setTitle(draft.title);
       }
@@ -142,6 +150,7 @@ export default function FrequencyCreator() {
       duration,
       visualizationType,
       ambientSound,
+      audioFormat,
       title,
       description,
       isPublic
@@ -155,6 +164,7 @@ export default function FrequencyCreator() {
     duration,
     visualizationType,
     ambientSound,
+    audioFormat,
     title,
     description,
     isPublic
@@ -177,6 +187,12 @@ export default function FrequencyCreator() {
       );
     }
   }, [generator, isPlaying, selectedFrequencies, volume, waveform]);
+
+  useEffect(() => {
+    if (isPlaying) {
+      generator.setAmbientLayer(ambientSound);
+    }
+  }, [ambientSound, generator, isPlaying]);
 
   const toggleFrequency = (hz: number) => {
     setSelectedFrequencies((prev) =>
@@ -215,9 +231,19 @@ export default function FrequencyCreator() {
 
     const { data } = await supabase.auth.getUser();
     const activeUserId = data.user?.id ?? userId;
-    if (!activeUserId) {
+    const activeUser = data.user ?? null;
+    if (!activeUserId || !activeUser) {
       setStatus('Sign in to save your composition.');
       setAuthModalOpen(true);
+      return;
+    }
+
+    try {
+      await ensureProfile(supabase, activeUser);
+    } catch (profileError) {
+      console.error(profileError);
+      setStatus('We could not finish your profile setup. Please try again.');
+      setIsSaving(false);
       return;
     }
 
@@ -225,12 +251,12 @@ export default function FrequencyCreator() {
     setStatus('Rendering audio...');
 
     try {
-      const audioBlob = await exportAudio(Math.min(duration, 120));
+      const exportResult = await exportAudio(Math.min(duration, 120), audioFormat);
       const slug = createSlug(title) || 'session';
-      const fileName = `${activeUserId}/${Date.now()}-${slug}.webm`;
+      const fileName = `${activeUserId}/${Date.now()}-${slug}.${exportResult.extension}`;
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from(AUDIO_BUCKET)
-        .upload(fileName, audioBlob, { contentType: 'audio/webm', upsert: true });
+        .upload(fileName, exportResult.blob, { contentType: exportResult.mimeType, upsert: true });
 
       if (uploadError) {
         throw uploadError;
@@ -282,7 +308,13 @@ export default function FrequencyCreator() {
       setStatus('Saved! Your composition is now available in Discover.');
     } catch (error) {
       console.error(error);
-      setStatus('Could not save the composition. Check Supabase storage bucket setup.');
+      const message =
+        error && typeof error === 'object' && 'message' in error ? String(error.message) : 'Unknown error';
+      if (message.includes('row-level security')) {
+        setStatus('Upload blocked by storage policy. Create storage buckets and RLS policies in Supabase.');
+      } else {
+        setStatus('Could not save the composition. Check Supabase storage bucket setup.');
+      }
     } finally {
       setIsSaving(false);
     }
@@ -373,6 +405,20 @@ export default function FrequencyCreator() {
                 </select>
               </label>
               <label className="flex items-center justify-between gap-3">
+                <span>Export format</span>
+                <select
+                  value={audioFormat}
+                  onChange={(event) => setAudioFormat(event.target.value as typeof audioFormat)}
+                  className="rounded-full border border-ink/10 bg-white px-3 py-2"
+                >
+                  {AUDIO_FORMATS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center justify-between gap-3">
                 <span>Duration (sec)</span>
                 <input
                   type="number"
@@ -444,7 +490,11 @@ export default function FrequencyCreator() {
         </div>
         <div className="space-y-4">
           <h3 className="text-lg font-semibold">Live visualization</h3>
-          <WaveformVisualizer analyser={analyser} type={visualizationType} isActive={isPlaying} />
+          {visualizationType === 'orbital' ? (
+            <ThreeVisualizer analyser={analyser} isActive={isPlaying} />
+          ) : (
+            <WaveformVisualizer analyser={analyser} type={visualizationType} isActive={isPlaying} />
+          )}
           <p className="text-xs text-ink/60">
             Visualization reacts to the master output. Use the waveform selector to explore patterns.
           </p>

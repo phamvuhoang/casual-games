@@ -9,8 +9,9 @@ export const PRESET_FREQUENCIES = [
 ];
 
 export const WAVEFORMS = ['sine', 'triangle', 'square', 'sawtooth'] as const;
-export const VISUALIZATION_TYPES = ['waveform', 'particles', 'mandala'] as const;
+export const VISUALIZATION_TYPES = ['waveform', 'particles', 'mandala', 'orbital'] as const;
 export const AMBIENT_SOUNDS = ['none', 'rain', 'ocean', 'forest', 'bells'] as const;
+export const AUDIO_FORMATS = ['webm', 'wav'] as const;
 
 export const DEFAULT_DURATION = 300;
 export const MAX_FREQUENCIES = 6;

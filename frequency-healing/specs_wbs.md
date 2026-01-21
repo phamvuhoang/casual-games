@@ -8,18 +8,17 @@
 - todo: Add Google OAuth flow and provider UI in auth pages (Supabase auth config + button).
 
 ## Phase 2 - Audio Engine
-- done: Tone.js frequency generator with waveform control, master volume, and effects initialized.
+- done: Tone.js frequency generator with waveform control, master volume, ambient layers, and effects initialized.
 - done: Preset frequency list and multi-select logic with max frequency limit.
-- done: Audio export utility to record output to a blob.
-- todo: Ambient sound layers (rain/ocean/etc) are selectable but not yet mixed into the audio graph.
-- todo: WAV/MP3 export format conversion if required beyond the current recorded blob.
+- done: Audio export utility supports webm + wav with in-browser conversion.
+- todo: MP3 export if required beyond webm/wav.
 
 ## Phase 3 - Visualization
 - done: Canvas visualization engine with waveform, particles, and mandala renderers.
 - done: Audio-reactive updates via analyser node and live rendering.
 - done: Video capture helper for canvas stream recording.
 - todo: Integrate video capture into the save/share workflow and store video URLs.
-- todo: Optional Three.js scenes for advanced visuals if desired.
+- done: Optional Three.js orbital scene for advanced visuals.
 
 ## Phase 4 - Creator Workflow
 - done: Creator page with title/description, waveform, visualization selection, volume, duration, and public toggle.
@@ -50,6 +49,6 @@
 ## Phase 8 - Polish, QA, and Launch
 - done: Responsive layout baseline across main pages.
 - todo: Accessibility pass and mobile performance tweaks for canvas/audio.
-- todo: SEO metadata per route (open graph, title, description).
+- done: SEO metadata per route (open graph, title, description).
 - todo: Analytics integration and error tracking.
 - todo: Deployment checklist and production environment setup.

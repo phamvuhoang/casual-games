@@ -7,7 +7,7 @@ import { ParticleRenderer } from '@/lib/visualization/renderers/ParticleRenderer
 import { MandalaRenderer } from '@/lib/visualization/renderers/MandalaRenderer';
 import type { VisualizationRenderer } from '@/lib/visualization/renderers/types';
 
-export type VisualizerType = 'waveform' | 'particles' | 'mandala';
+export type VisualizerType = 'waveform' | 'particles' | 'mandala' | 'orbital';
 
 interface WaveformVisualizerProps {
   analyser: AnalyserNode | null;

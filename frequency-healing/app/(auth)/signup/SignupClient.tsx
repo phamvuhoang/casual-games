@@ -9,6 +9,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import { createSupabaseClient } from '@/lib/supabase/client';
+import { ensureProfile } from '@/lib/supabase/profile';
 
 const schema = z.object({
   username: z.string().min(3),
@@ -45,15 +46,16 @@ export default function SignupClient() {
       return;
     }
 
-    if (data.user) {
-      await supabase.from('profiles').insert({
-        id: data.user.id,
-        username: values.username,
-        display_name: values.username
-      });
+    if (data.session?.user) {
+      try {
+        await ensureProfile(supabase, data.session.user);
+      } catch (profileError) {
+        console.warn('Profile setup failed.', profileError);
+      }
     }
 
     setStatus('Account created. Redirecting to Discover.');
+    await supabase.auth.signOut();
     router.replace(redirectTo);
   };
 

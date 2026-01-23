@@ -13,6 +13,7 @@ import { createSupabaseClient } from '@/lib/supabase/client';
 import { ensureProfile } from '@/lib/supabase/profile';
 import type { Json } from '@/lib/supabase/types';
 import { captureVideo } from '@/lib/visualization/VideoCapture';
+import { isIOSDevice } from '@/lib/utils/platform';
 import {
   AMBIENT_SOUNDS,
   AUDIO_BUCKET,
@@ -91,6 +92,7 @@ export default function FrequencyCreator() {
   const [visualCanvas, setVisualCanvas] = useState<HTMLCanvasElement | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
 
   const generator = useMemo(() => new FrequencyGenerator(), []);
   const supabase = useMemo(() => createSupabaseClient(), []);
@@ -100,6 +102,16 @@ export default function FrequencyCreator() {
       generator.dispose();
     };
   }, [generator]);
+
+  useEffect(() => {
+    setIsIOS(isIOSDevice());
+  }, []);
+
+  useEffect(() => {
+    if (isIOS && includeVideo) {
+      setIncludeVideo(false);
+    }
+  }, [includeVideo, isIOS]);
 
   useEffect(() => {
     let isMounted = true;
@@ -250,10 +262,15 @@ export default function FrequencyCreator() {
       return;
     }
 
-    await generator.initialize();
-    generator.setMasterVolume(volume);
-    setAnalyser(generator.getAnalyser());
-    setIsPlaying(true);
+    try {
+      await generator.initialize();
+      generator.setMasterVolume(volume);
+      setAnalyser(generator.getAnalyser());
+      setIsPlaying(true);
+    } catch (error) {
+      console.error(error);
+      setStatus('Audio could not start. Please tap Play again or check device settings.');
+    }
   };
 
   const handleSave = async () => {
@@ -322,9 +339,14 @@ export default function FrequencyCreator() {
       let videoUrl: string | null = null;
       let thumbnailUrl: string | null = null;
 
+      if (includeVideo && !videoBlob) {
+        setStatus('Video export is unavailable on this device. Saving audio only.');
+      }
+
       if (videoBlob) {
         setStatus('Uploading video...');
-        const videoName = `${activeUserId}/${timestamp}-${slug}.webm`;
+        const videoExtension = videoBlob.type.includes('mp4') ? 'mp4' : 'webm';
+        const videoName = `${activeUserId}/${timestamp}-${slug}.${videoExtension}`;
         const { data: videoData, error: videoError } = await supabase.storage
           .from(VIDEO_BUCKET)
           .upload(videoName, videoBlob, { contentType: videoBlob.type || 'video/webm', upsert: true });
@@ -449,6 +471,12 @@ export default function FrequencyCreator() {
           ) : null}
           <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
             <p className="text-xs uppercase tracking-[0.3em] text-ink/60">Session controls</p>
+            {isIOS ? (
+              <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                iOS tip: Audio starts only after tapping Play and your device must be unmuted. Video export is
+                unavailable on iPhone/iPad.
+              </div>
+            ) : null}
             <div className="mt-4 grid gap-3 text-sm">
               <label className="flex items-center justify-between gap-3">
                 <span>Waveform</span>
@@ -512,6 +540,7 @@ export default function FrequencyCreator() {
                   type="checkbox"
                   checked={includeVideo}
                   onChange={(event) => setIncludeVideo(event.target.checked)}
+                  disabled={isIOS}
                   className="h-4 w-4"
                 />
               </label>

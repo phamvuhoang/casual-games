@@ -17,6 +17,7 @@ export default function CompositionPage() {
   const [composition, setComposition] = useState<Composition | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [isLiking, setIsLiking] = useState(false);
+  const [isCountingPlay, setIsCountingPlay] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [hasLiked, setHasLiked] = useState(false);
 
@@ -159,6 +160,38 @@ export default function CompositionPage() {
     setIsLiking(false);
   };
 
+  const handlePlay = async () => {
+    if (!composition || isCountingPlay) {
+      return;
+    }
+
+    setIsCountingPlay(true);
+    setStatus(null);
+    setComposition((prev) =>
+      prev ? { ...prev, play_count: (prev.play_count ?? 0) + 1 } : prev
+    );
+
+    const { data, error } = await supabase.rpc('increment_play_count', {
+      composition_id: composition.id
+    });
+
+    if (error) {
+      console.warn(error);
+      setStatus(error.message);
+      setComposition((prev) =>
+        prev ? { ...prev, play_count: Math.max(0, (prev.play_count ?? 1) - 1) } : prev
+      );
+      setIsCountingPlay(false);
+      return;
+    }
+
+    if (typeof data === 'number') {
+      setComposition((prev) => (prev ? { ...prev, play_count: data } : prev));
+    }
+
+    setIsCountingPlay(false);
+  };
+
   if (!composition) {
     return <p className="text-sm text-ink/70">{status ?? 'Loading composition...'}</p>;
   }
@@ -171,7 +204,12 @@ export default function CompositionPage() {
         <p className="mt-2 text-sm text-ink/70">{formatFrequencyList(composition.frequencies)}</p>
       </div>
 
-      <AudioPlayer title={composition.title} audioUrl={composition.audio_url} frequencies={composition.frequencies} />
+      <AudioPlayer
+        title={composition.title}
+        audioUrl={composition.audio_url}
+        frequencies={composition.frequencies}
+        onPlay={handlePlay}
+      />
 
       <div className="grid gap-6 md:grid-cols-[1.2fr_0.8fr]">
         <Card className="glass-panel">

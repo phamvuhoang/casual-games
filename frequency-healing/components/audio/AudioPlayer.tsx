@@ -8,9 +8,10 @@ interface AudioPlayerProps {
   title: string;
   audioUrl?: string | null;
   frequencies: number[];
+  onPlay?: () => void;
 }
 
-export default function AudioPlayer({ title, audioUrl, frequencies }: AudioPlayerProps) {
+export default function AudioPlayer({ title, audioUrl, frequencies, onPlay }: AudioPlayerProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -27,7 +28,7 @@ export default function AudioPlayer({ title, audioUrl, frequencies }: AudioPlaye
       {isOpen ? (
         <div className="mt-4">
           {audioUrl ? (
-            <audio controls className="w-full">
+            <audio controls className="w-full" onPlay={onPlay}>
               <source src={audioUrl} />
             </audio>
           ) : (

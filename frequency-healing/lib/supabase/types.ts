@@ -189,7 +189,14 @@ export interface Database {
       };
     };
     Views: {};
-    Functions: {};
+    Functions: {
+      increment_play_count: {
+        Args: {
+          composition_id: string;
+        };
+        Returns: number | null;
+      };
+    };
     Enums: {};
     CompositeTypes: {};
   };

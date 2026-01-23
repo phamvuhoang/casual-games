@@ -12,6 +12,7 @@ import { DEFAULT_EFFECTS } from '@/lib/audio/effects';
 import { createSupabaseClient } from '@/lib/supabase/client';
 import { ensureProfile } from '@/lib/supabase/profile';
 import type { Json } from '@/lib/supabase/types';
+import { captureVideo } from '@/lib/visualization/VideoCapture';
 import {
   AMBIENT_SOUNDS,
   AUDIO_BUCKET,
@@ -19,13 +20,43 @@ import {
   DEFAULT_DURATION,
   MAX_FREQUENCIES,
   PRESET_FREQUENCIES,
+  THUMBNAIL_BUCKET,
   VISUALIZATION_TYPES,
+  VIDEO_BUCKET,
   WAVEFORMS
 } from '@/lib/utils/constants';
 import { createSlug } from '@/lib/utils/helpers';
 
 const DEFAULT_VOLUME = 0.35;
 const DRAFT_KEY = 'frequency-healing:draft';
+const MAX_EXPORT_SECONDS = 120;
+const THUMBNAIL_WIDTH = 640;
+
+async function captureThumbnail(canvas: HTMLCanvasElement) {
+  const sourceWidth = canvas.width || canvas.clientWidth;
+  const sourceHeight = canvas.height || canvas.clientHeight;
+  if (!sourceWidth || !sourceHeight) {
+    return null;
+  }
+
+  const scale = THUMBNAIL_WIDTH / sourceWidth;
+  const targetWidth = THUMBNAIL_WIDTH;
+  const targetHeight = Math.max(1, Math.round(sourceHeight * scale));
+  const output = document.createElement('canvas');
+  output.width = targetWidth;
+  output.height = targetHeight;
+
+  const ctx = output.getContext('2d');
+  if (!ctx) {
+    return null;
+  }
+
+  ctx.drawImage(canvas, 0, 0, targetWidth, targetHeight);
+
+  return new Promise<Blob | null>((resolve) => {
+    output.toBlob((blob) => resolve(blob), 'image/png');
+  });
+}
 
 type DraftState = {
   selectedFrequencies: number[];
@@ -35,6 +66,7 @@ type DraftState = {
   visualizationType: VisualizerType;
   ambientSound: (typeof AMBIENT_SOUNDS)[number];
   audioFormat: (typeof AUDIO_FORMATS)[number];
+  includeVideo: boolean;
   title: string;
   description: string;
   isPublic: boolean;
@@ -49,12 +81,14 @@ export default function FrequencyCreator() {
   const [visualizationType, setVisualizationType] = useState<VisualizerType>('waveform');
   const [ambientSound, setAmbientSound] = useState<(typeof AMBIENT_SOUNDS)[number]>('none');
   const [audioFormat, setAudioFormat] = useState<(typeof AUDIO_FORMATS)[number]>('webm');
+  const [includeVideo, setIncludeVideo] = useState(false);
   const [title, setTitle] = useState('Untitled Session');
   const [description, setDescription] = useState('');
   const [isPublic, setIsPublic] = useState(true);
   const [status, setStatus] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
+  const [visualCanvas, setVisualCanvas] = useState<HTMLCanvasElement | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
 
@@ -124,6 +158,9 @@ export default function FrequencyCreator() {
       if (draft.audioFormat) {
         setAudioFormat(draft.audioFormat);
       }
+      if (typeof draft.includeVideo === 'boolean') {
+        setIncludeVideo(draft.includeVideo);
+      }
       if (draft.title) {
         setTitle(draft.title);
       }
@@ -151,6 +188,7 @@ export default function FrequencyCreator() {
       visualizationType,
       ambientSound,
       audioFormat,
+      includeVideo,
       title,
       description,
       isPublic
@@ -165,6 +203,7 @@ export default function FrequencyCreator() {
     visualizationType,
     ambientSound,
     audioFormat,
+    includeVideo,
     title,
     description,
     isPublic
@@ -248,12 +287,29 @@ export default function FrequencyCreator() {
     }
 
     setIsSaving(true);
-    setStatus('Rendering audio...');
+    setStatus('Preparing your session...');
 
     try {
-      const exportResult = await exportAudio(Math.min(duration, 120), audioFormat);
+      const exportDuration = Math.min(duration, MAX_EXPORT_SECONDS);
+      const canvas = visualCanvas;
+
+      if (includeVideo && !canvas) {
+        setStatus('Video capture is not ready yet. Please try again in a moment.');
+        setIsSaving(false);
+        return;
+      }
+
+      const videoPromise =
+        includeVideo && canvas ? captureVideo(canvas, exportDuration) : Promise.resolve(null);
+      const thumbnailPromise = canvas ? captureThumbnail(canvas) : Promise.resolve(null);
+
+      setStatus(includeVideo ? 'Recording audio and video...' : 'Rendering audio...');
+      const exportResult = await exportAudio(exportDuration, audioFormat);
+      const [videoBlob, thumbnailBlob] = await Promise.all([videoPromise, thumbnailPromise]);
+
       const slug = createSlug(title) || 'session';
-      const fileName = `${activeUserId}/${Date.now()}-${slug}.${exportResult.extension}`;
+      const timestamp = Date.now();
+      const fileName = `${activeUserId}/${timestamp}-${slug}.${exportResult.extension}`;
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from(AUDIO_BUCKET)
         .upload(fileName, exportResult.blob, { contentType: exportResult.mimeType, upsert: true });
@@ -263,6 +319,36 @@ export default function FrequencyCreator() {
       }
 
       const publicUrl = supabase.storage.from(AUDIO_BUCKET).getPublicUrl(uploadData.path).data.publicUrl;
+      let videoUrl: string | null = null;
+      let thumbnailUrl: string | null = null;
+
+      if (videoBlob) {
+        setStatus('Uploading video...');
+        const videoName = `${activeUserId}/${timestamp}-${slug}.webm`;
+        const { data: videoData, error: videoError } = await supabase.storage
+          .from(VIDEO_BUCKET)
+          .upload(videoName, videoBlob, { contentType: videoBlob.type || 'video/webm', upsert: true });
+
+        if (videoError) {
+          throw videoError;
+        }
+
+        videoUrl = supabase.storage.from(VIDEO_BUCKET).getPublicUrl(videoData.path).data.publicUrl;
+      }
+
+      if (thumbnailBlob) {
+        setStatus('Uploading thumbnail...');
+        const thumbName = `${activeUserId}/${timestamp}-${slug}.png`;
+        const { data: thumbData, error: thumbError } = await supabase.storage
+          .from(THUMBNAIL_BUCKET)
+          .upload(thumbName, thumbnailBlob, { contentType: 'image/png', upsert: true });
+
+        if (thumbError) {
+          throw thumbError;
+        }
+
+        thumbnailUrl = supabase.storage.from(THUMBNAIL_BUCKET).getPublicUrl(thumbData.path).data.publicUrl;
+      }
 
       const frequencyVolumes: Json = Object.fromEntries(
         selectedFrequencies.map((hz) => [String(hz), volume])
@@ -293,6 +379,8 @@ export default function FrequencyCreator() {
         visualization_type: visualizationType,
         visualization_config: { palette: 'ember-lagoon' },
         audio_url: publicUrl,
+        video_url: videoUrl,
+        thumbnail_url: thumbnailUrl,
         is_public: isPublic,
         tags: [ambientSound].filter((tag) => tag !== 'none')
       });
@@ -419,6 +507,15 @@ export default function FrequencyCreator() {
                 </select>
               </label>
               <label className="flex items-center justify-between gap-3">
+                <span>Capture video</span>
+                <input
+                  type="checkbox"
+                  checked={includeVideo}
+                  onChange={(event) => setIncludeVideo(event.target.checked)}
+                  className="h-4 w-4"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-3">
                 <span>Duration (sec)</span>
                 <input
                   type="number"
@@ -491,9 +588,14 @@ export default function FrequencyCreator() {
         <div className="space-y-4">
           <h3 className="text-lg font-semibold">Live visualization</h3>
           {visualizationType === 'orbital' ? (
-            <ThreeVisualizer analyser={analyser} isActive={isPlaying} />
+            <ThreeVisualizer analyser={analyser} isActive={isPlaying} onCanvasReady={setVisualCanvas} />
           ) : (
-            <WaveformVisualizer analyser={analyser} type={visualizationType} isActive={isPlaying} />
+            <WaveformVisualizer
+              analyser={analyser}
+              type={visualizationType}
+              isActive={isPlaying}
+              onCanvasReady={setVisualCanvas}
+            />
           )}
           <p className="text-xs text-ink/60">
             Visualization reacts to the master output. Use the waveform selector to explore patterns.

@@ -1,0 +1,165 @@
+# React Psychedelic Spiral
+URL: /background/psychedelic-spiral
+Hypnotic spiral background with WebGL shaders that won't kill performance. Pure shader-based spiral effect for React with TypeScript and shadcn/ui—smooth GPU animations.
+
+<PoweredBy
+  packages={[
+    { name: "React", url: "https://react.dev" },
+    {
+      name: "WebGL",
+      url: "https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API",
+    },
+  ]}
+/>
+
+<br />
+
+Look, we've all tried to build psychedelic spiral backgrounds. You either end up with janky CSS animations that look nothing like proper mathematical spirals or JavaScript calculations that tank your frame rate. This React component uses WebGL fragment shaders that actually run at 60fps without melting your CPU.
+
+### Smooth spiral animation
+
+Mesmerizing mathematical spiral effect that won't destroy your performance metrics:
+
+<Preview path="background/psychedelic-spiral" />
+
+*Inspired by [xxidbr9](https://www.shadertoy.com/user/xxidbr9)*
+
+Built for React applications with TypeScript and Next.js in mind. The animation runs entirely on the GPU using WebGL shaders, so your JavaScript thread stays free for actual logic. Works seamlessly with shadcn/ui design systems.
+
+## Installation
+
+<Installer packageName="psychedelic-spiral" />
+
+## Usage
+
+```tsx
+import { PsychedelicSpiral } from "@/components/ui/psychedelic-spiral";
+
+export default function Hero() {
+  return (
+    <PsychedelicSpiral>
+      <div className="relative z-10">
+        <h1>Your content here</h1>
+      </div>
+    </PsychedelicSpiral>
+  );
+}
+```
+
+## Why most spiral implementations suck
+
+Most developers try to animate spirals with CSS transforms or JavaScript canvas drawing. Bad idea. You're calculating trigonometry on every frame, blocking the main thread, and wondering why your React app feels sluggish. Some use heavy animation libraries, which sounds smart until you realize you're loading megabytes for a background effect.
+
+This React component uses mathematical fragment shaders with WebGL. The GPU handles everything. No JavaScript calculations, no frame drops, just smooth 60fps spiral mathematics. The colors use hex values that sync automatically with your Tailwind theme, so customization just works.
+
+## Features
+
+- **Zero JavaScript animation overhead** - Pure WebGL shaders run on GPU
+- **Mathematical spiral generation** with authentic trigonometric calculations
+- **TypeScript definitions** for proper IDE support in React projects
+- **Three-color system** with customizable hex colors and dynamic blending
+- **Customizable parameters** with 12+ props for complete control
+- **Performance optimization** through efficient shader rendering
+- **shadcn/ui compatible** for consistent design systems
+- **Responsive design** with automatic canvas resizing
+
+## API Reference
+
+### PsychedelicSpiral
+
+Main container component for the spiral effect.
+
+| Prop               | Type                             | Default      | Description                               |
+| ------------------ | -------------------------------- | ------------ | ----------------------------------------- |
+| `spinRotation`     | `number`                         | `-2.0`       | Base spiral rotation speed (-10 to 10)    |
+| `spinSpeed`        | `number`                         | `7.0`        | Animation speed multiplier (0.1 to 20)    |
+| `offset`           | `[number, number]`               | `[0.0, 0.0]` | Pattern center offset (-1 to 1 each axis) |
+| `color1`           | `string`                         | `"#DE443B"`  | Primary spiral color (hex format)         |
+| `color2`           | `string`                         | `"#006BB4"`  | Secondary spiral color (hex format)       |
+| `color3`           | `string`                         | `"#162325"`  | Accent/highlight color (hex format)       |
+| `contrast`         | `number`                         | `3.5`        | Pattern contrast intensity (1 to 10)      |
+| `lighting`         | `number`                         | `0.4`        | Overall brightness level (0 to 2)         |
+| `spinAmount`       | `number`                         | `0.25`       | Spiral compression factor (0 to 1)        |
+| `pixelFilter`      | `number`                         | `745.0`      | Render resolution filter (100 to 2000)    |
+| `spinEase`         | `number`                         | `1.0`        | Spiral flow characteristics (0.1 to 5)    |
+| `isRotate`         | `boolean`                        | `false`      | Enable continuous animation               |
+| `mouseInteraction` | `boolean`                        | `true`       | Enable mouse-based distortion             |
+| `className`        | `string`                         | -            | Additional Tailwind CSS classes           |
+| `...props`         | `HTMLAttributes<HTMLDivElement>` | -            | All standard div props                    |
+
+## Common gotchas
+
+**Animation not working**: WebGL might not be supported in the browser. The component logs warnings when WebGL initialization fails. Check browser compatibility.
+
+**Performance issues on mobile**: Some older phones struggle with complex shaders. Consider reducing the pixelFilter prop (try 400-500) or disabling animation on mobile devices.
+
+**Colors look wrong**: The component uses hex color format only. RGB or HSL values need conversion to hex before passing to props.
+
+**Pattern looks pixelated**: Lower pixelFilter values create intentional pixelation effects. Increase the pixelFilter prop (try 800-1200) for smoother patterns.
+
+**Spiral appears static**: Make sure `isRotate` is set to `true` for animated spirals. Check that `spinSpeed` is not set to 0.
+
+## You might also like
+
+Explore other animated background components for React applications:
+
+<Cards>
+  <Card
+    href="/background/aurora"
+    title="Aurora"
+    description="Northern lights effects with smooth CSS animations"
+  />
+  <Card
+    href="/background/balatro-background"
+    title="Balatro Background"
+    description="Hypnotic spiral patterns with WebGL shaders"
+  />
+  <Card
+    href="/background/plasma-background"
+    title="Plasma Background"
+    description="Organic plasma effects with fluid WebGL animations"
+  />
+  <Card
+    href="/background/vortex"
+    title="Vortex"
+    description="Swirling particle effects that create mesmerizing depth"
+  />
+  <Card
+    href="/background/meteors"
+    title="Meteors"
+    description="Falling star animations perfect for space themes"
+  />
+  <Card
+    href="/background/waves"
+    title="Waves"
+    description="Fluid wave animations for ocean and water themes"
+  />
+</Cards>
+
+## Questions developers actually ask
+
+<Accordions type="single">
+  <Accordion id="custom-colors" title="How do I change the spiral colors?">
+    Pass hex color strings to `color1`, `color2`, and `color3` props. The component handles color conversion automatically. Example: `color1="#FF0080"`.
+  </Accordion>
+
+  <Accordion id="animation-speed" title="Can I make it faster or slower?">
+    Adjust the `spinSpeed` prop. Higher values create faster animation, lower values slow it down. For static spirals, set `isRotate={false}`.
+  </Accordion>
+
+  <Accordion id="spiral-direction" title="How do I change spiral direction?">
+    Use positive `spinRotation` values for clockwise spirals, negative for counter-clockwise. The `spinAmount` prop controls how compressed the spiral appears.
+  </Accordion>
+
+  <Accordion id="mobile-performance" title="How do I optimize for mobile?">
+    Reduce the `pixelFilter` prop to 400-500, lower `contrast` to 2-3, and consider disabling `mouseInteraction` on touch devices for better performance.
+  </Accordion>
+
+  <Accordion id="psychedelic-colors" title="How do I make it more psychedelic?">
+    Use vibrant, contrasting colors like `color1="#FF00FF"`, `color2="#00FFFF"`, `color3="#FFFF00"`. Increase `contrast` to 5-7 for more intense effects.
+  </Accordion>
+
+  <Accordion id="static-version" title="How do I make a static version?">
+    Set `isRotate={false}` and `spinSpeed={0}`. The spiral becomes a static mathematical pattern while maintaining the visual complexity.
+  </Accordion>
+</Accordions>

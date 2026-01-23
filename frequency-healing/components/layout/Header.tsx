@@ -14,6 +14,7 @@ const links = [
 export default function Header() {
   const pathname = usePathname();
   const [email, setEmail] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const supabase = createSupabaseClient();
 
   useEffect(() => {
@@ -39,6 +40,10 @@ export default function Header() {
       subscription.subscription.unsubscribe();
     };
   }, [supabase]);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -68,6 +73,14 @@ export default function Header() {
           ))}
         </nav>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setMenuOpen((prev) => !prev)}
+            className="rounded-full border border-ink/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-ink/70 md:hidden"
+            aria-expanded={menuOpen}
+            aria-label="Toggle navigation"
+          >
+            Menu
+          </button>
           {email ? (
             <div className="hidden rounded-full bg-white/80 px-4 py-2 text-xs text-ink/70 md:block">
               {email}
@@ -84,6 +97,23 @@ export default function Header() {
           )}
         </div>
       </div>
+      {menuOpen ? (
+        <div className="border-t border-ink/10 bg-white/90 md:hidden">
+          <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-6 py-4 text-sm text-ink/70">
+            {links.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`rounded-2xl border border-ink/10 px-4 py-3 transition ${
+                  pathname === link.href ? 'bg-white text-ink' : 'bg-white/70 hover:text-ink'
+                }`}
+              >
+                {link.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </header>
   );
 }

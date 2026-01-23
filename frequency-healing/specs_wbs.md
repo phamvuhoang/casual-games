@@ -17,22 +17,22 @@
 - done: Canvas visualization engine with waveform, particles, and mandala renderers.
 - done: Audio-reactive updates via analyser node and live rendering.
 - done: Video capture helper for canvas stream recording.
-- todo: Integrate video capture into the save/share workflow and store video URLs.
+- done: Video capture integrated into save flow with optional upload and stored video URLs.
 - done: Optional Three.js orbital scene for advanced visuals.
 
 ## Phase 4 - Creator Workflow
 - done: Creator page with title/description, waveform, visualization selection, volume, duration, and public toggle.
 - done: Live play/stop control wired to Tone.js and visualization canvas.
 - done: Save flow uploads audio to Supabase storage and inserts composition metadata.
-- todo: Add validation/error states for missing buckets or upload failures with clearer UI feedback.
-- todo: Generate and upload thumbnails for saved compositions.
+- done: Validation/error states for missing buckets or upload failures with clearer UI feedback.
+- done: Thumbnails captured from visuals and uploaded on save.
 
 ## Phase 5 - Discovery and Sharing
 - done: Discover page lists public compositions and links to composition detail pages.
 - done: Composition detail page with audio playback, metadata display, and like action.
 - done: Public share URL via `/composition/[id]`.
 - todo: Add pagination, popular sorting, and tag filtering to discovery feed.
-- todo: Add unlike/like state handling and prevent duplicate likes gracefully.
+- done: Like/unlike state handling with optimistic count updates.
 
 ## Phase 6 - Profiles and Social
 - done: Profile page fetches a user and lists their compositions.
@@ -44,7 +44,7 @@
 ## Phase 7 - API and Backend Enhancements
 - done: Webhook route scaffolded for future integrations.
 - todo: Add server-side APIs or edge functions for heavy processing (optional).
-- todo: Supabase storage buckets setup (audio/video/thumbnail) and optional RLS policies for storage.
+- done: Supabase storage buckets + RLS policy migration added for audio/video/thumbnail storage.
 
 ## Phase 8 - Polish, QA, and Launch
 - done: Responsive layout baseline across main pages.

@@ -1,0 +1,188 @@
+# Ethereal Shadow Background
+URL: /background/etheral-shadow
+React atmospheric shadow background with breathing fog effects. Cinematic SVG filters and noise textures with TypeScript and shadcn/ui.
+
+<PoweredBy
+  packages={[
+    { name: "Framer Motion", url: "https://www.framer.com/motion/" },
+    { name: "React", url: "https://reactjs.org/" },
+  ]}
+/>
+
+<br />
+
+Ever wanted your background to feel alive? Like it's breathing, shifting, casting shadows that dance on their own? This React component creates ethereal shadow effects that distort and animate using advanced SVG filters. It's not just a static overlay—it's fog rolling through your interface.
+
+### Atmospheric distortion effect
+
+Watch shadows breathe and distort with SVG turbulence filters:
+
+<Preview path="background/ethereal-shadow" />
+
+Built for React applications with TypeScript and Next.js. The distortion uses SVG `feTurbulence` and `feDisplacementMap` filters to create realistic shadow movement. Add noise texture for extra atmosphere, or keep it clean—your shadows, your vibe.
+
+## Installation
+
+<Installer packageName="ethereal-shadow" />
+
+## Usage
+
+```tsx
+import { EtherealShadow } from "@/components/ui/ethereal-shadow";
+
+export default function Hero() {
+  return (
+    <EtherealShadow
+      color="rgba(100, 50, 200, 0.8)"
+      animation={{ scale: 50, speed: 30 }}
+      noise={{ opacity: 0.3, scale: 2 }}
+    >
+      <div className="text-white p-8">
+        <h1>Your content floats above the shadows</h1>
+      </div>
+    </EtherealShadow>
+  );
+}
+```
+
+## Why most shadow effects look fake
+
+Most developers add `box-shadow` or overlay divs with opacity. Static, lifeless, predictable. Some try CSS animations with transforms, but it's just shapes sliding around. Real shadows distort, breathe, and respond to light sources.
+
+This React component uses SVG displacement mapping—the same technique used in video games and film. The `feTurbulence` filter generates organic noise, while `feDisplacementMap` uses that noise to distort the shadow. Add Framer Motion for smooth animation loops, and suddenly your shadows feel atmospheric instead of artificial.
+
+## Features
+
+- **SVG displacement mapping** for realistic shadow distortion
+- **Organic turbulence filters** creating natural movement patterns
+- **Configurable animation intensity** from subtle to dramatic
+- **Optional noise texture overlay** adding cinematic grain
+- **TypeScript definitions** for all animation and color props
+- **RGBA color support** with full transparency control
+- **Hardware-accelerated animations** via Framer Motion
+- **shadcn/ui compatible** with proper z-index layering
+
+## API Reference
+
+### EtherealShadow
+
+Main container component for the atmospheric shadow effect.
+
+| Prop        | Type                  | Default                    | Description                                |
+| ----------- | --------------------- | -------------------------- | ------------------------------------------ |
+| `color`     | `string`              | `"rgba(128, 128, 128, 1)"` | Shadow color in RGBA format                |
+| `sizing`    | `"fill" \| "stretch"` | `"fill"`                   | How the shadow mask fills the container    |
+| `animation` | `AnimationConfig`     | -                          | Animation intensity and speed settings     |
+| `noise`     | `NoiseConfig`         | -                          | Noise texture overlay configuration        |
+| `className` | `string`              | -                          | Additional Tailwind CSS classes            |
+| `children`  | `ReactNode`           | -                          | Content to display above the shadow effect |
+
+### Animation Configuration
+
+```tsx
+type AnimationConfig = {
+  scale: number; // Intensity (1-100, higher = more distortion)
+  speed: number; // Speed (1-100, higher = faster movement)
+};
+```
+
+### Noise Configuration
+
+```tsx
+type NoiseConfig = {
+  opacity: number; // Texture visibility (0-1)
+  scale: number; // Texture density multiplier
+};
+```
+
+## Common gotchas
+
+**Performance with complex filters**: SVG displacement mapping is GPU-intensive. High scale values (80+) might lag on weak devices. Start with scale: 30, speed: 20 and adjust up.
+
+**Color format requirements**: Must use RGBA strings like `"rgba(255, 0, 0, 0.5)"`, not hex or named colors. The component needs alpha channel control for proper blending.
+
+**Z-index content layering**: Your content needs to float above the shadow. The component handles this automatically, but custom positioning might interfere.
+
+**Animation memory leaks**: The component cleans up automatically, but rapidly mounting/unmounting can cause issues. Use stable component keys when possible.
+
+**Mobile performance**: Turbulence filters can be slow on older phones. Consider reducing animation scale or disabling on low-end devices with `window.matchMedia`.
+
+## You might also like
+
+Explore other atmospheric background components for React applications:
+
+<Cards>
+  <Card
+    href="/background/vortex"
+    title="Vortex"
+    description="Swirling particle effects that create mesmerizing depth"
+  />
+  <Card
+    href="/background/noise"
+    title="Noise"
+    description="Organic texture patterns with customizable grain effects"
+  />
+  <Card
+    href="/background/waves"
+    title="Waves"
+    description="Fluid wave animations with natural motion"
+  />
+  <Card
+    href="/background/aurora"
+    title="Aurora"
+    description="Northern lights effect with smooth gradient animations"
+  />
+  <Card
+    href="/background/bubble"
+    title="Bubble Background"
+    description="Floating bubbles that merge with liquid physics"
+  />
+  <Card
+    href="/background/gradient-animation"
+    title="Gradient Animation"
+    description="Smooth color transitions that flow across surfaces"
+  />
+</Cards>
+
+## Questions developers actually ask
+
+<Accordions type="single">
+  <Accordion id="animation-parameters" title="How do I tune the animation settings?">
+    Start with scale: 30, speed: 20 for subtle movement. Higher scale = more distortion, higher speed = faster animation. Values over 80 might impact performance.
+  </Accordion>
+
+{" "}
+<Accordion
+  id="custom-colors"
+  title="Can I use gradients instead of solid colors?"
+>
+  The component expects RGBA colors. For gradients, layer multiple
+  EtherealShadow components with different colors and opacities. Position them
+  with absolute positioning.
+</Accordion>
+
+{" "}
+<Accordion id="disable-noise" title="How do I turn off the noise texture?">
+  Don't pass the `noise` prop, or set `noise={{ opacity: 0 }}`. The texture is
+  optional and only appears when configured. Clean shadows without grain can
+  look more modern.
+</Accordion>
+
+{" "}
+<Accordion id="performance-optimization" title="Why is it laggy on my device?">
+  SVG filters are hardware-intensive. Reduce animation scale below 50, or
+  disable on mobile with `window.matchMedia('(max-width: 768px)')`. Consider
+  using `prefers-reduced-motion` for accessibility.
+</Accordion>
+
+{" "}
+<Accordion id="static-version" title="Can I make it static without animation?">
+  Remove the `animation` prop entirely. The shadow will still have the distorted
+  SVG filter effect but won't animate. Good for screenshots or reduced-motion
+  preferences.
+</Accordion>
+
+  <Accordion id="multiple-shadows" title="How do I layer multiple shadow effects?">
+    Use multiple components with different colors and positions. Set different z-index values and play with opacity blending. Each component is self-contained.
+  </Accordion>
+</Accordions>

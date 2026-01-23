@@ -17,6 +17,8 @@ export default function CompositionPage() {
   const [composition, setComposition] = useState<Composition | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [isLiking, setIsLiking] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [hasLiked, setHasLiked] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -45,22 +47,103 @@ export default function CompositionPage() {
     };
   }, [id, supabase]);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadUser = async () => {
+      const { data } = await supabase.auth.getUser();
+      if (isMounted) {
+        setUserId(data.user?.id ?? null);
+      }
+    };
+
+    loadUser();
+
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (isMounted) {
+        setUserId(session?.user?.id ?? null);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.subscription.unsubscribe();
+    };
+  }, [supabase]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadLikeState = async () => {
+      if (!userId || !id) {
+        setHasLiked(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('composition_likes')
+        .select('id')
+        .eq('composition_id', id)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (error) {
+        console.warn(error);
+        setHasLiked(false);
+        return;
+      }
+
+      setHasLiked(Boolean(data?.id));
+    };
+
+    loadLikeState();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [id, supabase, userId]);
+
   const handleLike = async () => {
     if (!composition || isLiking) {
       return;
     }
 
     setIsLiking(true);
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData.user) {
+    setStatus(null);
+    if (!userId) {
       setStatus('Sign in to like compositions.');
+      setIsLiking(false);
+      return;
+    }
+
+    if (hasLiked) {
+      const { error } = await supabase
+        .from('composition_likes')
+        .delete()
+        .eq('composition_id', composition.id)
+        .eq('user_id', userId);
+
+      if (error) {
+        setStatus(error.message);
+        setIsLiking(false);
+        return;
+      }
+
+      const nextLikeCount = Math.max(0, (composition.like_count ?? 0) - 1);
+      setComposition({ ...composition, like_count: nextLikeCount });
+      setHasLiked(false);
+      await supabase.from('compositions').update({ like_count: nextLikeCount }).eq('id', composition.id);
       setIsLiking(false);
       return;
     }
 
     const { error } = await supabase.from('composition_likes').insert({
       composition_id: composition.id,
-      user_id: userData.user.id
+      user_id: userId
     });
 
     if (error) {
@@ -71,6 +154,7 @@ export default function CompositionPage() {
 
     const nextLikeCount = (composition.like_count ?? 0) + 1;
     setComposition({ ...composition, like_count: nextLikeCount });
+    setHasLiked(true);
     await supabase.from('compositions').update({ like_count: nextLikeCount }).eq('id', composition.id);
     setIsLiking(false);
   };
@@ -109,7 +193,7 @@ export default function CompositionPage() {
             {composition.like_count ?? 0} likes - {composition.play_count ?? 0} plays
           </p>
           <Button onClick={handleLike} disabled={isLiking} className="mt-4">
-            {isLiking ? 'Liking...' : 'Send appreciation'}
+            {isLiking ? 'Updating...' : hasLiked ? 'Remove appreciation' : 'Send appreciation'}
           </Button>
           {status ? <p className="mt-3 text-sm text-rose-500">{status}</p> : null}
         </Card>

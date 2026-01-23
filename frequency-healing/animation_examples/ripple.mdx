@@ -1,0 +1,242 @@
+# React Ripple Background
+URL: /background/ripple
+React ripple background with concentric circle animations. CSS transforms create water drop effects with pulsing timing, TypeScript, and shadcn/ui.
+
+<PoweredBy
+  packages={[
+    { name: "React", url: "https://react.dev" },
+    {
+      name: "CSS Animations",
+      url: "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Animations",
+    },
+    {
+      name: "CSS Transforms",
+      url: "https://developer.mozilla.org/en-US/docs/Web/CSS/transform",
+    },
+  ]}
+/>
+
+<br />
+
+User attention is precious. Finite. Most interfaces scream for it with garish colors and aggressive animations. But what if you could guide focus naturally? Like ripples spreading across water when you drop a stone? This React component creates concentric circles that pulse gently outward, drawing the eye without demanding it.
+
+### Organic attention effects
+
+Watch concentric circles pulse with staggered timing for natural focus guidance:
+
+<Preview path="background/ripple" />
+
+Built for React applications with TypeScript and Next.js. Uses CSS transforms with staggered animation delays to create wave-like propagation. Each circle pulses from 90% to 100% scale with progressive opacity fading. Perfect for call-to-action buttons, feature highlights, or any element that needs gentle emphasis.
+
+## Installation
+
+<Installer packageName="ripple" />
+
+## Usage
+
+```tsx
+import { Ripple } from "@/components/ui/ripple";
+
+export default function CallToAction() {
+  return (
+    <div className="relative">
+      {/* Your button or content */}
+      <button className="relative z-10 px-8 py-4 bg-blue-600 text-white rounded-lg">
+        Get Started
+      </button>
+      
+      {/* Ripple attention effect */}
+      <Ripple 
+        mainCircleSize={200}
+        mainCircleOpacity={0.2}
+        numCircles={6}
+      />
+    </div>
+  );
+}
+```
+
+## Required CSS Animation
+
+**Important**: Add this CSS animation to your global styles for ripples to work:
+
+```css
+@keyframes ripple {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+}
+
+.animate-ripple {
+  animation: ripple var(--duration, 2s) ease calc(var(--i, 0) * 0.2s) infinite;
+}
+```
+
+## Why most attention effects look aggressive
+
+Most developers use CSS `pulse` animations that scale from 0 to 100%—jarring, attention-demanding, obviously artificial. Others try JavaScript libraries with complex easing functions that feel bouncy and distracting. Some use solid colors that create harsh visual contrast.
+
+This React component uses subtle scale transforms (90% to 100%) that breathe naturally. Staggered delays create wave propagation like real ripples. Progressive opacity fading makes outer circles almost invisible. CSS custom properties allow fine timing control. It's the difference between gentle guidance and visual shouting.
+
+## Features
+
+- **Concentric circle system** with customizable count and progressive opacity fading
+- **Staggered animation timing** creating natural wave propagation with 0.2s delays
+- **Subtle scale transforms** pulsing between 90-100% for gentle, non-intrusive emphasis
+- **CSS custom property timing** allowing duration control via `--duration` variable
+- **Progressive opacity reduction** making outer circles fade naturally for depth effect
+- **Responsive sizing system** adapting circle dimensions to container and content
+- **Pure CSS animations** providing smooth 60fps performance without JavaScript overhead
+- **TypeScript definitions** for all visual and timing customization parameters
+- **Accessibility optimized** with non-distracting animations that don't interfere with content
+- **shadcn/ui compatible** with theme-aware styling and proper layering support
+
+
+## Examples
+
+### Custom Configuration
+
+Adjust circle count, size, and opacity for different emphasis levels:
+
+<Preview path="background/ripple-custom" />
+
+### Card Layouts
+
+Subtle ripples enhance content cards without overwhelming the design:
+
+<Preview path="background/ripple-cards" />
+
+
+## API Reference
+
+### Ripple
+
+Main component for concentric circle attention and focus effects.
+
+| Prop                | Type     | Default | Description                                               |
+| ------------------- | -------- | ------- | --------------------------------------------------------- |
+| `mainCircleSize`    | `number` | `210`   | Diameter of the main circle in pixels (100-400 recommended) |
+| `mainCircleOpacity` | `number` | `0.24`  | Opacity of innermost circle (others fade progressively)  |
+| `numCircles`        | `number` | `8`     | Number of concentric circles (3-12 optimal range)        |
+| `className`         | `string` | -       | Additional CSS classes for container styling              |
+
+### Animation Timing System
+
+Each circle animates with carefully calculated delays:
+
+```tsx
+// Circle delays create wave propagation
+Circle 1: 0s delay      (center, most visible)
+Circle 2: 0.2s delay
+Circle 3: 0.4s delay
+Circle 4: 0.6s delay    (outer circles fade to nearly invisible)
+...
+```
+
+### Ripple Intensity Guidelines
+
+```tsx
+// Subtle background emphasis
+mainCircleSize={150} mainCircleOpacity={0.1} numCircles={4}
+
+// Moderate attention drawing
+mainCircleSize={200} mainCircleOpacity={0.2} numCircles={6}
+
+// Strong focus effect
+mainCircleSize={250} mainCircleOpacity={0.3} numCircles={8}
+
+// Maximum emphasis (use sparingly)
+mainCircleSize={300} mainCircleOpacity={0.4} numCircles={10}
+```
+
+### CSS Custom Properties
+
+```css
+/* Adjust animation timing globally */
+.animate-ripple {
+  --duration: 3s; /* Slower, more meditative */
+  --duration: 1s; /* Faster, more energetic */
+}
+```
+
+## Common gotchas
+
+**Missing CSS animation**: The component won't animate without the required `@keyframes ripple` in your global styles. Circles will appear static without this crucial animation.
+
+**Overflow container required**: Ripples extend beyond their container bounds. Always use `overflow-hidden` on the parent element to prevent layout issues and unwanted scrollbars.
+
+**Z-index layering conflicts**: Ripples appear behind content by default. If your content disappears, ensure it has `relative z-10` or higher positioning.
+
+**Performance with many circles**: Each circle is an animated element. Very high `numCircles` values (15+) might impact performance on older devices. 8 circles is the optimal balance.
+
+**Animation timing accumulation**: Multiple ripples on the same page all animate simultaneously. Consider staggering component mounting or using different durations to avoid synchronized pulsing.
+
+**Accessibility considerations**: While subtle, ripples are still motion effects. Consider respecting `prefers-reduced-motion` for users with motion sensitivity.
+
+## You might also like
+
+Explore other attention and emphasis background components for React applications:
+
+<Cards>
+  <Card
+    href="/background/spotlight"
+    title="Spotlight"
+    description="Interactive spotlight effects that follow cursor movement"
+  />
+  <Card
+    href="/background/pulse"
+    title="Pulse"
+    description="Simple pulsing animations for buttons and call-to-actions"
+  />
+  <Card
+    href="/background/glow"
+    title="Glow"
+    description="Soft glow effects that add premium feel to elements"
+  />
+  <Card
+    href="/background/particles"
+    title="Particles"
+    description="Interactive particle systems with physics-based movement"
+  />
+  <Card
+    href="/background/gradient-animation"
+    title="Gradient Animation"
+    description="Flowing orb gradients with color mixing and movement"
+  />
+  <Card
+    href="/background/sparkles"
+    title="Sparkles"
+    description="Magical sparkle effects with random positioning patterns"
+  />
+</Cards>
+
+## Questions developers actually ask
+
+<Accordions type="single">
+  <Accordion id="css-setup" title="Why aren't my ripples animating?">
+    The component requires CSS keyframes in your global styles. Add the `@keyframes ripple` animation and `.animate-ripple` class to your CSS file. Without this, circles appear static.
+  </Accordion>
+
+  <Accordion id="timing-control" title="How do I change the animation speed?">
+    Use the CSS custom property `--duration` to control timing: `.animate-ripple { --duration: 3s; }` for slower, or `--duration: 1s` for faster pulsing.
+  </Accordion>
+
+  <Accordion id="color-customization" title="Can I change ripple colors or make them more visible?">
+    Ripples inherit border colors from your theme. Override with CSS: `.ripple-circle { border-color: #your-color; }` or increase `mainCircleOpacity` for more visibility.
+  </Accordion>
+
+  <Accordion id="optimal-settings" title="What are the best settings for different use cases?">
+    Buttons: size=180, opacity=0.2, circles=5. Cards: size=120, opacity=0.15, circles=4. Hero sections: size=300, opacity=0.3, circles=8. Adjust based on your design needs.
+  </Accordion>
+
+  <Accordion id="multiple-ripples" title="Can I use multiple ripples on the same page?">
+    Yes, but they'll all pulse in sync. For varied timing, consider adding CSS delays or using different `--duration` values for each ripple instance.
+  </Accordion>
+
+  <Accordion id="performance-optimization" title="How do I optimize performance with many ripples?">
+    Reduce `numCircles` to 4-6, use lower `mainCircleOpacity` values (0.1-0.2), and consider disabling ripples on mobile devices if battery life is a concern.
+  </Accordion>
+</Accordions>

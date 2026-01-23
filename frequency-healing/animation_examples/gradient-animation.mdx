@@ -1,0 +1,207 @@
+# Gradient Animation Background
+URL: /background/gradient-animation
+React animated gradient background with flowing orbs and mouse tracking. CSS blend modes create aurora-like effects with TypeScript and shadcn/ui.
+
+<PoweredBy
+  packages={[
+    { name: "React", url: "https://react.dev" },
+    {
+      name: "CSS Animations",
+      url: "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Animations",
+    },
+  ]}
+/>
+
+<br />
+
+Static gradients are everywhere. CSS linear-gradient this, radial-gradient that. Boring. What if your gradients could move, breathe, respond to your cursor? This React component creates five animated orbs that float around your background, blending colors like paint drops in water, with an extra orb that follows your mouse.
+
+### Dynamic flowing gradients
+
+Watch orbs dance with independent movement and mouse interaction:
+
+<Preview path="background/gradient-animation" />
+
+Built for React applications with TypeScript and Next.js. The orbs use CSS animations with different timing cycles (20-40 seconds), creating organic movement that never repeats exactly. Blend modes make colors interact naturally, and mouse tracking adds that interactive spark.
+
+## Installation
+
+<Installer packageName="background-gradient-animation" />
+
+## Usage
+
+```tsx
+import { BackgroundGradientAnimation } from "@/components/ui/background-gradient-animation";
+
+export default function Hero() {
+  return (
+    <BackgroundGradientAnimation
+      gradientBackgroundStart="rgb(108, 0, 162)"
+      gradientBackgroundEnd="rgb(0, 17, 82)"
+      firstColor="18, 113, 255"
+      secondColor="221, 74, 255"
+      thirdColor="100, 220, 255"
+      fourthColor="200, 50, 50"
+      fifthColor="180, 180, 50"
+      pointerColor="140, 100, 255"
+      blendingValue="hard-light"
+      interactive={true}
+    >
+      <div className="absolute z-50 inset-0 flex items-center justify-center text-white font-bold px-4 pointer-events-none text-3xl text-center md:text-4xl lg:text-7xl">
+        <p className="bg-clip-text text-transparent drop-shadow-2xl bg-gradient-to-b from-white/80 to-white/20">
+          Gradients in Motion
+        </p>
+      </div>
+    </BackgroundGradientAnimation>
+  );
+}
+```
+
+## Why most gradient animations look cheap
+
+Most developers use keyframe animations to shift background-position or hue-rotate. It looks artificial—too smooth, too predictable. Some try JavaScript to animate gradient stops, but that's performance hell. Real organic movement has layers, depth, and unpredictable interactions.
+
+This React component creates depth with five independent orbs, each following different animation paths. CSS blend modes (hard-light, screen, overlay) make colors interact like real light mixing. The mouse-following orb adds interactivity without being distracting. No canvas, no complex calculations—just smart CSS and React working together.
+
+## Features
+
+- **Five independent animated orbs** with 20-40 second movement cycles
+- **Interactive mouse tracking** with smooth cursor-following orb
+- **CSS blend modes** creating natural color mixing (hard-light, screen, overlay, multiply, color-dodge)
+- **Customizable color system** supporting full RGB control for all elements
+- **Safari optimizations** with SVG filter fallbacks for cross-browser support
+- **TypeScript definitions** for all props and color configurations
+- **Performance optimized** using pure CSS animations
+- **shadcn/ui compatible** with proper content layering
+
+## API Reference
+
+### BackgroundGradientAnimation
+
+Main container component for the gradient animation effect.
+
+| Prop                      | Type        | Default              | Description                                  |
+| ------------------------- | ----------- | -------------------- | -------------------------------------------- |
+| `gradientBackgroundStart` | `string`    | `"rgb(108, 0, 162)"` | Starting color of background gradient        |
+| `gradientBackgroundEnd`   | `string`    | `"rgb(0, 17, 82)"`   | Ending color of background gradient          |
+| `firstColor`              | `string`    | `"18, 113, 255"`     | RGB values for first orb (no rgb() wrapper)  |
+| `secondColor`             | `string`    | `"221, 74, 255"`     | RGB values for second orb (no rgb() wrapper) |
+| `thirdColor`              | `string`    | `"100, 220, 255"`    | RGB values for third orb (no rgb() wrapper)  |
+| `fourthColor`             | `string`    | `"200, 50, 50"`      | RGB values for fourth orb (no rgb() wrapper) |
+| `fifthColor`              | `string`    | `"180, 180, 50"`     | RGB values for fifth orb (no rgb() wrapper)  |
+| `pointerColor`            | `string`    | `"140, 100, 255"`    | RGB values for mouse-tracking orb            |
+| `size`                    | `string`    | `"80%"`              | Size of the animated orbs                    |
+| `blendingValue`           | `string`    | `"hard-light"`       | CSS mix-blend-mode for color mixing          |
+| `interactive`             | `boolean`   | `true`               | Enable mouse tracking for pointer orb        |
+| `children`                | `ReactNode` | -                    | Content to display over the animation        |
+| `className`               | `string`    | -                    | Additional CSS classes for content wrapper   |
+| `containerClassName`      | `string`    | -                    | Additional CSS classes for main container    |
+
+### Color Format
+
+```tsx
+// Orb colors: RGB values without rgb() wrapper
+firstColor = "255, 0, 128"; // Pink
+secondColor = "0, 255, 128"; // Green
+
+// Background colors: Full CSS color values
+gradientBackgroundStart = "rgb(45, 212, 191)";
+gradientBackgroundEnd = "hsl(240, 100%, 20%)";
+```
+
+### Available Blend Modes
+
+- `hard-light` (default) - Strong color mixing
+- `screen` - Bright, luminous effect
+- `overlay` - Balanced color blending
+- `multiply` - Darker color mixing
+- `color-dodge` - Intense bright highlights
+
+## Common gotchas
+
+**Color format confusion**: Orb colors need RGB values without the `rgb()` wrapper ("255, 0, 128"), but background gradients use full CSS color syntax ("rgb(255, 0, 128)").
+
+**Z-index layering**: Your content needs `absolute z-50` or higher to appear above the animation. The orbs use lower z-index values for proper layering.
+
+**Performance with many props**: Each color change triggers a re-render. For dynamic color changing, consider using CSS variables instead of props.
+
+**Blend mode browser support**: Most blend modes work everywhere, but `color-dodge` might not work in very old browsers. `hard-light` is the safest default.
+
+**Mouse tracking on mobile**: Touch devices don't have hover, so the interactive orb won't track touches. The other orbs still animate normally.
+
+## You might also like
+
+Explore other flowing background components for React applications:
+
+<Cards>
+  <Card
+    href="/background/aurora"
+    title="Aurora"
+    description="Northern lights effect with smooth gradient animations"
+  />
+  <Card
+    href="/background/vortex"
+    title="Vortex"
+    description="Swirling particle effects that create mesmerizing depth"
+  />
+  <Card
+    href="/background/waves"
+    title="Waves"
+    description="Fluid wave animations for ocean and water themes"
+  />
+  <Card
+    href="/background/bubble"
+    title="Bubble Background"
+    description="Floating bubbles that merge with liquid physics"
+  />
+  <Card
+    href="/background/ethereal-shadow"
+    title="Ethereal Shadow"
+    description="Atmospheric shadows that breathe and distort"
+  />
+  <Card
+    href="/background/noise"
+    title="Noise"
+    description="Organic texture patterns with customizable grain"
+  />
+</Cards>
+
+## Questions developers actually ask
+
+<Accordions type="single">
+  <Accordion id="color-customization" title="How do I create a custom color scheme?">
+    Each orb takes RGB values like `firstColor="255, 100, 50"` (no rgb() wrapper). The background gradients use full CSS colors. Change all five orb colors and both background colors to match your brand.
+  </Accordion>
+
+{" "}
+<Accordion id="blend-modes" title="What blend mode should I use?">
+  `hard-light` (default) gives strong mixing, `screen` is bright and luminous,
+  `overlay` is balanced. Try different modes to see what fits your colors.
+  `multiply` darkens, `color-dodge` creates intense highlights.
+</Accordion>
+
+{" "}
+<Accordion id="disable-mouse" title="Can I disable the mouse tracking?">
+  Set `interactive={false}` to remove the cursor-following orb. The other five
+  orbs will continue their independent animations. Good for reducing
+  distractions or mobile-first designs.
+</Accordion>
+
+{" "}
+<Accordion id="animation-speed" title="How do I change the animation speed?">
+  The speeds are hardcoded (20-40 second cycles). To change them, you'd need to
+  modify the CSS animations in the component. Faster than 15 seconds starts
+  looking frantic.
+</Accordion>
+
+{" "}
+<Accordion id="orb-count" title="Can I add more orbs or remove some?">
+  The component is designed for five orbs plus the interactive one. To add more,
+  you'd need to duplicate the orb elements and add new color props. Removing
+  orbs requires modifying the component structure.
+</Accordion>
+
+  <Accordion id="static-version" title="How do I make a static gradient version?">
+    Remove all the animation keyframes from the CSS and the orbs will stay in fixed positions. Or consider using a simple CSS gradient if you don't need the orb effects.
+  </Accordion>
+</Accordions>

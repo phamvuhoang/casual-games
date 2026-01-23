@@ -6,9 +6,10 @@ import * as THREE from 'three';
 interface ThreeVisualizerProps {
   analyser: AnalyserNode | null;
   isActive: boolean;
+  onCanvasReady?: (canvas: HTMLCanvasElement | null) => void;
 }
 
-export default function ThreeVisualizer({ analyser, isActive }: ThreeVisualizerProps) {
+export default function ThreeVisualizer({ analyser, isActive, onCanvasReady }: ThreeVisualizerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const frameRef = useRef<number | null>(null);
@@ -34,6 +35,7 @@ export default function ThreeVisualizer({ analyser, isActive }: ThreeVisualizerP
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(window.devicePixelRatio || 1);
     containerRef.current.appendChild(renderer.domElement);
+    onCanvasReady?.(renderer.domElement);
 
     const geometry = new THREE.IcosahedronGeometry(0.9, 2);
     const material = new THREE.MeshStandardMaterial({
@@ -91,6 +93,7 @@ export default function ThreeVisualizer({ analyser, isActive }: ThreeVisualizerP
       haloMaterial.dispose();
       renderer.dispose();
       renderer.domElement.remove();
+      onCanvasReady?.(null);
       rendererRef.current = null;
       sceneRef.current = null;
       cameraRef.current = null;

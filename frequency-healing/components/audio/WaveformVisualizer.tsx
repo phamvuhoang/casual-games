@@ -13,9 +13,15 @@ interface WaveformVisualizerProps {
   analyser: AnalyserNode | null;
   type: VisualizerType;
   isActive: boolean;
+  onCanvasReady?: (canvas: HTMLCanvasElement | null) => void;
 }
 
-export default function WaveformVisualizer({ analyser, type, isActive }: WaveformVisualizerProps) {
+export default function WaveformVisualizer({
+  analyser,
+  type,
+  isActive,
+  onCanvasReady
+}: WaveformVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<VisualizationEngine | null>(null);
 
@@ -50,6 +56,13 @@ export default function WaveformVisualizer({ analyser, type, isActive }: Wavefor
       engine.stop();
     };
   }, [analyser, renderer, isActive]);
+
+  useEffect(() => {
+    onCanvasReady?.(canvasRef.current);
+    return () => {
+      onCanvasReady?.(null);
+    };
+  }, [onCanvasReady]);
 
   useEffect(() => {
     if (!engineRef.current) {

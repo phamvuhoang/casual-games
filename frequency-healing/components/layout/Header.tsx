@@ -14,6 +14,7 @@ const links = [
 export default function Header() {
   const pathname = usePathname();
   const [email, setEmail] = useState<string | null>(null);
+  const [profilePath, setProfilePath] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const supabase = createSupabaseClient();
 
@@ -40,6 +41,47 @@ export default function Header() {
       subscription.subscription.unsubscribe();
     };
   }, [supabase]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadProfile = async () => {
+      if (!email) {
+        setProfilePath(null);
+        return;
+      }
+
+      const { data: userData } = await supabase.auth.getUser();
+      const user = userData.user;
+      if (!user) {
+        setProfilePath(null);
+        return;
+      }
+
+      const { data: profileData, error } = await supabase
+        .from('profiles')
+        .select('username')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (error || !profileData?.username) {
+        setProfilePath('/profile');
+        return;
+      }
+
+      setProfilePath(`/profile/${profileData.username}`);
+    };
+
+    loadProfile();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [email, supabase]);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -86,6 +128,11 @@ export default function Header() {
               {email}
             </div>
           ) : null}
+          {email && profilePath ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href={profilePath}>Profile</Link>
+            </Button>
+          ) : null}
           {email ? (
             <Button variant="outline" size="sm" onClick={handleSignOut}>
               Sign out
@@ -111,6 +158,16 @@ export default function Header() {
                 {link.label}
               </Link>
             ))}
+            {email && profilePath ? (
+              <Link
+                href={profilePath}
+                className={`rounded-2xl border border-ink/10 px-4 py-3 transition ${
+                  pathname?.startsWith('/profile') ? 'bg-white text-ink' : 'bg-white/70 hover:text-ink'
+                }`}
+              >
+                Profile
+              </Link>
+            ) : null}
           </div>
         </div>
       ) : null}

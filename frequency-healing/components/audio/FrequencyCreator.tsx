@@ -388,7 +388,9 @@ export default function FrequencyCreator() {
           : null
       };
 
-      const { error: insertError } = await supabase.from('compositions').insert({
+      const { data: insertData, error: insertError } = await supabase
+        .from('compositions')
+        .insert({
         user_id: activeUserId,
         title: title.trim() || 'Untitled Session',
         description,
@@ -405,10 +407,24 @@ export default function FrequencyCreator() {
         thumbnail_url: thumbnailUrl,
         is_public: isPublic,
         tags: [ambientSound].filter((tag) => tag !== 'none')
-      });
+      })
+        .select('id')
+        .single();
 
       if (insertError) {
         throw insertError;
+      }
+
+      if (insertData?.id) {
+        const tasks = ['normalize_audio'];
+        if (videoUrl) {
+          tasks.push('transcode_video');
+        }
+        fetch('/api/processing', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ compositionId: insertData.id, tasks })
+        }).catch(() => null);
       }
 
       if (typeof window !== 'undefined') {

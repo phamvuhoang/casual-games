@@ -31,19 +31,19 @@
 - done: Discover page lists public compositions and links to composition detail pages.
 - done: Composition detail page with audio playback, metadata display, and like action.
 - done: Public share URL via `/composition/[id]`.
-- todo: Add pagination, popular sorting, and tag filtering to discovery feed.
+- done: Discovery feed now supports pagination, popular sorting, and tag-based filtering with updated query logic.
 - done: Like/unlike state handling with optimistic count updates.
 
 ## Phase 6 - Profiles and Social
 - done: Profile page fetches a user and lists their compositions.
 - done: Signup flow creates a profile record after account creation.
-- todo: Comments UI and backend wiring.
-- todo: Collections/playlists UI and backend wiring.
-- todo: User profile editing (avatar, bio, display name).
+- done: Comments UI wired on composition detail with authenticated posting and profile lookups.
+- done: Collections UI added on profiles with creation flow and composition pages can add/remove sessions from playlists.
+- done: Profile editing UI for owners with display name, avatar URL, and bio updates.
 
 ## Phase 7 - API and Backend Enhancements
 - done: Webhook route scaffolded for future integrations.
-- todo: Add server-side APIs or edge functions for heavy processing (optional).
+- done: Added edge API endpoint to queue processing jobs and wired creator save flow to enqueue tasks.
 - done: Supabase storage buckets + RLS policy migration added for audio/video/thumbnail storage.
 
 ## Phase 8 - Polish, QA, and Launch

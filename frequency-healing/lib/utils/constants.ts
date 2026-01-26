@@ -11,10 +11,20 @@ export const PRESET_FREQUENCIES = [
 export const WAVEFORMS = ['sine', 'triangle', 'square', 'sawtooth'] as const;
 export const VISUALIZATION_TYPES = ['waveform', 'particles', 'mandala', 'orbital'] as const;
 export const AMBIENT_SOUNDS = ['none', 'rain', 'ocean', 'forest', 'bells'] as const;
-export const AUDIO_FORMATS = ['webm', 'wav'] as const;
+export const AUDIO_FORMATS = ['webm', 'wav', 'mp3'] as const;
 
 export const DEFAULT_DURATION = 300;
 export const MAX_FREQUENCIES = 6;
+const MP3_MAX_BYTES_FALLBACK = 20 * 1024 * 1024;
+const mp3BytesEnv = Number(process.env.NEXT_PUBLIC_MP3_MAX_BYTES);
+export const MP3_MAX_BYTES =
+  Number.isFinite(mp3BytesEnv) && mp3BytesEnv > 0 ? mp3BytesEnv : MP3_MAX_BYTES_FALLBACK;
+const MP3_ESTIMATE_SAMPLE_RATE = 44100;
+const MP3_ESTIMATE_CHANNELS = 2;
+const MP3_ESTIMATE_BYTES_PER_SAMPLE = 2;
+export const MP3_ESTIMATED_MAX_SECONDS = Math.floor(
+  MP3_MAX_BYTES / (MP3_ESTIMATE_SAMPLE_RATE * MP3_ESTIMATE_CHANNELS * MP3_ESTIMATE_BYTES_PER_SAMPLE)
+);
 
 export const AUDIO_BUCKET = 'frequency-audio';
 export const VIDEO_BUCKET = 'frequency-video';

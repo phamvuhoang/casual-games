@@ -20,6 +20,7 @@ import {
   AUDIO_FORMATS,
   DEFAULT_DURATION,
   MAX_FREQUENCIES,
+  MP3_ESTIMATED_MAX_SECONDS,
   PRESET_FREQUENCIES,
   THUMBNAIL_BUCKET,
   VISUALIZATION_TYPES,
@@ -93,6 +94,8 @@ export default function FrequencyCreator() {
   const [userId, setUserId] = useState<string | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
+  const mp3LimitSeconds = MP3_ESTIMATED_MAX_SECONDS;
+  const showMp3Warning = audioFormat === 'mp3' && duration > mp3LimitSeconds;
 
   const generator = useMemo(() => new FrequencyGenerator(), []);
   const supabase = useMemo(() => createSupabaseClient(), []);
@@ -276,6 +279,11 @@ export default function FrequencyCreator() {
   const handleSave = async () => {
     if (selectedFrequencies.length === 0) {
       setStatus('Select at least one frequency.');
+      return;
+    }
+
+    if (audioFormat === 'mp3' && duration > mp3LimitSeconds) {
+      setStatus(`MP3 export is limited to ${mp3LimitSeconds}s. Reduce duration or choose WAV.`);
       return;
     }
 
@@ -550,6 +558,12 @@ export default function FrequencyCreator() {
                   ))}
                 </select>
               </label>
+              {showMp3Warning ? (
+                <p className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                  MP3 export is optimized for shorter sessions (up to {mp3LimitSeconds}s). Reduce duration or choose
+                  WAV for longer renders.
+                </p>
+              ) : null}
               <label className="flex items-center justify-between gap-3">
                 <span>Capture video</span>
                 <input

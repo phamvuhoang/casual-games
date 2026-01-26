@@ -11,7 +11,7 @@
 - done: Tone.js frequency generator with waveform control, master volume, ambient layers, and effects initialized.
 - done: Preset frequency list and multi-select logic with max frequency limit.
 - done: Audio export utility supports webm + wav with in-browser conversion.
-- todo: MP3 export if required beyond webm/wav.
+- done: MP3 export added with client-side conversion using lamejs.
 
 ## Phase 3 - Visualization
 - done: Canvas visualization engine with waveform, particles, and mandala renderers.

@@ -1,0 +1,27 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#f3efe0" />
+      <stop offset="55%" stop-color="#f7d9b7" />
+      <stop offset="100%" stop-color="#d9c6f2" />
+    </linearGradient>
+    <radialGradient id="orb" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(820 220) scale(220)">
+      <stop offset="0%" stop-color="#ffe7c6" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#e1b8ff" stop-opacity="0.2" />
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)" />
+  <circle cx="820" cy="220" r="220" fill="url(#orb)" />
+  <circle cx="320" cy="430" r="180" fill="#ffffff" fill-opacity="0.25" />
+  <g fill="#2f2a24">
+    <text x="90" y="220" font-family="Cormorant Garamond, Georgia, serif" font-size="68" font-weight="600">
+      Frequency Healing Studio
+    </text>
+    <text x="90" y="300" font-family="IBM Plex Sans, Arial, sans-serif" font-size="28" letter-spacing="1.5">
+      Create, explore, and share immersive healing frequency rituals
+    </text>
+    <text x="90" y="370" font-family="IBM Plex Sans, Arial, sans-serif" font-size="22" opacity="0.7">
+      Live audio generation · Reactive visuals · Community sessions
+    </text>
+  </g>
+</svg>

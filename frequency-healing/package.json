@@ -14,6 +14,7 @@
     "@radix-ui/react-slot": "^1.1.0",
     "@supabase/supabase-js": "^2.49.1",
     "clsx": "^2.1.1",
+    "lamejs": "^1.2.1",
     "next": "14.2.5",
     "react": "18.2.0",
     "react-dom": "18.2.0",

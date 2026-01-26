@@ -1,4 +1,5 @@
 import * as Tone from 'tone/build/esm';
+import { MP3_MAX_BYTES } from '@/lib/utils/constants';
 
 type RecordingType = {
   mimeType?: string;
@@ -46,7 +47,7 @@ function extensionForMimeType(mimeType?: string, fallback = 'webm') {
   return fallback;
 }
 
-export type AudioExportFormat = 'webm' | 'wav';
+export type AudioExportFormat = 'webm' | 'wav' | 'mp3';
 
 export async function exportAudio(durationSeconds: number, format: AudioExportFormat = 'webm') {
   if (!Tone.Recorder.supported) {
@@ -73,6 +74,15 @@ export async function exportAudio(durationSeconds: number, format: AudioExportFo
     };
   }
 
+  if (format === 'mp3') {
+    const mp3Blob = await convertToMp3(recording);
+    return {
+      blob: mp3Blob,
+      mimeType: 'audio/mpeg',
+      extension: 'mp3'
+    };
+  }
+
   const wavBlob = await convertToWav(recording);
   return {
     blob: wavBlob,
@@ -88,6 +98,54 @@ async function convertToWav(blob: Blob) {
   const wavBuffer = audioBufferToWav(audioBuffer);
   await audioContext.close();
   return new Blob([wavBuffer], { type: 'audio/wav' });
+}
+
+async function convertToMp3(blob: Blob) {
+  const buffer = await blob.arrayBuffer();
+  const audioContext = new AudioContext();
+  const audioBuffer = await audioContext.decodeAudioData(buffer.slice(0));
+  await audioContext.close();
+
+  const { Mp3Encoder } = await import('lamejs');
+  const numChannels = audioBuffer.numberOfChannels;
+  const sampleRate = audioBuffer.sampleRate;
+  const encoder = new Mp3Encoder(numChannels, sampleRate, 128);
+
+  const left = floatTo16BitPCM(audioBuffer.getChannelData(0));
+  const right = numChannels > 1 ? floatTo16BitPCM(audioBuffer.getChannelData(1)) : null;
+  const blockSize = 1152;
+  const mp3Data: Uint8Array[] = [];
+  const bytesPerSample = 2;
+  const estimatedBytes = left.length * bytesPerSample;
+
+  if (estimatedBytes > MP3_MAX_BYTES) {
+    throw new Error('MP3 export is limited to shorter sessions. Please choose WAV or reduce duration.');
+  }
+
+  for (let i = 0; i < left.length; i += blockSize) {
+    const leftChunk = left.subarray(i, i + blockSize);
+    const rightChunk = right ? right.subarray(i, i + blockSize) : undefined;
+    const mp3buf = rightChunk ? encoder.encodeBuffer(leftChunk, rightChunk) : encoder.encodeBuffer(leftChunk);
+    if (mp3buf.length > 0) {
+      mp3Data.push(new Uint8Array(mp3buf));
+    }
+  }
+
+  const end = encoder.flush();
+  if (end.length > 0) {
+    mp3Data.push(new Uint8Array(end));
+  }
+
+  const totalLength = mp3Data.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const merged = new Uint8Array(totalLength);
+  let offset = 0;
+
+  mp3Data.forEach((chunk) => {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  });
+
+  return new Blob([merged.buffer], { type: 'audio/mpeg' });
 }
 
 function audioBufferToWav(audioBuffer: AudioBuffer) {
@@ -127,6 +185,15 @@ function audioBufferToWav(audioBuffer: AudioBuffer) {
   }
 
   return buffer;
+}
+
+function floatTo16BitPCM(input: Float32Array) {
+  const output = new Int16Array(input.length);
+  for (let i = 0; i < input.length; i += 1) {
+    const sample = Math.max(-1, Math.min(1, input[i]));
+    output[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+  }
+  return output;
 }
 
 function writeString(view: DataView, offset: number, value: string) {

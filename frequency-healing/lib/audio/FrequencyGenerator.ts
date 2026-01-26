@@ -1,4 +1,5 @@
 import * as Tone from 'tone/build/esm';
+import { isIOSDevice } from '@/lib/utils/platform';
 import type { EffectsConfig } from '@/lib/audio/effects';
 import { DEFAULT_EFFECTS } from '@/lib/audio/effects';
 
@@ -23,9 +24,15 @@ export class FrequencyGenerator {
   private ambientGain: Tone.Gain | null = null;
   private ambientLoop: Tone.Loop | null = null;
   private ambientSynth: Tone.MetalSynth | null = null;
+  private silentAudio: HTMLAudioElement | null = null;
+  private hasUnlocked = false;
   private initialized = false;
 
   async initialize(effects: EffectsConfig = DEFAULT_EFFECTS) {
+    if (isIOSDevice() && !this.hasUnlocked) {
+      await this.unlockIOSAudio();
+    }
+
     if (this.initialized) {
       this.updateEffects(effects);
       return;
@@ -181,6 +188,12 @@ export class FrequencyGenerator {
     this.reverb?.dispose();
     this.delay?.dispose();
     this.master?.dispose();
+    if (this.silentAudio) {
+      this.silentAudio.pause();
+      this.silentAudio.remove();
+      this.silentAudio = null;
+      this.hasUnlocked = false;
+    }
     this.reverb = null;
     this.delay = null;
     this.master = null;
@@ -205,5 +218,34 @@ export class FrequencyGenerator {
     this.ambientFilter = null;
     this.ambientGain = null;
     this.ambientType = 'none';
+  }
+
+  private async unlockIOSAudio() {
+    if (this.hasUnlocked) {
+      return;
+    }
+
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    const silentAudio = document.createElement('audio');
+    silentAudio.setAttribute('x-webkit-airplay', 'deny');
+    silentAudio.setAttribute('playsinline', 'true');
+    silentAudio.setAttribute('webkit-playsinline', 'true');
+    silentAudio.preload = 'auto';
+    silentAudio.loop = true;
+    silentAudio.volume = 0;
+    silentAudio.src =
+      'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAADhAC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAQKAAAAAAAAA4SE0lWPAAAAAAAAAAAAAAAAAAAA//sQZAAP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAETEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVQ==';
+
+    this.silentAudio = silentAudio;
+
+    try {
+      await silentAudio.play();
+      this.hasUnlocked = true;
+    } catch (error) {
+      console.warn('Failed to unlock iOS audio.', error);
+    }
   }
 }

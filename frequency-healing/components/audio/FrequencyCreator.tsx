@@ -473,8 +473,8 @@ export default function FrequencyCreator() {
             <p className="text-xs uppercase tracking-[0.3em] text-ink/60">Session controls</p>
             {isIOS ? (
               <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                iOS tip: Audio starts only after tapping Play and your device must be unmuted. Video export is
-                unavailable on iPhone/iPad.
+                iOS tip: Tap Play to unlock audio. If you still hear nothing, flip the silent switch off on the side of
+                your iPhone. Video export is unavailable on iPhone/iPad.
               </div>
             ) : null}
             <div className="mt-4 grid gap-3 text-sm">

@@ -5,7 +5,7 @@
 - done: Base layout, landing page, header/footer, and shared UI components are in place.
 - done: `.env.local` created with Supabase placeholders for URL and keys.
 - done: Supabase migrations created for profiles, compositions, likes, comments, and collections, plus RLS policies.
-- todo: Add Google OAuth flow and provider UI in auth pages (Supabase auth config + button).
+- done: Google OAuth flow added with auth callback and provider buttons in login/signup.
 
 ## Phase 2 - Audio Engine
 - done: Tone.js frequency generator with waveform control, master volume, ambient layers, and effects initialized.

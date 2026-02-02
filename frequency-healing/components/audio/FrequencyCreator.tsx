@@ -266,7 +266,8 @@ export default function FrequencyCreator() {
     }
 
     try {
-      await generator.initialize();
+      const shouldEnableBridge = isIOS || isIOSDevice();
+      await generator.initialize(DEFAULT_EFFECTS, { enableIOSAudioBridge: shouldEnableBridge });
       generator.setMasterVolume(volume);
       setAnalyser(generator.getAnalyser());
       setIsPlaying(true);

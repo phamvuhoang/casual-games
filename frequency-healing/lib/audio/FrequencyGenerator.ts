@@ -12,6 +12,10 @@ export interface FrequencyConfig {
   waveform: WaveformType;
 }
 
+export interface InitializeOptions {
+  enableIOSAudioBridge?: boolean;
+}
+
 export class FrequencyGenerator {
   private synths: Tone.Synth[] = [];
   private master: Tone.Gain | null = null;
@@ -27,42 +31,68 @@ export class FrequencyGenerator {
   private silentAudio: HTMLAudioElement | null = null;
   private hasUnlocked = false;
   private initialized = false;
+  private lastEffects: EffectsConfig = DEFAULT_EFFECTS;
+  private lastFrequencies: FrequencyConfig[] = [];
+  private masterVolume = 1;
+  private resumeTask: Promise<void> | null = null;
+  private iosHandlersAttached = false;
+  private audioBridgeEnabled = false;
+  private audioBridge: {
+    element: HTMLAudioElement;
+    destination: MediaStreamAudioDestinationNode;
+  } | null = null;
+  private masterConnected = false;
 
-  async initialize(effects: EffectsConfig = DEFAULT_EFFECTS) {
-    if (isIOSDevice() && !this.hasUnlocked) {
-      await this.unlockIOSAudio();
+  private readonly handleVisibilityChange = () => {
+    if (document.visibilityState === 'visible') {
+      void this.ensureAudioRunning();
+    }
+  };
+
+  private readonly handlePageShow = () => {
+    void this.ensureAudioRunning();
+  };
+
+  private readonly handleFocus = () => {
+    void this.ensureAudioRunning();
+  };
+
+  async initialize(effects: EffectsConfig = DEFAULT_EFFECTS, options: InitializeOptions = {}) {
+    this.lastEffects = effects;
+
+    if (isIOSDevice()) {
+      this.attachIOSLifecycleHandlers();
+      this.configureIOSAudioSession();
+
+      if (typeof options.enableIOSAudioBridge === 'boolean') {
+        this.audioBridgeEnabled = options.enableIOSAudioBridge;
+        if (!this.audioBridgeEnabled) {
+          this.teardownAudioBridge();
+        }
+      }
     }
 
     if (this.initialized) {
       this.updateEffects(effects);
+      if (this.audioBridgeEnabled && !this.audioBridge) {
+        await this.setupAudioBridge();
+      }
       return;
     }
 
     await Tone.start();
 
-    this.master = new Tone.Gain(1).toDestination();
-    this.reverb = new Tone.Reverb({
-      decay: effects.reverb?.decay ?? DEFAULT_EFFECTS.reverb!.decay,
-      wet: effects.reverb?.wet ?? DEFAULT_EFFECTS.reverb!.wet
-    });
-    this.delay = new Tone.FeedbackDelay(
-      effects.delay?.time ?? DEFAULT_EFFECTS.delay!.time,
-      effects.delay?.feedback ?? DEFAULT_EFFECTS.delay!.feedback
-    );
-    this.delay.wet.value = effects.delay?.wet ?? DEFAULT_EFFECTS.delay!.wet;
+    if (isIOSDevice() && !this.hasUnlocked) {
+      await this.unlockIOSAudio();
+    }
 
-    await this.reverb.generate();
-
-    this.reverb.connect(this.delay);
-    this.delay.connect(this.master);
-
-    const rawContext = Tone.getContext().rawContext;
-    this.analyser = rawContext.createAnalyser();
-    this.analyser.fftSize = 2048;
-
-    this.master.connect(this.analyser);
+    await this.createAudioGraph(effects);
 
     this.initialized = true;
+
+    if (this.audioBridgeEnabled) {
+      await this.setupAudioBridge();
+    }
   }
 
   getAnalyser() {
@@ -70,6 +100,7 @@ export class FrequencyGenerator {
   }
 
   updateEffects(effects: EffectsConfig) {
+    this.lastEffects = effects;
     if (this.reverb && effects.reverb) {
       this.reverb.decay = effects.reverb.decay;
       this.reverb.wet.value = effects.reverb.wet;
@@ -83,11 +114,16 @@ export class FrequencyGenerator {
   }
 
   play(frequencies: FrequencyConfig[]) {
+    if (isIOSDevice()) {
+      void this.ensureAudioRunning();
+    }
+
     if (!this.master || !this.reverb || !this.delay) {
       return;
     }
 
-    this.stop();
+    this.stopSynths(true);
+    this.lastFrequencies = frequencies.map((config) => ({ ...config }));
 
     this.synths = frequencies.map((config) => {
       const synth = new Tone.Synth({
@@ -102,12 +138,12 @@ export class FrequencyGenerator {
     });
   }
 
-  setAmbientLayer(type: AmbientType) {
+  setAmbientLayer(type: AmbientType, force = false) {
     if (!this.reverb || !this.master) {
       return;
     }
 
-    if (type === this.ambientType) {
+    if (!force && type === this.ambientType) {
       return;
     }
 
@@ -168,26 +204,24 @@ export class FrequencyGenerator {
   }
 
   setMasterVolume(value: number) {
+    this.masterVolume = value;
     if (this.master) {
       this.master.gain.value = value;
     }
   }
 
   stop() {
-    this.synths.forEach((synth) => {
-      synth.triggerRelease();
-      synth.dispose();
-    });
-    this.synths = [];
-    this.stopAmbient();
+    this.stopSynths();
   }
 
   dispose() {
     this.stop();
     this.stopAmbient();
+    this.teardownAudioBridge();
     this.reverb?.dispose();
     this.delay?.dispose();
     this.master?.dispose();
+    this.detachIOSLifecycleHandlers();
     if (this.silentAudio) {
       this.silentAudio.pause();
       this.silentAudio.remove();
@@ -198,9 +232,11 @@ export class FrequencyGenerator {
     this.delay = null;
     this.master = null;
     this.initialized = false;
+    this.masterConnected = false;
+    this.resumeTask = null;
   }
 
-  private stopAmbient() {
+  private stopAmbient(preserveType = false) {
     if (this.ambientLoop) {
       Tone.Transport.stop();
     }
@@ -217,7 +253,296 @@ export class FrequencyGenerator {
     this.ambientNoise = null;
     this.ambientFilter = null;
     this.ambientGain = null;
-    this.ambientType = 'none';
+    if (!preserveType) {
+      this.ambientType = 'none';
+    }
+  }
+
+  private stopSynths(preserveFrequencies = false) {
+    this.synths.forEach((synth) => {
+      synth.triggerRelease();
+      synth.dispose();
+    });
+    this.synths = [];
+    this.stopAmbient();
+    if (!preserveFrequencies) {
+      this.lastFrequencies = [];
+    }
+  }
+
+  private async createAudioGraph(effects: EffectsConfig) {
+    this.master = new Tone.Gain(1);
+    this.connectMasterToDestination();
+
+    this.reverb = new Tone.Reverb({
+      decay: effects.reverb?.decay ?? DEFAULT_EFFECTS.reverb!.decay,
+      wet: effects.reverb?.wet ?? DEFAULT_EFFECTS.reverb!.wet
+    });
+    this.delay = new Tone.FeedbackDelay(
+      effects.delay?.time ?? DEFAULT_EFFECTS.delay!.time,
+      effects.delay?.feedback ?? DEFAULT_EFFECTS.delay!.feedback
+    );
+    this.delay.wet.value = effects.delay?.wet ?? DEFAULT_EFFECTS.delay!.wet;
+
+    await this.reverb.generate();
+
+    this.reverb.connect(this.delay);
+    this.delay.connect(this.master);
+
+    const rawContext = Tone.getContext().rawContext;
+    this.analyser = rawContext.createAnalyser();
+    this.analyser.fftSize = 2048;
+
+    this.master.connect(this.analyser);
+  }
+
+  private attachIOSLifecycleHandlers() {
+    if (this.iosHandlersAttached) {
+      return;
+    }
+
+    if (typeof document === 'undefined' || typeof window === 'undefined') {
+      return;
+    }
+
+    document.addEventListener('visibilitychange', this.handleVisibilityChange, { passive: true });
+    window.addEventListener('pageshow', this.handlePageShow);
+    window.addEventListener('focus', this.handleFocus);
+    this.iosHandlersAttached = true;
+  }
+
+  private detachIOSLifecycleHandlers() {
+    if (!this.iosHandlersAttached) {
+      return;
+    }
+
+    if (typeof document === 'undefined' || typeof window === 'undefined') {
+      return;
+    }
+
+    document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+    window.removeEventListener('pageshow', this.handlePageShow);
+    window.removeEventListener('focus', this.handleFocus);
+    this.iosHandlersAttached = false;
+  }
+
+  private configureIOSAudioSession() {
+    if (typeof navigator === 'undefined') {
+      return;
+    }
+
+    const nav = navigator as Navigator & { audioSession?: { type?: string } };
+    if (!nav.audioSession) {
+      return;
+    }
+
+    try {
+      nav.audioSession.type = 'playback';
+    } catch (error) {
+      console.warn('Failed to configure iOS audio session.', error);
+    }
+  }
+
+  private async ensureAudioRunning() {
+    if (!this.initialized) {
+      return;
+    }
+
+    if (this.resumeTask) {
+      await this.resumeTask;
+      return;
+    }
+
+    this.resumeTask = this.resumeAudioInternal();
+    try {
+      await this.resumeTask;
+    } finally {
+      this.resumeTask = null;
+    }
+  }
+
+  private async resumeAudioInternal() {
+    const rawContext = Tone.getContext().rawContext;
+
+    if (!this.isRealtimeAudioContext(rawContext)) {
+      return;
+    }
+
+    if (rawContext.state === 'running') {
+      if (this.audioBridgeEnabled) {
+        await this.startAudioBridgeElement();
+      }
+      return;
+    }
+
+    const resumed = await this.resumeContextWithTimeout(rawContext);
+    if (resumed) {
+      if (this.audioBridgeEnabled) {
+        await this.startAudioBridgeElement();
+      }
+      return;
+    }
+
+    await this.rebuildAudioGraph();
+  }
+
+  private async resumeContextWithTimeout(context: AudioContext | OfflineAudioContext) {
+    if (!this.isRealtimeAudioContext(context)) {
+      return false;
+    }
+
+    try {
+      await Promise.race([
+        context.resume(),
+        new Promise((_, reject) => {
+          globalThis.setTimeout(() => reject(new Error('resume-timeout')), 1500);
+        })
+      ]);
+      return context.state === 'running';
+    } catch (error) {
+      console.warn('Failed to resume AudioContext.', error);
+      return false;
+    }
+  }
+
+  private async rebuildAudioGraph() {
+    const previousFrequencies = this.lastFrequencies.map((config) => ({ ...config }));
+    const previousAmbient = this.ambientType;
+    const previousVolume = this.masterVolume;
+    const previousEffects = this.lastEffects;
+    const shouldBridge = this.audioBridgeEnabled;
+
+    this.teardownGraphForRebuild();
+
+    const newContext = new Tone.Context();
+    Tone.setContext(newContext);
+
+    try {
+      await newContext.resume();
+    } catch (error) {
+      console.warn('Failed to resume rebuilt AudioContext.', error);
+    }
+
+    await this.createAudioGraph(previousEffects);
+    this.initialized = true;
+
+    this.setMasterVolume(previousVolume);
+
+    if (previousFrequencies.length > 0) {
+      this.play(previousFrequencies);
+    }
+
+    if (previousAmbient !== 'none') {
+      this.setAmbientLayer(previousAmbient, true);
+    }
+
+    if (shouldBridge) {
+      await this.setupAudioBridge();
+    }
+  }
+
+  private teardownGraphForRebuild() {
+    this.synths.forEach((synth) => {
+      synth.triggerRelease();
+      synth.dispose();
+    });
+    this.synths = [];
+    this.stopAmbient(true);
+    this.teardownAudioBridge();
+    this.reverb?.dispose();
+    this.delay?.dispose();
+    this.master?.dispose();
+    this.reverb = null;
+    this.delay = null;
+    this.master = null;
+    this.analyser = null;
+    this.masterConnected = false;
+    this.initialized = false;
+  }
+
+  private connectMasterToDestination() {
+    if (!this.master || this.masterConnected) {
+      return;
+    }
+
+    this.master.connect(Tone.Destination);
+    this.masterConnected = true;
+  }
+
+  private async setupAudioBridge() {
+    if (typeof document === 'undefined' || !this.master) {
+      return;
+    }
+
+    if (this.audioBridge) {
+      return;
+    }
+
+    const rawContext = Tone.getContext().rawContext;
+    if (!this.isRealtimeAudioContext(rawContext)) {
+      return;
+    }
+    const destination = rawContext.createMediaStreamDestination();
+    this.master.connect(destination);
+
+    const element = document.createElement('audio');
+    element.setAttribute('x-webkit-airplay', 'deny');
+    element.setAttribute('playsinline', 'true');
+    element.setAttribute('webkit-playsinline', 'true');
+    element.preload = 'auto';
+    element.loop = true;
+    element.volume = 0.001;
+    element.srcObject = destination.stream;
+
+    this.audioBridge = { element, destination };
+
+    const started = await this.startAudioBridgeElement();
+    if (!started) {
+      this.connectMasterToDestination();
+    }
+  }
+
+  private async startAudioBridgeElement() {
+    if (!this.audioBridge) {
+      return false;
+    }
+
+    try {
+      await this.audioBridge.element.play();
+      return true;
+    } catch (error) {
+      console.warn('Failed to start audio bridge element.', error);
+      return false;
+    }
+  }
+
+  private isRealtimeAudioContext(
+    context: AudioContext | OfflineAudioContext
+  ): context is AudioContext {
+    return typeof (context as AudioContext).resume === 'function';
+  }
+
+  private teardownAudioBridge() {
+    if (!this.audioBridge) {
+      return;
+    }
+
+    const { element, destination } = this.audioBridge;
+    element.pause();
+    element.srcObject = null;
+    element.remove();
+
+    try {
+      if (this.master) {
+        this.master.disconnect(destination);
+      }
+      destination.disconnect();
+    } catch (error) {
+      console.warn('Failed to disconnect audio bridge destination.', error);
+    }
+
+    this.audioBridge = null;
+    this.connectMasterToDestination();
   }
 
   private async unlockIOSAudio() {

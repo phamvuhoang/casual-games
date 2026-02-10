@@ -79,7 +79,7 @@ type DraftState = {
 
 export default function FrequencyCreator() {
   const [selectedFrequencies, setSelectedFrequencies] = useState<number[]>([]);
-  const [mixStyle, setMixStyle] = useState<MixStyle>('manual');
+  const [mixStyle, setMixStyle] = useState<MixStyle>('golden432');
   const [isPlaying, setIsPlaying] = useState(false);
   const [waveform, setWaveform] = useState<(typeof WAVEFORMS)[number]>('sine');
   const [volume, setVolume] = useState(DEFAULT_VOLUME);

@@ -11,6 +11,8 @@ export interface FrequencyConfig {
   volume: number;
   waveform: WaveformType;
   pan?: number;
+  attackSeconds?: number;
+  releaseSeconds?: number;
   detuneCents?: number;
   modulationRateHz?: number;
   modulationDepth?: number;
@@ -134,7 +136,12 @@ export class FrequencyGenerator {
     this.synths = frequencies.map((config) => {
       const synth = new Tone.Synth({
         oscillator: { type: config.waveform },
-        envelope: { attack: 1.6, decay: 0.2, sustain: 0.9, release: 2.2 }
+        envelope: {
+          attack: config.attackSeconds ?? 1.6,
+          decay: 0.2,
+          sustain: 0.9,
+          release: config.releaseSeconds ?? 2.2
+        }
       });
 
       synth.volume.value = Tone.gainToDb(config.volume);

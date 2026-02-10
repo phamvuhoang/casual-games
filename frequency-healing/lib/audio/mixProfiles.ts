@@ -6,6 +6,8 @@ interface MixLayer {
   power: number;
   gain: number;
   pan: number;
+  attackSeconds: number;
+  releaseSeconds: number;
   detuneCents: number;
   modulationRateHz: number;
   modulationDepth: number;
@@ -13,16 +15,16 @@ interface MixLayer {
 
 const GOLDEN_RATIO = 1.61803398875;
 const GOLDEN_432_LAYERS: MixLayer[] = [
-  { power: -3, gain: 0.2, pan: -0.8, detuneCents: 0, modulationRateHz: 0, modulationDepth: 0 },
-  { power: -2, gain: 0.12, pan: -0.7, detuneCents: 0, modulationRateHz: 0, modulationDepth: 0 },
-  { power: -1, gain: 0.38, pan: -0.48, detuneCents: 0, modulationRateHz: 0, modulationDepth: 0 },
-  { power: 0, gain: 1, pan: 0, detuneCents: 0, modulationRateHz: 0, modulationDepth: 0 },
-  { power: 0, gain: 0.42, pan: -0.12, detuneCents: -2.2, modulationRateHz: 0, modulationDepth: 0 },
-  { power: 0, gain: 0.42, pan: 0.12, detuneCents: 2.2, modulationRateHz: 0, modulationDepth: 0 },
-  { power: 1, gain: 0.28, pan: 0.48, detuneCents: 0, modulationRateHz: 0, modulationDepth: 0 },
-  { power: 2, gain: 0.08, pan: 0.74, detuneCents: 0, modulationRateHz: 0, modulationDepth: 0 },
-  { power: 3, gain: 0.16, pan: 0.86, detuneCents: 0, modulationRateHz: 0, modulationDepth: 0 },
-  { power: -4, gain: 0.09, pan: -0.9, detuneCents: 0, modulationRateHz: 0, modulationDepth: 0 }
+  { power: -4, gain: 0.24, pan: -0.12, attackSeconds: 4.5, releaseSeconds: 2.8, detuneCents: 0, modulationRateHz: 0, modulationDepth: 0 },
+  { power: -3, gain: 0.36, pan: -0.94, attackSeconds: 4.8, releaseSeconds: 2.8, detuneCents: 0, modulationRateHz: 0, modulationDepth: 0 },
+  { power: -2, gain: 0.34, pan: 0.94, attackSeconds: 5.2, releaseSeconds: 2.8, detuneCents: 0, modulationRateHz: 0, modulationDepth: 0 },
+  { power: -1, gain: 0.42, pan: -0.88, attackSeconds: 5.5, releaseSeconds: 3.1, detuneCents: 0, modulationRateHz: 0, modulationDepth: 0 },
+  { power: 0, gain: 1, pan: 0, attackSeconds: 6.2, releaseSeconds: 3.2, detuneCents: 0, modulationRateHz: 0, modulationDepth: 0 },
+  { power: 0, gain: 0.34, pan: -0.08, attackSeconds: 5.8, releaseSeconds: 3.2, detuneCents: -2.2, modulationRateHz: 0, modulationDepth: 0 },
+  { power: 0, gain: 0.34, pan: 0.08, attackSeconds: 5.8, releaseSeconds: 3.2, detuneCents: 2.2, modulationRateHz: 0, modulationDepth: 0 },
+  { power: 1, gain: 0.26, pan: 0.88, attackSeconds: 5.2, releaseSeconds: 2.8, detuneCents: 0, modulationRateHz: 0, modulationDepth: 0 },
+  { power: 2, gain: 0.14, pan: -0.94, attackSeconds: 4.8, releaseSeconds: 2.8, detuneCents: 0, modulationRateHz: 0, modulationDepth: 0 },
+  { power: 3, gain: 0.12, pan: 0.97, attackSeconds: 4.2, releaseSeconds: 2.8, detuneCents: 0, modulationRateHz: 0, modulationDepth: 0 }
 ];
 
 function roundHz(value: number) {
@@ -77,6 +79,8 @@ export function buildFrequencyMix(options: {
         volume: clamp(0.01, volume * layer.gain * groupScale, 0.95),
         waveform,
         pan: clamp(-1, layer.pan + baseSpread, 1),
+        attackSeconds: layer.attackSeconds,
+        releaseSeconds: layer.releaseSeconds,
         detuneCents: layer.detuneCents,
         modulationRateHz: layer.modulationRateHz,
         modulationDepth: layer.modulationDepth

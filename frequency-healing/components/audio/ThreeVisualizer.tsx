@@ -1,12 +1,23 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 
 interface ThreeVisualizerProps {
   analyser: AnalyserNode | null;
   isActive: boolean;
   onCanvasReady?: (canvas: HTMLCanvasElement | null) => void;
+}
+
+function detectLowPower() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const smallViewport = window.matchMedia('(max-width: 820px)').matches;
+  const lowCores = typeof navigator.hardwareConcurrency === 'number' && navigator.hardwareConcurrency <= 4;
+  return reducedMotion || smallViewport || lowCores;
 }
 
 export default function ThreeVisualizer({ analyser, isActive, onCanvasReady }: ThreeVisualizerProps) {
@@ -18,6 +29,7 @@ export default function ThreeVisualizer({ analyser, isActive, onCanvasReady }: T
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const meshRef = useRef<THREE.Mesh | null>(null);
   const haloRef = useRef<THREE.Mesh | null>(null);
+  const isLowPower = useMemo(() => detectLowPower(), []);
 
   useEffect(() => {
     analyserRef.current = analyser;
@@ -32,12 +44,13 @@ export default function ThreeVisualizer({ analyser, isActive, onCanvasReady }: T
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
     camera.position.z = 3.2;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(window.devicePixelRatio || 1);
+    const renderer = new THREE.WebGLRenderer({ antialias: !isLowPower, alpha: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(isLowPower ? Math.min(window.devicePixelRatio || 1, 1.2) : window.devicePixelRatio || 1);
     containerRef.current.appendChild(renderer.domElement);
     onCanvasReady?.(renderer.domElement);
 
-    const geometry = new THREE.IcosahedronGeometry(0.9, 2);
+    const detail = isLowPower ? 1 : 2;
+    const geometry = new THREE.IcosahedronGeometry(0.9, detail);
     const material = new THREE.MeshStandardMaterial({
       color: new THREE.Color('#f7b36a'),
       emissive: new THREE.Color('#2b8c8c'),
@@ -47,7 +60,7 @@ export default function ThreeVisualizer({ analyser, isActive, onCanvasReady }: T
     });
     const mesh = new THREE.Mesh(geometry, material);
 
-    const haloGeometry = new THREE.SphereGeometry(1.1, 32, 32);
+    const haloGeometry = new THREE.SphereGeometry(1.1, isLowPower ? 20 : 32, isLowPower ? 20 : 32);
     const haloMaterial = new THREE.MeshBasicMaterial({
       color: new THREE.Color('#2b8c8c'),
       transparent: true,
@@ -100,7 +113,7 @@ export default function ThreeVisualizer({ analyser, isActive, onCanvasReady }: T
       meshRef.current = null;
       haloRef.current = null;
     };
-  }, []);
+  }, [isLowPower, onCanvasReady]);
 
   useEffect(() => {
     if (!rendererRef.current || !sceneRef.current || !cameraRef.current) {
@@ -131,11 +144,11 @@ export default function ThreeVisualizer({ analyser, isActive, onCanvasReady }: T
       const material = mesh?.material as THREE.MeshStandardMaterial | undefined;
 
       if (mesh && material) {
-        const pulse = 0.85 + (energy / 255) * 0.6;
+        const pulse = 0.85 + (energy / 255) * (isLowPower ? 0.45 : 0.6);
         mesh.scale.setScalar(pulse);
-        mesh.rotation.y += 0.004;
-        mesh.rotation.x += 0.0025;
-        material.emissiveIntensity = 0.4 + (energy / 255) * 1.4;
+        mesh.rotation.y += isLowPower ? 0.0024 : 0.004;
+        mesh.rotation.x += isLowPower ? 0.0015 : 0.0025;
+        material.emissiveIntensity = 0.4 + (energy / 255) * 1.3;
       }
 
       if (halo) {
@@ -154,11 +167,16 @@ export default function ThreeVisualizer({ analyser, isActive, onCanvasReady }: T
         frameRef.current = null;
       }
     };
-  }, [isActive]);
+  }, [isActive, isLowPower]);
 
   return (
     <div className="relative h-64 w-full overflow-hidden rounded-3xl border border-black/5 bg-black/10 md:h-72">
       <div ref={containerRef} className="h-full w-full" />
+      {isLowPower ? (
+        <span className="absolute bottom-2 right-3 rounded-full bg-black/35 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-white/80">
+          Low power
+        </span>
+      ) : null}
     </div>
   );
 }

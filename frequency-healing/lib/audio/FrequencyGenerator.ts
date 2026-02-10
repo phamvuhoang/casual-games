@@ -2,6 +2,14 @@ import * as Tone from 'tone/build/esm';
 import { isIOSDevice } from '@/lib/utils/platform';
 import type { EffectsConfig } from '@/lib/audio/effects';
 import { DEFAULT_EFFECTS } from '@/lib/audio/effects';
+import {
+  clamp,
+  normalizeFrequency,
+  normalizeRhythmSteps,
+  type ModulationConfig,
+  type RhythmConfig,
+  type SweepConfig
+} from '@/lib/audio/audioConfig';
 
 export type WaveformType = 'sine' | 'square' | 'triangle' | 'sawtooth';
 export type AmbientType = 'none' | 'rain' | 'ocean' | 'forest' | 'bells';
@@ -22,10 +30,50 @@ export interface InitializeOptions {
   enableIOSAudioBridge?: boolean;
 }
 
+export interface PlaybackAutomationConfig {
+  modulation: ModulationConfig;
+  sweep: SweepConfig;
+}
+
+const DEFAULT_RHYTHM_CONFIG: RhythmConfig = {
+  enabled: false,
+  bpm: 72,
+  subdivision: '16n',
+  steps: normalizeRhythmSteps(undefined)
+};
+
+const DEFAULT_AUTOMATION_CONFIG: PlaybackAutomationConfig = {
+  modulation: {
+    enabled: false,
+    rateHz: 0.18,
+    depthHz: 12,
+    waveform: 'sine'
+  },
+  sweep: {
+    enabled: false,
+    targetHz: 528,
+    durationSeconds: 18,
+    curve: 'easeInOut'
+  }
+};
+
 export class FrequencyGenerator {
   private synths: Tone.Synth[] = [];
   private voicePanners: Tone.Panner[] = [];
   private voiceTremolos: Tone.Tremolo[] = [];
+  private inputBus: Tone.Gain | null = null;
+  private rhythmGate: Tone.Gain | null = null;
+  private rhythmSequence: Tone.Sequence<number> | null = null;
+  private rhythmConfig: RhythmConfig = { ...DEFAULT_RHYTHM_CONFIG };
+  private automationConfig: PlaybackAutomationConfig = {
+    modulation: { ...DEFAULT_AUTOMATION_CONFIG.modulation },
+    sweep: { ...DEFAULT_AUTOMATION_CONFIG.sweep }
+  };
+  private automationEventId: number | null = null;
+  private automationStartAt = 0;
+  private voiceBaseFrequencies: number[] = [];
+  private voiceSweepTargets: number[] = [];
+  private isPlaying = false;
   private master: Tone.Gain | null = null;
   private reverb: Tone.Reverb | null = null;
   private delay: Tone.FeedbackDelay | null = null;
@@ -121,17 +169,59 @@ export class FrequencyGenerator {
     }
   }
 
+  setRhythmPattern(config: RhythmConfig) {
+    this.rhythmConfig = {
+      enabled: Boolean(config.enabled),
+      bpm: clamp(35, config.bpm, 180),
+      subdivision: config.subdivision,
+      steps: normalizeRhythmSteps(config.steps)
+    };
+
+    if (!this.isPlaying) {
+      this.resetRhythmGate();
+      return;
+    }
+
+    this.configureRhythmSequence();
+  }
+
+  setAutomation(config: PlaybackAutomationConfig) {
+    this.automationConfig = {
+      modulation: {
+        enabled: Boolean(config.modulation.enabled),
+        rateHz: clamp(0.01, config.modulation.rateHz, 24),
+        depthHz: clamp(0.1, config.modulation.depthHz, 220),
+        waveform: config.modulation.waveform
+      },
+      sweep: {
+        enabled: Boolean(config.sweep.enabled),
+        targetHz: normalizeFrequency(config.sweep.targetHz),
+        durationSeconds: clamp(1, config.sweep.durationSeconds, 180),
+        curve: config.sweep.curve
+      }
+    };
+
+    if (!this.isPlaying) {
+      return;
+    }
+
+    this.configureAutomationLoop();
+  }
+
   play(frequencies: FrequencyConfig[]) {
     if (isIOSDevice()) {
       void this.ensureAudioRunning();
     }
 
-    if (!this.master || !this.reverb || !this.delay) {
+    if (!this.master || !this.reverb || !this.delay || !this.inputBus) {
       return;
     }
 
     this.stopSynths(true);
     this.lastFrequencies = frequencies.map((config) => ({ ...config }));
+    this.voiceBaseFrequencies = frequencies.map((config) => normalizeFrequency(config.frequency));
+    this.voiceSweepTargets = this.computeSweepTargets(this.voiceBaseFrequencies);
+    this.isPlaying = this.voiceBaseFrequencies.length > 0;
 
     this.synths = frequencies.map((config) => {
       const synth = new Tone.Synth({
@@ -169,14 +259,21 @@ export class FrequencyGenerator {
       if (typeof config.pan === 'number') {
         const panner = new Tone.Panner(Math.max(-1, Math.min(1, config.pan)));
         destination.connect(panner);
-        panner.connect(this.reverb!);
+        panner.connect(this.inputBus!);
         this.voicePanners.push(panner);
       } else {
-        destination.connect(this.reverb!);
+        destination.connect(this.inputBus!);
       }
       synth.triggerAttack(config.frequency);
       return synth;
     });
+
+    if (this.ambientType !== 'none') {
+      this.setAmbientLayer(this.ambientType, true);
+    }
+
+    this.configureRhythmSequence();
+    this.configureAutomationLoop();
   }
 
   setAmbientLayer(type: AmbientType, force = false) {
@@ -216,9 +313,7 @@ export class FrequencyGenerator {
         synth.triggerAttackRelease(note, '2n', time, 0.6);
       }, '2n');
 
-      if (Tone.Transport.state !== 'started') {
-        Tone.Transport.start();
-      }
+      this.ensureTransportStarted();
       loop.start(0);
 
       this.ambientSynth = synth;
@@ -258,7 +353,11 @@ export class FrequencyGenerator {
   dispose() {
     this.stop();
     this.stopAmbient();
+    this.stopRhythmSequence();
+    this.stopAutomationLoop();
     this.teardownAudioBridge();
+    this.inputBus?.dispose();
+    this.rhythmGate?.dispose();
     this.reverb?.dispose();
     this.delay?.dispose();
     this.master?.dispose();
@@ -271,16 +370,18 @@ export class FrequencyGenerator {
     }
     this.reverb = null;
     this.delay = null;
+    this.inputBus = null;
+    this.rhythmGate = null;
     this.master = null;
     this.initialized = false;
     this.masterConnected = false;
     this.resumeTask = null;
+    this.voiceBaseFrequencies = [];
+    this.voiceSweepTargets = [];
+    this.isPlaying = false;
   }
 
   private stopAmbient(preserveType = false) {
-    if (this.ambientLoop) {
-      Tone.Transport.stop();
-    }
     this.ambientLoop?.stop();
     this.ambientLoop?.dispose();
     this.ambientSynth?.dispose();
@@ -297,9 +398,12 @@ export class FrequencyGenerator {
     if (!preserveType) {
       this.ambientType = 'none';
     }
+    this.maybeStopTransport();
   }
 
   private stopSynths(preserveFrequencies = false) {
+    this.stopAutomationLoop(false);
+    this.stopRhythmSequence(false);
     this.synths.forEach((synth) => {
       synth.triggerRelease();
       synth.dispose();
@@ -309,7 +413,11 @@ export class FrequencyGenerator {
     this.voicePanners = [];
     this.voiceTremolos.forEach((tremolo) => tremolo.dispose());
     this.voiceTremolos = [];
-    this.stopAmbient();
+    this.stopAmbient(preserveFrequencies);
+    this.isPlaying = false;
+    this.voiceBaseFrequencies = [];
+    this.voiceSweepTargets = [];
+    this.resetRhythmGate();
     if (!preserveFrequencies) {
       this.lastFrequencies = [];
     }
@@ -317,6 +425,8 @@ export class FrequencyGenerator {
 
   private async createAudioGraph(effects: EffectsConfig) {
     this.master = new Tone.Gain(1);
+    this.inputBus = new Tone.Gain(1);
+    this.rhythmGate = new Tone.Gain(1);
     this.connectMasterToDestination();
 
     this.reverb = new Tone.Reverb({
@@ -331,6 +441,8 @@ export class FrequencyGenerator {
 
     await this.reverb.generate();
 
+    this.inputBus.connect(this.rhythmGate);
+    this.rhythmGate.connect(this.reverb);
     this.reverb.connect(this.delay);
     this.delay.connect(this.master);
 
@@ -496,17 +608,206 @@ export class FrequencyGenerator {
     this.voicePanners = [];
     this.voiceTremolos.forEach((tremolo) => tremolo.dispose());
     this.voiceTremolos = [];
+    this.stopRhythmSequence(false);
+    this.stopAutomationLoop(false);
     this.stopAmbient(true);
     this.teardownAudioBridge();
+    this.inputBus?.dispose();
+    this.rhythmGate?.dispose();
     this.reverb?.dispose();
     this.delay?.dispose();
     this.master?.dispose();
+    this.inputBus = null;
+    this.rhythmGate = null;
     this.reverb = null;
     this.delay = null;
     this.master = null;
     this.analyser = null;
     this.masterConnected = false;
     this.initialized = false;
+    this.isPlaying = false;
+    this.voiceBaseFrequencies = [];
+    this.voiceSweepTargets = [];
+  }
+
+  private ensureTransportStarted() {
+    if (Tone.Transport.state !== 'started') {
+      Tone.Transport.start();
+    }
+  }
+
+  private maybeStopTransport() {
+    if (this.rhythmSequence || this.automationEventId !== null || this.ambientLoop || this.isPlaying) {
+      return;
+    }
+
+    if (Tone.Transport.state === 'started') {
+      Tone.Transport.stop();
+      Tone.Transport.position = 0;
+    }
+  }
+
+  private resetRhythmGate() {
+    if (!this.rhythmGate) {
+      return;
+    }
+    this.rhythmGate.gain.cancelScheduledValues(Tone.now());
+    this.rhythmGate.gain.value = 1;
+  }
+
+  private stopRhythmSequence(resetGate = true) {
+    this.rhythmSequence?.stop();
+    this.rhythmSequence?.dispose();
+    this.rhythmSequence = null;
+    if (resetGate) {
+      this.resetRhythmGate();
+    }
+    this.maybeStopTransport();
+  }
+
+  private configureRhythmSequence() {
+    this.stopRhythmSequence(false);
+
+    if (!this.isPlaying || !this.rhythmConfig.enabled || !this.rhythmGate) {
+      this.resetRhythmGate();
+      return;
+    }
+
+    Tone.Transport.bpm.rampTo(this.rhythmConfig.bpm, 0.12);
+
+    const values = this.rhythmConfig.steps.map((step) => (step ? 1 : 0));
+    this.rhythmSequence = new Tone.Sequence<number>(
+      (time, value) => {
+        if (!this.rhythmGate) {
+          return;
+        }
+        const target = value === 1 ? 1 : 0.001;
+        this.rhythmGate.gain.cancelScheduledValues(time);
+        this.rhythmGate.gain.setTargetAtTime(target, time, 0.01);
+      },
+      values,
+      this.rhythmConfig.subdivision
+    );
+    this.rhythmSequence.loop = true;
+    this.ensureTransportStarted();
+    this.rhythmSequence.start(0);
+  }
+
+  private computeSweepTargets(baseFrequencies: number[]) {
+    if (baseFrequencies.length === 0) {
+      return [];
+    }
+
+    if (!this.automationConfig.sweep.enabled) {
+      return [...baseFrequencies];
+    }
+
+    const anchor = Math.max(20, baseFrequencies[0]);
+    const ratio = this.automationConfig.sweep.targetHz / anchor;
+    return baseFrequencies.map((frequency) => clamp(20, frequency * ratio, 10000));
+  }
+
+  private stopAutomationLoop(resetToBase = true) {
+    if (this.automationEventId !== null) {
+      Tone.Transport.clear(this.automationEventId);
+      this.automationEventId = null;
+    }
+
+    if (resetToBase && this.voiceBaseFrequencies.length > 0) {
+      const now = Tone.now();
+      this.synths.forEach((synth, index) => {
+        const base = this.voiceBaseFrequencies[index];
+        if (typeof base === 'number') {
+          synth.frequency.setValueAtTime(base, now);
+        }
+      });
+    }
+
+    this.maybeStopTransport();
+  }
+
+  private configureAutomationLoop() {
+    this.stopAutomationLoop(false);
+
+    if (!this.isPlaying || this.synths.length === 0) {
+      return;
+    }
+
+    const modulationEnabled =
+      this.automationConfig.modulation.enabled && this.automationConfig.modulation.depthHz > 0;
+    const sweepEnabled = this.automationConfig.sweep.enabled;
+
+    this.voiceSweepTargets = this.computeSweepTargets(this.voiceBaseFrequencies);
+
+    if (!modulationEnabled && !sweepEnabled) {
+      this.stopAutomationLoop(true);
+      return;
+    }
+
+    this.automationStartAt = Tone.now();
+    this.ensureTransportStarted();
+    this.automationEventId = Tone.Transport.scheduleRepeat((time) => {
+      this.applyAutomationAtTime(time);
+    }, '16n');
+    this.applyAutomationAtTime(Tone.now());
+  }
+
+  private resolveSweepProgress(progress: number, curve: SweepConfig['curve']) {
+    const clamped = clamp(0, progress, 1);
+    if (curve === 'linear') {
+      return clamped;
+    }
+
+    if (curve === 'exponential') {
+      return clamped <= 0 ? 0 : clamped ** 2.2;
+    }
+
+    return 0.5 - Math.cos(clamped * Math.PI) / 2;
+  }
+
+  private sampleLfoWaveform(phase: number, waveform: ModulationConfig['waveform']) {
+    if (waveform === 'triangle') {
+      return (2 / Math.PI) * Math.asin(Math.sin(phase));
+    }
+
+    if (waveform === 'square') {
+      return Math.sin(phase) >= 0 ? 1 : -1;
+    }
+
+    if (waveform === 'sawtooth') {
+      const wrapped = phase / (Math.PI * 2);
+      return 2 * (wrapped - Math.floor(wrapped + 0.5));
+    }
+
+    return Math.sin(phase);
+  }
+
+  private applyAutomationAtTime(time: number) {
+    if (this.synths.length === 0 || this.voiceBaseFrequencies.length === 0) {
+      return;
+    }
+
+    const elapsed = Math.max(0, time - this.automationStartAt);
+    const { modulation, sweep } = this.automationConfig;
+    const sweepEnabled = sweep.enabled;
+    const modulationEnabled = modulation.enabled && modulation.depthHz > 0;
+    const sweepProgress = sweepEnabled ? Math.min(1, elapsed / sweep.durationSeconds) : 0;
+    const sweepAmount = this.resolveSweepProgress(sweepProgress, sweep.curve);
+    const phase = elapsed * Math.PI * 2 * modulation.rateHz;
+    const lfoValue = modulationEnabled ? this.sampleLfoWaveform(phase, modulation.waveform) : 0;
+
+    this.synths.forEach((synth, index) => {
+      const base = this.voiceBaseFrequencies[index];
+      const target = this.voiceSweepTargets[index] ?? base;
+      const sweptFrequency = sweepEnabled ? base + (target - base) * sweepAmount : base;
+      const modulationOffset = modulationEnabled ? lfoValue * modulation.depthHz : 0;
+      const nextFrequency = clamp(20, sweptFrequency + modulationOffset, 10000);
+      synth.frequency.setValueAtTime(nextFrequency, time);
+    });
+
+    if (sweepEnabled && sweepProgress >= 1 && !modulationEnabled) {
+      this.stopAutomationLoop(false);
+    }
   }
 
   private connectMasterToDestination() {

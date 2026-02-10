@@ -3,16 +3,47 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import Button from '@/components/ui/Button';
+import HelpPopover from '@/components/ui/HelpPopover';
 import Modal from '@/components/ui/Modal';
-import WaveformVisualizer, { type VisualizerType } from '@/components/audio/WaveformVisualizer';
+import WaveformVisualizer from '@/components/audio/WaveformVisualizer';
 import ThreeVisualizer from '@/components/audio/ThreeVisualizer';
 import { FrequencyGenerator } from '@/lib/audio/FrequencyGenerator';
-import { buildFrequencyMix, frequenciesForStorage, type MixStyle } from '@/lib/audio/mixProfiles';
+import {
+  buildFrequencyMix,
+  frequenciesForStorage,
+  type MixStyle
+} from '@/lib/audio/mixProfiles';
 import { exportAudio } from '@/lib/audio/AudioExporter';
 import { DEFAULT_EFFECTS } from '@/lib/audio/effects';
+import {
+  clamp,
+  createDefaultAudioConfig,
+  frequencyKey,
+  MAX_CUSTOM_FREQUENCY_HZ,
+  MIN_CUSTOM_FREQUENCY_HZ,
+  normalizeFrequency,
+  normalizeRhythmSteps,
+  parseAudioConfig,
+  type AudioConfigShape,
+  type BinauralConfig,
+  type ModulationConfig,
+  type RhythmConfig,
+  type SweepConfig
+} from '@/lib/audio/audioConfig';
+import {
+  createDefaultVisualizationLayers,
+  createLayersForType,
+  createVisualizationLayer,
+  normalizeVisualizationLayers,
+  toVisualizationLayersPayload,
+  type BaseVisualizationType,
+  type LayerBlendMode,
+  type VisualizationLayerConfig,
+  type VisualizerType
+} from '@/lib/visualization/config';
 import { createSupabaseClient } from '@/lib/supabase/client';
 import { ensureProfile } from '@/lib/supabase/profile';
-import type { Json } from '@/lib/supabase/types';
+import type { Database, Json } from '@/lib/supabase/types';
 import { captureVideo } from '@/lib/visualization/VideoCapture';
 import { isIOSDevice } from '@/lib/utils/platform';
 import {
@@ -20,7 +51,6 @@ import {
   AUDIO_BUCKET,
   AUDIO_FORMATS,
   DEFAULT_DURATION,
-  MAX_FREQUENCIES,
   MIX_STYLES,
   MP3_ESTIMATED_MAX_SECONDS,
   PRESET_FREQUENCIES,
@@ -35,6 +65,20 @@ const DEFAULT_VOLUME = 0.35;
 const DRAFT_KEY = 'frequency-healing:draft';
 const MAX_EXPORT_SECONDS = 120;
 const THUMBNAIL_WIDTH = 640;
+const MAX_PHASE2_FREQUENCIES = 12;
+
+const BASE_LAYER_TYPES: BaseVisualizationType[] = [
+  'waveform',
+  'particles',
+  'mandala',
+  'spiral',
+  'gradient',
+  'ripple',
+  'sacred_geometry'
+];
+
+const BLEND_MODES: LayerBlendMode[] = ['source-over', 'screen', 'overlay', 'lighter', 'multiply', 'soft-light'];
+type CompositionInsert = Database['public']['Tables']['compositions']['Insert'];
 
 async function captureThumbnail(canvas: HTMLCanvasElement) {
   const sourceWidth = canvas.width || canvas.clientWidth;
@@ -64,27 +108,73 @@ async function captureThumbnail(canvas: HTMLCanvasElement) {
 
 type DraftState = {
   selectedFrequencies: number[];
+  frequencyVolumes: Record<string, number>;
   mixStyle: MixStyle;
   waveform: (typeof WAVEFORMS)[number];
   volume: number;
   duration: number;
   visualizationType: VisualizerType;
+  visualizationLayers: Json;
   ambientSound: (typeof AMBIENT_SOUNDS)[number];
   audioFormat: (typeof AUDIO_FORMATS)[number];
   includeVideo: boolean;
   title: string;
   description: string;
   isPublic: boolean;
+  audioConfig: Json;
 };
 
+function isValidFrequency(value: number) {
+  return Number.isFinite(value) && value >= MIN_CUSTOM_FREQUENCY_HZ && value <= MAX_CUSTOM_FREQUENCY_HZ;
+}
+
+function dedupeFrequencies(values: number[]) {
+  const set = new Set<number>();
+  const output: number[] = [];
+
+  for (const value of values) {
+    const normalized = normalizeFrequency(value);
+    if (!set.has(normalized)) {
+      set.add(normalized);
+      output.push(normalized);
+    }
+  }
+
+  return output;
+}
+
+function randomizeSteps(length = 16) {
+  const next = Array.from({ length }, () => Math.random() > 0.48);
+  if (!next.some(Boolean)) {
+    next[Math.floor(Math.random() * length)] = true;
+  }
+  return next;
+}
+
+function isBaseVisualizationType(type: VisualizerType): type is BaseVisualizationType {
+  return BASE_LAYER_TYPES.includes(type as BaseVisualizationType);
+}
+
 export default function FrequencyCreator() {
+  const defaultAudioConfig = useMemo(() => createDefaultAudioConfig(), []);
+
   const [selectedFrequencies, setSelectedFrequencies] = useState<number[]>([]);
+  const [frequencyVolumes, setFrequencyVolumes] = useState<Record<string, number>>({});
+  const [customFrequencyInput, setCustomFrequencyInput] = useState('');
   const [mixStyle, setMixStyle] = useState<MixStyle>('golden432');
   const [isPlaying, setIsPlaying] = useState(false);
   const [waveform, setWaveform] = useState<(typeof WAVEFORMS)[number]>('sine');
   const [volume, setVolume] = useState(DEFAULT_VOLUME);
   const [duration, setDuration] = useState(DEFAULT_DURATION);
+  const [rhythmConfig, setRhythmConfig] = useState<RhythmConfig>(defaultAudioConfig.rhythm);
+  const [modulationConfig, setModulationConfig] = useState<ModulationConfig>(defaultAudioConfig.modulation);
+  const [sweepConfig, setSweepConfig] = useState<SweepConfig>(defaultAudioConfig.sweep);
+  const [binauralConfig, setBinauralConfig] = useState<BinauralConfig>(defaultAudioConfig.binaural);
   const [visualizationType, setVisualizationType] = useState<VisualizerType>('waveform');
+  const [visualizationLayers, setVisualizationLayers] = useState<VisualizationLayerConfig[]>(
+    createDefaultVisualizationLayers()
+  );
+  const [layerToAdd, setLayerToAdd] = useState<BaseVisualizationType>('particles');
   const [ambientSound, setAmbientSound] = useState<(typeof AMBIENT_SOUNDS)[number]>('none');
   const [audioFormat, setAudioFormat] = useState<(typeof AUDIO_FORMATS)[number]>('webm');
   const [includeVideo, setIncludeVideo] = useState(false);
@@ -100,20 +190,65 @@ export default function FrequencyCreator() {
   const [isIOS, setIsIOS] = useState(false);
   const mp3LimitSeconds = MP3_ESTIMATED_MAX_SECONDS;
   const showMp3Warning = audioFormat === 'mp3' && duration > mp3LimitSeconds;
-  const maxSelectableFrequencies =
-    mixStyle === 'golden432' ? PRESET_FREQUENCIES.length : MAX_FREQUENCIES;
+  const maxSelectableFrequencies = mixStyle === 'golden432' ? MAX_PHASE2_FREQUENCIES : MAX_PHASE2_FREQUENCIES;
 
   const generator = useMemo(() => new FrequencyGenerator(), []);
   const supabase = useMemo(() => createSupabaseClient(), []);
+
+  const audioConfig = useMemo<AudioConfigShape>(
+    () => ({
+      version: 1,
+      selectedFrequencies,
+      frequencyVolumes,
+      rhythm: rhythmConfig,
+      modulation: modulationConfig,
+      sweep: sweepConfig,
+      binaural: binauralConfig
+    }),
+    [binauralConfig, frequencyVolumes, modulationConfig, rhythmConfig, selectedFrequencies, sweepConfig]
+  );
+
+  const audioConfigJson = useMemo<Json>(
+    () => ({
+      version: audioConfig.version,
+      selectedFrequencies: [...audioConfig.selectedFrequencies],
+      frequencyVolumes: { ...audioConfig.frequencyVolumes },
+      rhythm: { ...audioConfig.rhythm, steps: [...audioConfig.rhythm.steps] },
+      modulation: { ...audioConfig.modulation },
+      sweep: { ...audioConfig.sweep },
+      binaural: { ...audioConfig.binaural }
+    }),
+    [audioConfig]
+  );
+
+  const customFrequencyValue = Number(customFrequencyInput);
+  const customFrequencyValid =
+    customFrequencyInput.trim().length > 0 && Number.isFinite(customFrequencyValue) && isValidFrequency(customFrequencyValue);
+
+  const effectiveVisualizationLayers = useMemo(() => {
+    if (visualizationType === 'multi-layer') {
+      return visualizationLayers.length > 0 ? visualizationLayers : createDefaultVisualizationLayers();
+    }
+
+    if (visualizationType === 'orbital') {
+      return [];
+    }
+
+    const layer = visualizationLayers.find((entry) => entry.type === visualizationType);
+    return layer ? [layer] : createLayersForType(visualizationType);
+  }, [visualizationLayers, visualizationType]);
+
   const mixedVoices = useMemo(
     () =>
       buildFrequencyMix({
         mixStyle,
         selectedFrequencies,
         waveform,
-        volume
+        volume,
+        frequencyVolumes,
+        binaural: binauralConfig
       }),
-    [mixStyle, selectedFrequencies, waveform, volume]
+    [mixStyle, selectedFrequencies, waveform, volume, frequencyVolumes, binauralConfig]
   );
 
   useEffect(() => {
@@ -168,9 +303,23 @@ export default function FrequencyCreator() {
 
     try {
       const draft = JSON.parse(raw) as Partial<DraftState>;
-      if (draft.selectedFrequencies) {
-        setSelectedFrequencies(draft.selectedFrequencies);
+      if (draft.audioConfig) {
+        const parsed = parseAudioConfig(draft.audioConfig);
+        setSelectedFrequencies(dedupeFrequencies(parsed.selectedFrequencies));
+        setFrequencyVolumes(parsed.frequencyVolumes);
+        setRhythmConfig(parsed.rhythm);
+        setModulationConfig(parsed.modulation);
+        setSweepConfig(parsed.sweep);
+        setBinauralConfig(parsed.binaural);
+      } else {
+        if (draft.selectedFrequencies) {
+          setSelectedFrequencies(dedupeFrequencies(draft.selectedFrequencies));
+        }
+        if (draft.frequencyVolumes) {
+          setFrequencyVolumes(draft.frequencyVolumes);
+        }
       }
+
       if (draft.mixStyle) {
         setMixStyle(draft.mixStyle);
       }
@@ -181,10 +330,13 @@ export default function FrequencyCreator() {
         setVolume(draft.volume);
       }
       if (typeof draft.duration === 'number') {
-        setDuration(draft.duration);
+        setDuration(clamp(60, draft.duration, 600));
       }
       if (draft.visualizationType) {
         setVisualizationType(draft.visualizationType);
+      }
+      if (draft.visualizationLayers) {
+        setVisualizationLayers(normalizeVisualizationLayers(draft.visualizationLayers, draft.visualizationType));
       }
       if (draft.ambientSound) {
         setAmbientSound(draft.ambientSound);
@@ -216,34 +368,65 @@ export default function FrequencyCreator() {
 
     const draft: DraftState = {
       selectedFrequencies,
+      frequencyVolumes,
       mixStyle,
       waveform,
       volume,
       duration,
       visualizationType,
+      visualizationLayers: toVisualizationLayersPayload(visualizationLayers),
       ambientSound,
       audioFormat,
       includeVideo,
       title,
       description,
-      isPublic
+      isPublic,
+      audioConfig: audioConfigJson
     };
 
     window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
   }, [
-    selectedFrequencies,
-    mixStyle,
-    waveform,
-    volume,
-    duration,
-    visualizationType,
     ambientSound,
+    audioConfigJson,
     audioFormat,
-    includeVideo,
-    title,
     description,
-    isPublic
+    duration,
+    frequencyVolumes,
+    includeVideo,
+    isPublic,
+    mixStyle,
+    selectedFrequencies,
+    title,
+    visualizationLayers,
+    visualizationType,
+    volume,
+    waveform
   ]);
+
+  useEffect(() => {
+    setFrequencyVolumes((prev) => {
+      const next = { ...prev };
+      let changed = false;
+
+      selectedFrequencies.forEach((frequency) => {
+        const key = frequencyKey(frequency);
+        if (typeof next[key] !== 'number') {
+          next[key] = 1;
+          changed = true;
+        }
+      });
+
+      for (const key of Object.keys(next)) {
+        const value = Number(key);
+        if (Number.isFinite(value) && !selectedFrequencies.includes(normalizeFrequency(value))) {
+          delete next[key];
+          changed = true;
+        }
+      }
+
+      return changed ? next : prev;
+    });
+  }, [selectedFrequencies]);
 
   useEffect(() => {
     if (isPlaying) {
@@ -258,6 +441,22 @@ export default function FrequencyCreator() {
   }, [generator, isPlaying, mixedVoices]);
 
   useEffect(() => {
+    if (!isPlaying) {
+      return;
+    }
+
+    generator.setRhythmPattern(rhythmConfig);
+  }, [generator, isPlaying, rhythmConfig]);
+
+  useEffect(() => {
+    if (!isPlaying) {
+      return;
+    }
+
+    generator.setAutomation({ modulation: modulationConfig, sweep: sweepConfig });
+  }, [generator, isPlaying, modulationConfig, sweepConfig]);
+
+  useEffect(() => {
     if (isPlaying && mixedVoices.length === 0) {
       generator.stop();
       setIsPlaying(false);
@@ -266,28 +465,205 @@ export default function FrequencyCreator() {
   }, [generator, isPlaying, mixedVoices.length]);
 
   useEffect(() => {
-    if (mixStyle !== 'golden432') {
-      if (selectedFrequencies.length > MAX_FREQUENCIES) {
-        setSelectedFrequencies((prev) => prev.slice(0, MAX_FREQUENCIES));
-      }
-    }
-  }, [mixStyle, selectedFrequencies.length]);
-
-  useEffect(() => {
     if (isPlaying) {
       generator.setAmbientLayer(ambientSound);
     }
   }, [ambientSound, generator, isPlaying]);
 
+  useEffect(() => {
+    if (!isBaseVisualizationType(visualizationType)) {
+      return;
+    }
+
+    setVisualizationLayers((prev) => {
+      if (prev.some((entry) => entry.type === visualizationType)) {
+        return prev;
+      }
+
+      return [...prev, createVisualizationLayer(visualizationType)];
+    });
+  }, [visualizationType]);
+
+  const addFrequency = (hz: number, defaultGain = 1) => {
+    const normalized = normalizeFrequency(hz);
+    let inserted = false;
+
+    setSelectedFrequencies((prev) => {
+      if (prev.includes(normalized)) {
+        return prev;
+      }
+      if (prev.length >= maxSelectableFrequencies) {
+        setStatus(`You can stack up to ${maxSelectableFrequencies} frequencies in Phase 2 mode.`);
+        return prev;
+      }
+      inserted = true;
+      return [...prev, normalized];
+    });
+
+    if (!inserted) {
+      return;
+    }
+
+    setFrequencyVolumes((prev) => ({
+      ...prev,
+      [frequencyKey(normalized)]: clamp(0.05, defaultGain, 1)
+    }));
+  };
+
   const toggleFrequency = (hz: number) => {
-    setSelectedFrequencies((prev) =>
-      prev.includes(hz)
-        ? prev.filter((value) => value !== hz)
-        : prev.length >= maxSelectableFrequencies
-          ? prev
-          : [...prev, hz]
+    const normalized = normalizeFrequency(hz);
+    const isSelected = selectedFrequencies.includes(normalized);
+
+    if (isSelected) {
+      setSelectedFrequencies((prev) => prev.filter((value) => value !== normalized));
+      setFrequencyVolumes((prev) => {
+        const next = { ...prev };
+        delete next[frequencyKey(normalized)];
+        return next;
+      });
+      return;
+    }
+
+    if (selectedFrequencies.length >= maxSelectableFrequencies) {
+      setStatus(`You can stack up to ${maxSelectableFrequencies} frequencies in Phase 2 mode.`);
+      return;
+    }
+
+    setSelectedFrequencies((prev) => {
+      if (prev.includes(normalized)) {
+        return prev;
+      }
+      if (prev.length >= maxSelectableFrequencies) {
+        return prev;
+      }
+      return [...prev, normalized];
+    });
+    setFrequencyVolumes((prev) => ({
+      ...prev,
+      [frequencyKey(normalized)]: prev[frequencyKey(normalized)] ?? 1
+    }));
+  };
+
+  const addCustomFrequency = () => {
+    if (!customFrequencyValid) {
+      setStatus(`Enter a valid frequency between ${MIN_CUSTOM_FREQUENCY_HZ}Hz and ${MAX_CUSTOM_FREQUENCY_HZ}Hz.`);
+      return;
+    }
+
+    addFrequency(customFrequencyValue);
+    setCustomFrequencyInput('');
+    setStatus(null);
+  };
+
+  const nudgeCustomFrequency = (direction: 1 | -1) => {
+    const base = customFrequencyValid ? customFrequencyValue : 432;
+    const next = normalizeFrequency(base + direction);
+    setCustomFrequencyInput(String(next));
+  };
+
+  const addHarmonics = () => {
+    if (selectedFrequencies.length === 0) {
+      setStatus('Select a base frequency before adding harmonics.');
+      return;
+    }
+
+    const snapshot = [...selectedFrequencies];
+    let added = 0;
+
+    snapshot.forEach((frequency) => {
+      const harmonic2 = frequency * 2;
+      const harmonic3 = frequency * 3;
+
+      if (isValidFrequency(harmonic2)) {
+        const normalized = normalizeFrequency(harmonic2);
+        if (!selectedFrequencies.includes(normalized)) {
+          addFrequency(normalized, 0.55);
+          added += 1;
+        }
+      }
+
+      if (isValidFrequency(harmonic3)) {
+        const normalized = normalizeFrequency(harmonic3);
+        if (!selectedFrequencies.includes(normalized)) {
+          addFrequency(normalized, 0.35);
+          added += 1;
+        }
+      }
+    });
+
+    if (added === 0) {
+      setStatus('All available 2x and 3x harmonics are already present or out of range.');
+      return;
+    }
+
+    setStatus(`Added ${added} harmonic tone${added > 1 ? 's' : ''}.`);
+  };
+
+  const setFrequencyGain = (hz: number, value: number) => {
+    const key = frequencyKey(hz);
+    setFrequencyVolumes((prev) => ({
+      ...prev,
+      [key]: clamp(0.05, value, 1)
+    }));
+  };
+
+  const toggleRhythmStep = (index: number) => {
+    setRhythmConfig((prev) => {
+      const nextSteps = [...prev.steps];
+      nextSteps[index] = !nextSteps[index];
+      if (!nextSteps.some(Boolean)) {
+        nextSteps[index] = true;
+      }
+      return {
+        ...prev,
+        steps: normalizeRhythmSteps(nextSteps)
+      };
+    });
+  };
+
+  const randomizeRhythm = () => {
+    setRhythmConfig((prev) => ({
+      ...prev,
+      steps: randomizeSteps(prev.steps.length)
+    }));
+  };
+
+  const updateLayer = (layerId: string, patch: Partial<VisualizationLayerConfig>) => {
+    setVisualizationLayers((prev) =>
+      prev.map((layer) => (layer.id === layerId ? { ...layer, ...patch } : layer))
     );
   };
+
+  const addLayer = () => {
+    setVisualizationLayers((prev) => [...prev, createVisualizationLayer(layerToAdd)]);
+    setVisualizationType('multi-layer');
+  };
+
+  const removeLayer = (layerId: string) => {
+    setVisualizationLayers((prev) => {
+      const next = prev.filter((layer) => layer.id !== layerId);
+      return next.length > 0 ? next : [createVisualizationLayer('gradient')];
+    });
+  };
+
+  const moveLayer = (layerId: string, direction: -1 | 1) => {
+    setVisualizationLayers((prev) => {
+      const currentIndex = prev.findIndex((layer) => layer.id === layerId);
+      if (currentIndex < 0) {
+        return prev;
+      }
+      const targetIndex = currentIndex + direction;
+      if (targetIndex < 0 || targetIndex >= prev.length) {
+        return prev;
+      }
+      const next = [...prev];
+      const [item] = next.splice(currentIndex, 1);
+      next.splice(targetIndex, 0, item);
+      return next;
+    });
+  };
+
+  const currentLayerEntries = visualizationType === 'multi-layer' ? visualizationLayers : effectiveVisualizationLayers;
 
   const handlePlay = async () => {
     if (isPlaying) {
@@ -296,12 +672,20 @@ export default function FrequencyCreator() {
       return;
     }
 
+    if (mixedVoices.length === 0) {
+      setStatus('Select at least one frequency before playback.');
+      return;
+    }
+
     try {
       const shouldEnableBridge = isIOS || isIOSDevice();
       await generator.initialize(DEFAULT_EFFECTS, { enableIOSAudioBridge: shouldEnableBridge });
       generator.setMasterVolume(volume);
+      generator.setRhythmPattern(rhythmConfig);
+      generator.setAutomation({ modulation: modulationConfig, sweep: sweepConfig });
       setAnalyser(generator.getAnalyser());
       setIsPlaying(true);
+      setStatus(null);
     } catch (error) {
       console.error(error);
       setStatus('Audio could not start. Please tap Play again or check device settings.');
@@ -413,8 +797,11 @@ export default function FrequencyCreator() {
       }
 
       const frequenciesToStore = frequenciesForStorage(mixStyle, selectedFrequencies, mixedVoices);
-      const frequencyVolumes: Json = Object.fromEntries(
-        mixedVoices.map((voice) => [String(Math.round(voice.frequency * 100) / 100), voice.volume])
+      const frequencyVolumesPayload: Json = Object.fromEntries(
+        selectedFrequencies.map((frequency) => {
+          const key = frequencyKey(frequency);
+          return [key, frequencyVolumes[key] ?? 1];
+        })
       );
       const effectsConfig: Json = {
         reverb: DEFAULT_EFFECTS.reverb
@@ -427,37 +814,54 @@ export default function FrequencyCreator() {
               wet: DEFAULT_EFFECTS.delay.wet
             }
           : null,
-        mix_style: mixStyle
+        mix_style: mixStyle,
+        binaural_enabled: binauralConfig.enabled
       };
 
-      const { data: insertData, error: insertError } = await supabase
-        .from('compositions')
-        .insert({
+      const insertPayload: CompositionInsert = {
         user_id: activeUserId,
         title: title.trim() || 'Untitled Session',
         description,
         frequencies: frequenciesToStore,
-        frequency_volumes: frequencyVolumes,
+        frequency_volumes: frequencyVolumesPayload,
         duration,
         waveform,
         ambient_sound: ambientSound === 'none' ? null : ambientSound,
         effects: effectsConfig,
+        audio_config: audioConfigJson,
         visualization_type: visualizationType,
         visualization_config: { palette: 'ember-lagoon' },
+        visualization_layers: toVisualizationLayersPayload(effectiveVisualizationLayers),
         audio_url: publicUrl,
         video_url: videoUrl,
         thumbnail_url: thumbnailUrl,
         is_public: isPublic,
-        tags: [ambientSound].filter((tag) => tag !== 'none')
-      })
-        .select('id')
-        .single();
+        tags: [ambientSound, binauralConfig.enabled ? 'binaural' : null].filter(
+          (tag): tag is string => Boolean(tag) && tag !== 'none'
+        )
+      };
 
-      if (insertError) {
-        throw insertError;
+      let insertResult = await supabase.from('compositions').insert(insertPayload).select('id').single();
+
+      if (
+        insertResult.error &&
+        (insertResult.error.message.includes('audio_config') ||
+          insertResult.error.message.includes('visualization_layers'))
+      ) {
+        const { audio_config: _audioConfig, visualization_layers: _visualizationLayers, ...fallbackPayload } =
+          insertPayload;
+        insertResult = await supabase
+          .from('compositions')
+          .insert(fallbackPayload as CompositionInsert)
+          .select('id')
+          .single();
       }
 
-      if (insertData?.id) {
+      if (insertResult.error) {
+        throw insertResult.error;
+      }
+
+      if (insertResult.data?.id) {
         const tasks = ['normalize_audio'];
         if (videoUrl) {
           tasks.push('transcode_video');
@@ -465,7 +869,7 @@ export default function FrequencyCreator() {
         fetch('/api/processing', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ compositionId: insertData.id, tasks })
+          body: JSON.stringify({ compositionId: insertResult.data.id, tasks })
         }).catch(() => null);
       }
 
@@ -494,7 +898,7 @@ export default function FrequencyCreator() {
         <div className="space-y-4">
           <h2 className="text-2xl font-semibold">Create your frequency ritual</h2>
           <p className="text-sm text-ink/70">
-            Stack core tones, shape phi harmonics, and explore immersive resonance patterns in real time.
+            Stack core tones, drive rhythmic gates, automate sweeps, and design layered visuals in real time.
           </p>
           <div className="grid gap-3">
             <label className="text-xs uppercase tracking-[0.3em] text-ink/60">Title</label>
@@ -535,6 +939,11 @@ export default function FrequencyCreator() {
                 your iPhone. Video export is unavailable on iPhone/iPad.
               </div>
             ) : null}
+            {binauralConfig.enabled ? (
+              <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                Binaural mode is most effective on headphones. Speakers reduce channel separation and beat perception.
+              </div>
+            ) : null}
             <div className="mt-4 grid gap-3 text-sm">
               <label className="flex items-center justify-between gap-3">
                 <span>Waveform</span>
@@ -566,8 +975,7 @@ export default function FrequencyCreator() {
               </label>
               {mixStyle === 'golden432' ? (
                 <p className="rounded-2xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs text-teal-700">
-                  Golden ladder mode uses each selected frequency as a base tone, then adds phi sidebands with
-                  reference-style left/right weighting.
+                  Golden ladder mode generates phi-sideband textures. Binaural mode overrides this with direct dual-oscillator voices.
                 </p>
               ) : null}
               <label className="flex items-center justify-between gap-3">
@@ -614,8 +1022,8 @@ export default function FrequencyCreator() {
               </label>
               {showMp3Warning ? (
                 <p className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                  MP3 export is optimized for shorter sessions (up to {mp3LimitSeconds}s). Reduce duration or choose
-                  WAV for longer renders.
+                  MP3 export is optimized for shorter sessions (up to {mp3LimitSeconds}s). Reduce duration or choose WAV for
+                  longer renders.
                 </p>
               ) : null}
               <label className="flex items-center justify-between gap-3">
@@ -635,7 +1043,7 @@ export default function FrequencyCreator() {
                   min={60}
                   max={600}
                   value={duration}
-                  onChange={(event) => setDuration(Number(event.target.value))}
+                  onChange={(event) => setDuration(clamp(60, Number(event.target.value), 600))}
                   className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
                 />
               </label>
@@ -676,12 +1084,56 @@ export default function FrequencyCreator() {
 
       <div className="grid gap-6 md:grid-cols-[1.2fr_0.8fr]">
         <div className="space-y-4">
-          <h3 className="text-lg font-semibold">Selected frequencies</h3>
-          <p className="text-xs text-ink/60">
-            {mixStyle === 'golden432'
-              ? 'Select one or more base frequencies. Each selected tone generates its own phi ladder.'
-              : `Select up to ${MAX_FREQUENCIES} frequencies.`}
-          </p>
+          <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+            <h3 className="text-lg font-semibold">Selected frequencies</h3>
+            <p className="text-xs text-ink/60">
+              Add arbitrary frequencies ({MIN_CUSTOM_FREQUENCY_HZ}-{MAX_CUSTOM_FREQUENCY_HZ}Hz), then use harmonics,
+              modulation, and rhythm shaping.
+            </p>
+            <div className="mt-3 flex flex-wrap items-end gap-2">
+              <label className="flex flex-col gap-1 text-xs uppercase tracking-[0.2em] text-ink/60">
+                Custom Hz
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => nudgeCustomFrequency(-1)}
+                    className="h-9 w-9 rounded-full border border-ink/15 bg-white text-lg leading-none"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="number"
+                    min={MIN_CUSTOM_FREQUENCY_HZ}
+                    max={MAX_CUSTOM_FREQUENCY_HZ}
+                    step={0.1}
+                    value={customFrequencyInput}
+                    onChange={(event) => setCustomFrequencyInput(event.target.value)}
+                    className="w-32 rounded-full border border-ink/10 bg-white px-3 py-2 text-sm"
+                    placeholder="e.g. 741"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => nudgeCustomFrequency(1)}
+                    className="h-9 w-9 rounded-full border border-ink/15 bg-white text-lg leading-none"
+                  >
+                    +
+                  </button>
+                </div>
+              </label>
+              <Button size="sm" onClick={addCustomFrequency}>
+                Add frequency
+              </Button>
+              <Button size="sm" variant="outline" onClick={addHarmonics}>
+                Add 2x/3x harmonics
+              </Button>
+            </div>
+            {customFrequencyInput.trim().length > 0 && !customFrequencyValid ? (
+              <p className="mt-2 text-xs text-rose-600">
+                Frequency must be between {MIN_CUSTOM_FREQUENCY_HZ}Hz and {MAX_CUSTOM_FREQUENCY_HZ}Hz.
+              </p>
+            ) : null}
+          </div>
+
           <div className="grid gap-3 md:grid-cols-2">
             {PRESET_FREQUENCIES.map((freq) => (
               <button
@@ -702,7 +1154,345 @@ export default function FrequencyCreator() {
               </button>
             ))}
           </div>
+
+          <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">
+                  Frequency stack ({selectedFrequencies.length}/{maxSelectableFrequencies})
+                </h4>
+                <HelpPopover
+                  align="left"
+                  label="Frequency stack help"
+                  text="Your active tones live here. Each one has its own volume, and the stack is saved into audio config."
+                />
+              </div>
+            </div>
+            {selectedFrequencies.length === 0 ? (
+              <p className="text-sm text-ink/60">No frequencies selected yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {selectedFrequencies.map((frequency) => {
+                  const key = frequencyKey(frequency);
+                  const gain = frequencyVolumes[key] ?? 1;
+                  return (
+                    <div key={key} className="rounded-2xl border border-ink/10 bg-white px-3 py-3">
+                      <div className="mb-2 flex items-center justify-between text-sm">
+                        <span>{frequency.toFixed(2)} Hz</span>
+                        <button
+                          type="button"
+                          onClick={() => toggleFrequency(frequency)}
+                          className="text-xs uppercase tracking-[0.2em] text-ink/50 hover:text-ink"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      <label className="flex items-center justify-between gap-3 text-xs text-ink/60">
+                        <span>Volume</span>
+                        <input
+                          type="range"
+                          min={0.05}
+                          max={1}
+                          step={0.01}
+                          value={gain}
+                          onChange={(event) => setFrequencyGain(frequency, Number(event.target.value))}
+                          className="w-40"
+                        />
+                        <span className="w-10 text-right">{Math.round(gain * 100)}%</span>
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">Rhythm pattern</h4>
+                <HelpPopover
+                  align="left"
+                  label="Rhythm pattern help"
+                  text="The step grid gates sound on and off. BPM and subdivision control timing, and randomize creates a valid new pattern."
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-2 text-xs text-ink/70">
+                  <span>Enable</span>
+                  <input
+                    type="checkbox"
+                    checked={rhythmConfig.enabled}
+                    onChange={(event) =>
+                      setRhythmConfig((prev) => ({
+                        ...prev,
+                        enabled: event.target.checked
+                      }))
+                    }
+                    className="h-4 w-4"
+                  />
+                </label>
+                <Button size="sm" variant="outline" onClick={randomizeRhythm}>
+                  Randomize
+                </Button>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex items-center justify-between gap-3 text-sm">
+                <span>BPM</span>
+                <input
+                  type="number"
+                  min={35}
+                  max={180}
+                  value={rhythmConfig.bpm}
+                  onChange={(event) =>
+                    setRhythmConfig((prev) => ({ ...prev, bpm: clamp(35, Number(event.target.value), 180) }))
+                  }
+                  className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-3 text-sm">
+                <span>Subdivision</span>
+                <select
+                  value={rhythmConfig.subdivision}
+                  onChange={(event) =>
+                    setRhythmConfig((prev) => ({
+                      ...prev,
+                      subdivision: event.target.value as RhythmConfig['subdivision']
+                    }))
+                  }
+                  className="rounded-full border border-ink/10 bg-white px-3 py-2"
+                >
+                  <option value="4n">4n</option>
+                  <option value="8n">8n</option>
+                  <option value="16n">16n</option>
+                  <option value="8t">8t</option>
+                </select>
+              </label>
+            </div>
+            <div className="mt-3 grid grid-cols-8 gap-2">
+              {rhythmConfig.steps.map((step, index) => (
+                <button
+                  key={`step-${index}`}
+                  type="button"
+                  onClick={() => toggleRhythmStep(index)}
+                  className={`h-9 rounded-xl border text-xs ${
+                    step ? 'border-lagoon bg-lagoon text-white' : 'border-ink/15 bg-white text-ink/50'
+                  }`}
+                >
+                  {index + 1}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">Modulation + sweep</h4>
+              <HelpPopover
+                align="left"
+                label="Modulation and sweep help"
+                text="LFO adds cyclic pitch movement. Sweep shifts tones toward a target frequency over a set duration and curve."
+              />
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="flex items-center justify-between gap-3 text-sm">
+                <span>Enable LFO</span>
+                <input
+                  type="checkbox"
+                  checked={modulationConfig.enabled}
+                  onChange={(event) =>
+                    setModulationConfig((prev) => ({
+                      ...prev,
+                      enabled: event.target.checked
+                    }))
+                  }
+                  className="h-4 w-4"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-3 text-sm">
+                <span>LFO waveform</span>
+                <select
+                  value={modulationConfig.waveform}
+                  onChange={(event) =>
+                    setModulationConfig((prev) => ({
+                      ...prev,
+                      waveform: event.target.value as ModulationConfig['waveform']
+                    }))
+                  }
+                  className="rounded-full border border-ink/10 bg-white px-3 py-2"
+                >
+                  <option value="sine">sine</option>
+                  <option value="triangle">triangle</option>
+                  <option value="square">square</option>
+                  <option value="sawtooth">sawtooth</option>
+                </select>
+              </label>
+              <label className="flex items-center justify-between gap-3 text-sm">
+                <span>Rate (Hz)</span>
+                <input
+                  type="number"
+                  min={0.01}
+                  max={24}
+                  step={0.01}
+                  value={modulationConfig.rateHz}
+                  onChange={(event) =>
+                    setModulationConfig((prev) => ({
+                      ...prev,
+                      rateHz: clamp(0.01, Number(event.target.value), 24)
+                    }))
+                  }
+                  className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-3 text-sm">
+                <span>Depth (Hz)</span>
+                <input
+                  type="number"
+                  min={0.1}
+                  max={220}
+                  step={0.1}
+                  value={modulationConfig.depthHz}
+                  onChange={(event) =>
+                    setModulationConfig((prev) => ({
+                      ...prev,
+                      depthHz: clamp(0.1, Number(event.target.value), 220)
+                    }))
+                  }
+                  className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
+                />
+              </label>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="flex items-center justify-between gap-3 text-sm">
+                <span>Enable sweep</span>
+                <input
+                  type="checkbox"
+                  checked={sweepConfig.enabled}
+                  onChange={(event) =>
+                    setSweepConfig((prev) => ({
+                      ...prev,
+                      enabled: event.target.checked
+                    }))
+                  }
+                  className="h-4 w-4"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-3 text-sm">
+                <span>Curve</span>
+                <select
+                  value={sweepConfig.curve}
+                  onChange={(event) =>
+                    setSweepConfig((prev) => ({
+                      ...prev,
+                      curve: event.target.value as SweepConfig['curve']
+                    }))
+                  }
+                  className="rounded-full border border-ink/10 bg-white px-3 py-2"
+                >
+                  <option value="linear">linear</option>
+                  <option value="easeInOut">easeInOut</option>
+                  <option value="exponential">exponential</option>
+                </select>
+              </label>
+              <label className="flex items-center justify-between gap-3 text-sm">
+                <span>Target Hz</span>
+                <input
+                  type="number"
+                  min={MIN_CUSTOM_FREQUENCY_HZ}
+                  max={MAX_CUSTOM_FREQUENCY_HZ}
+                  value={sweepConfig.targetHz}
+                  onChange={(event) =>
+                    setSweepConfig((prev) => ({
+                      ...prev,
+                      targetHz: normalizeFrequency(Number(event.target.value))
+                    }))
+                  }
+                  className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-3 text-sm">
+                <span>Duration (s)</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={180}
+                  value={sweepConfig.durationSeconds}
+                  onChange={(event) =>
+                    setSweepConfig((prev) => ({
+                      ...prev,
+                      durationSeconds: clamp(1, Number(event.target.value), 180)
+                    }))
+                  }
+                  className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">Binaural mode</h4>
+              <HelpPopover
+                align="left"
+                label="Binaural mode help"
+                text="Binaural mode sends slightly different frequencies to left and right channels to create a perceived beat. Headphones are recommended."
+              />
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="flex items-center justify-between gap-3 text-sm">
+                <span>Enable binaural</span>
+                <input
+                  type="checkbox"
+                  checked={binauralConfig.enabled}
+                  onChange={(event) =>
+                    setBinauralConfig((prev) => ({
+                      ...prev,
+                      enabled: event.target.checked
+                    }))
+                  }
+                  className="h-4 w-4"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-3 text-sm">
+                <span>Beat offset (Hz)</span>
+                <input
+                  type="number"
+                  min={0.1}
+                  max={40}
+                  step={0.1}
+                  value={binauralConfig.beatHz}
+                  onChange={(event) =>
+                    setBinauralConfig((prev) => ({
+                      ...prev,
+                      beatHz: clamp(0.1, Number(event.target.value), 40)
+                    }))
+                  }
+                  className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-3 text-sm sm:col-span-2">
+                <span>Stereo spread</span>
+                <input
+                  type="range"
+                  min={0.2}
+                  max={1}
+                  step={0.05}
+                  value={binauralConfig.panSpread}
+                  onChange={(event) =>
+                    setBinauralConfig((prev) => ({
+                      ...prev,
+                      panSpread: Number(event.target.value)
+                    }))
+                  }
+                  className="w-40"
+                />
+                <span className="w-10 text-right text-xs">{Math.round(binauralConfig.panSpread * 100)}%</span>
+              </label>
+            </div>
+          </div>
         </div>
+
         <div className="space-y-4">
           <h3 className="text-lg font-semibold">Live visualization</h3>
           {visualizationType === 'orbital' ? (
@@ -711,13 +1501,201 @@ export default function FrequencyCreator() {
             <WaveformVisualizer
               analyser={analyser}
               type={visualizationType}
+              layers={effectiveVisualizationLayers}
               isActive={isPlaying}
               onCanvasReady={setVisualCanvas}
             />
           )}
           <p className="text-xs text-ink/60">
-            Visualization reacts to the master output. Use the waveform selector to explore patterns.
+            Visuals are audio-reactive and auto-downgrade on constrained devices for stable frame times.
           </p>
+
+          {visualizationType !== 'orbital' ? (
+            <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">Visualization layers</h4>
+                  <HelpPopover
+                    align="left"
+                    label="Visualization layers help"
+                    text="Stack multiple visual renderers, reorder them, and blend with different modes. Each layer has its own color and motion controls."
+                  />
+                </div>
+                {visualizationType === 'multi-layer' ? (
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={layerToAdd}
+                      onChange={(event) => setLayerToAdd(event.target.value as BaseVisualizationType)}
+                      className="rounded-full border border-ink/10 bg-white px-2 py-1 text-xs"
+                    >
+                      {BASE_LAYER_TYPES.map((type) => (
+                        <option key={`layer-type-${type}`} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </select>
+                    <Button size="sm" variant="outline" onClick={addLayer}>
+                      Add layer
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+
+              {currentLayerEntries.length === 0 ? (
+                <p className="text-sm text-ink/60">No layers configured for this visual mode.</p>
+              ) : (
+                <div className="space-y-3">
+                  {currentLayerEntries.map((layer, index) => (
+                    <div key={layer.id} className="rounded-2xl border border-ink/10 bg-white px-3 py-3">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs uppercase tracking-[0.2em] text-ink/60">
+                        <span>{layer.type}</span>
+                        <div className="flex items-center gap-2">
+                          {visualizationType === 'multi-layer' ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => moveLayer(layer.id, -1)}
+                                disabled={index === 0}
+                                className="rounded-full border border-ink/15 px-2 py-1 disabled:opacity-40"
+                              >
+                                Up
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveLayer(layer.id, 1)}
+                                disabled={index === currentLayerEntries.length - 1}
+                                className="rounded-full border border-ink/15 px-2 py-1 disabled:opacity-40"
+                              >
+                                Down
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeLayer(layer.id)}
+                                className="rounded-full border border-rose-200 px-2 py-1 text-rose-600"
+                              >
+                                Remove
+                              </button>
+                            </>
+                          ) : null}
+                          <label className="flex items-center gap-1 normal-case tracking-normal text-ink/70">
+                            <span>On</span>
+                            <input
+                              type="checkbox"
+                              checked={layer.enabled}
+                              onChange={(event) => updateLayer(layer.id, { enabled: event.target.checked })}
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <label className="flex items-center justify-between gap-2 text-xs text-ink/70">
+                          <span>Blend</span>
+                          <select
+                            value={layer.blendMode}
+                            onChange={(event) =>
+                              updateLayer(layer.id, {
+                                blendMode: event.target.value as LayerBlendMode
+                              })
+                            }
+                            className="rounded-full border border-ink/10 bg-white px-2 py-1"
+                          >
+                            {BLEND_MODES.map((mode) => (
+                              <option key={`${layer.id}-${mode}`} value={mode}>
+                                {mode}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="flex items-center justify-between gap-2 text-xs text-ink/70">
+                          <span>Opacity</span>
+                          <input
+                            type="range"
+                            min={0.08}
+                            max={1}
+                            step={0.01}
+                            value={layer.opacity}
+                            onChange={(event) => updateLayer(layer.id, { opacity: Number(event.target.value) })}
+                            className="w-28"
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between gap-2 text-xs text-ink/70">
+                          <span>Intensity</span>
+                          <input
+                            type="range"
+                            min={0.1}
+                            max={1.5}
+                            step={0.01}
+                            value={layer.intensity}
+                            onChange={(event) => updateLayer(layer.id, { intensity: Number(event.target.value) })}
+                            className="w-28"
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between gap-2 text-xs text-ink/70">
+                          <span>Speed</span>
+                          <input
+                            type="range"
+                            min={0.1}
+                            max={2.5}
+                            step={0.01}
+                            value={layer.speed}
+                            onChange={(event) => updateLayer(layer.id, { speed: Number(event.target.value) })}
+                            className="w-28"
+                          />
+                        </label>
+
+                        <label className="flex items-center justify-between gap-2 text-xs text-ink/70">
+                          <span>Scale</span>
+                          <input
+                            type="range"
+                            min={0.35}
+                            max={2}
+                            step={0.01}
+                            value={layer.scale}
+                            onChange={(event) => updateLayer(layer.id, { scale: Number(event.target.value) })}
+                            className="w-28"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-ink/70">
+                        <label className="flex items-center gap-2">
+                          <span>A</span>
+                          <input
+                            type="color"
+                            value={layer.colorA}
+                            onChange={(event) => updateLayer(layer.id, { colorA: event.target.value })}
+                            className="h-8 w-full rounded border border-ink/10"
+                          />
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <span>B</span>
+                          <input
+                            type="color"
+                            value={layer.colorB}
+                            onChange={(event) => updateLayer(layer.id, { colorB: event.target.value })}
+                            className="h-8 w-full rounded border border-ink/10"
+                          />
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <span>C</span>
+                          <input
+                            type="color"
+                            value={layer.colorC}
+                            onChange={(event) => updateLayer(layer.id, { colorC: event.target.value })}
+                            className="h-8 w-full rounded border border-ink/10"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
       </div>
       <Modal open={authModalOpen} onClose={() => setAuthModalOpen(false)} title="Save your session">

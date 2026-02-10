@@ -27,6 +27,7 @@ export class VisualizationEngine {
   }
 
   setRenderer(renderer: VisualizationRenderer) {
+    this.renderer.dispose?.();
     this.renderer = renderer;
   }
 
@@ -51,6 +52,9 @@ export class VisualizationEngine {
 
       this.analyser.getByteTimeDomainData(this.waveformData);
       this.analyser.getByteFrequencyData(this.frequencyData);
+      const energy =
+        this.frequencyData.reduce((sum, value) => sum + value, 0) /
+        (this.frequencyData.length * 255);
 
       const width = this.canvas.getBoundingClientRect().width;
       const height = this.canvas.getBoundingClientRect().height;
@@ -62,6 +66,7 @@ export class VisualizationEngine {
         height,
         waveformData: this.waveformData,
         frequencyData: this.frequencyData,
+        energy,
         time,
         delta
       });
@@ -75,5 +80,6 @@ export class VisualizationEngine {
       cancelAnimationFrame(this.animationId);
       this.animationId = null;
     }
+    this.renderer.dispose?.();
   }
 }

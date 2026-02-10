@@ -49,8 +49,10 @@ export interface Database {
           waveform: string | null;
           ambient_sound: string | null;
           effects: Json | null;
+          audio_config: Json | null;
           visualization_type: string | null;
           visualization_config: Json | null;
+          visualization_layers: Json | null;
           audio_url: string | null;
           video_url: string | null;
           thumbnail_url: string | null;
@@ -72,8 +74,10 @@ export interface Database {
           waveform?: string | null;
           ambient_sound?: string | null;
           effects?: Json | null;
+          audio_config?: Json | null;
           visualization_type?: string | null;
           visualization_config?: Json | null;
+          visualization_layers?: Json | null;
           audio_url?: string | null;
           video_url?: string | null;
           thumbnail_url?: string | null;
@@ -93,8 +97,10 @@ export interface Database {
           waveform?: string | null;
           ambient_sound?: string | null;
           effects?: Json | null;
+          audio_config?: Json | null;
           visualization_type?: string | null;
           visualization_config?: Json | null;
+          visualization_layers?: Json | null;
           audio_url?: string | null;
           video_url?: string | null;
           thumbnail_url?: string | null;

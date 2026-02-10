@@ -1,4 +1,10 @@
 import type { WaveformType, FrequencyConfig } from '@/lib/audio/FrequencyGenerator';
+import {
+  clamp as clampValue,
+  frequencyKey,
+  normalizeFrequency,
+  type BinauralConfig
+} from '@/lib/audio/audioConfig';
 
 export type MixStyle = 'manual' | 'golden432';
 
@@ -31,10 +37,6 @@ function roundHz(value: number) {
   return Math.round(value * 100) / 100;
 }
 
-function clamp(min: number, value: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
 function normalizeToRange(value: number, min = 48, max = 2200) {
   let normalized = value;
   while (normalized < min) {
@@ -51,34 +53,75 @@ export function buildFrequencyMix(options: {
   selectedFrequencies: number[];
   waveform: WaveformType;
   volume: number;
+  frequencyVolumes?: Record<string, number>;
+  binaural?: BinauralConfig;
 }): FrequencyConfig[] {
-  const { mixStyle, selectedFrequencies, waveform, volume } = options;
+  const { mixStyle, selectedFrequencies, waveform, volume, frequencyVolumes = {}, binaural } = options;
+
+  const baseFrequencies = selectedFrequencies.map((value) => normalizeFrequency(value));
+  if (baseFrequencies.length === 0) {
+    return [];
+  }
+
+  const getVoiceGain = (frequency: number) => {
+    const key = frequencyKey(frequency);
+    const explicit = frequencyVolumes[key];
+    if (typeof explicit === 'number' && Number.isFinite(explicit)) {
+      return clampValue(0.01, explicit, 1);
+    }
+    const fallback = frequencyVolumes[String(Math.round(frequency))];
+    if (typeof fallback === 'number' && Number.isFinite(fallback)) {
+      return clampValue(0.01, fallback, 1);
+    }
+    return 1;
+  };
+
+  if (binaural?.enabled) {
+    const beatOffset = clampValue(0.05, binaural.beatHz / 2, 20);
+    const panSpread = clampValue(0.2, binaural.panSpread, 1);
+
+    return baseFrequencies.flatMap((frequency) => {
+      const voiceGain = getVoiceGain(frequency);
+      const baseGain = clampValue(0.01, volume * voiceGain, 0.95);
+      return [
+        {
+          frequency: roundHz(Math.max(20, frequency - beatOffset)),
+          volume: clampValue(0.01, baseGain * 0.65, 0.95),
+          waveform,
+          pan: -panSpread
+        },
+        {
+          frequency: roundHz(frequency + beatOffset),
+          volume: clampValue(0.01, baseGain * 0.65, 0.95),
+          waveform,
+          pan: panSpread
+        }
+      ];
+    });
+  }
 
   if (mixStyle === 'manual') {
-    return selectedFrequencies.map((frequency) => ({
+    return baseFrequencies.map((frequency) => ({
       frequency,
-      volume,
+      volume: clampValue(0.01, volume * getVoiceGain(frequency), 0.95),
       waveform
     }));
   }
 
-  const baseFrequencies = selectedFrequencies;
-  if (baseFrequencies.length === 0) {
-    return [];
-  }
   const spacing = Math.max(1, baseFrequencies.length - 1);
   const groupScale = 1 / Math.sqrt(baseFrequencies.length);
 
   return baseFrequencies.flatMap((baseFrequency, baseIndex) => {
     const baseSpread = ((baseIndex / spacing) * 2 - 1) * 0.18;
+    const voiceGain = getVoiceGain(baseFrequency);
 
     return GOLDEN_432_LAYERS.map((layer) => {
       const ladderFrequency = normalizeToRange(baseFrequency * GOLDEN_RATIO ** layer.power);
       return {
         frequency: roundHz(ladderFrequency),
-        volume: clamp(0.01, volume * layer.gain * groupScale, 0.95),
+        volume: clampValue(0.01, volume * layer.gain * groupScale * voiceGain, 0.95),
         waveform,
-        pan: clamp(-1, layer.pan + baseSpread, 1),
+        pan: clampValue(-1, layer.pan + baseSpread, 1),
         attackSeconds: layer.attackSeconds,
         releaseSeconds: layer.releaseSeconds,
         detuneCents: layer.detuneCents,
@@ -90,8 +133,12 @@ export function buildFrequencyMix(options: {
 }
 
 export function frequenciesForStorage(mixStyle: MixStyle, selectedFrequencies: number[], voices: FrequencyConfig[]) {
+  if (selectedFrequencies.length > 0) {
+    return Array.from(new Set(selectedFrequencies.map((frequency) => roundHz(normalizeFrequency(frequency)))));
+  }
+
   if (mixStyle === 'manual') {
-    return selectedFrequencies;
+    return selectedFrequencies.map((frequency) => roundHz(normalizeFrequency(frequency)));
   }
 
   return voices.map((voice) => roundHz(voice.frequency));

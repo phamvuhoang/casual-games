@@ -1,0 +1,205 @@
+import type { Json } from '@/lib/supabase/types';
+
+export const MIN_CUSTOM_FREQUENCY_HZ = 20;
+export const MAX_CUSTOM_FREQUENCY_HZ = 2000;
+export const MAX_AUDIO_STEPS = 16;
+
+export type RhythmSubdivision = '4n' | '8n' | '16n' | '8t';
+export type AutomationCurve = 'linear' | 'exponential' | 'easeInOut';
+export type LfoWaveform = 'sine' | 'triangle' | 'square' | 'sawtooth';
+
+export interface RhythmConfig {
+  enabled: boolean;
+  bpm: number;
+  subdivision: RhythmSubdivision;
+  steps: boolean[];
+}
+
+export interface ModulationConfig {
+  enabled: boolean;
+  rateHz: number;
+  depthHz: number;
+  waveform: LfoWaveform;
+}
+
+export interface SweepConfig {
+  enabled: boolean;
+  targetHz: number;
+  durationSeconds: number;
+  curve: AutomationCurve;
+}
+
+export interface BinauralConfig {
+  enabled: boolean;
+  beatHz: number;
+  panSpread: number;
+}
+
+export interface AudioConfigShape {
+  version: 1;
+  selectedFrequencies: number[];
+  frequencyVolumes: Record<string, number>;
+  rhythm: RhythmConfig;
+  modulation: ModulationConfig;
+  sweep: SweepConfig;
+  binaural: BinauralConfig;
+}
+
+const DEFAULT_STEPS = [true, false, true, false, true, false, true, false, true, false, true, false, true, false, true, false];
+
+const DEFAULT_CONFIG: AudioConfigShape = {
+  version: 1,
+  selectedFrequencies: [],
+  frequencyVolumes: {},
+  rhythm: {
+    enabled: false,
+    bpm: 72,
+    subdivision: '16n',
+    steps: DEFAULT_STEPS
+  },
+  modulation: {
+    enabled: false,
+    rateHz: 0.18,
+    depthHz: 12,
+    waveform: 'sine'
+  },
+  sweep: {
+    enabled: false,
+    targetHz: 528,
+    durationSeconds: 18,
+    curve: 'easeInOut'
+  },
+  binaural: {
+    enabled: false,
+    beatHz: 8,
+    panSpread: 0.85
+  }
+};
+
+function asObject(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function asNumber(value: unknown, fallback: number) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function asBoolean(value: unknown, fallback: boolean) {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function asString<T extends string>(value: unknown, allowed: readonly T[], fallback: T) {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+  return allowed.includes(value as T) ? (value as T) : fallback;
+}
+
+export function clamp(min: number, value: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+export function normalizeFrequency(value: number) {
+  const rounded = Math.round(value * 100) / 100;
+  return clamp(MIN_CUSTOM_FREQUENCY_HZ, rounded, MAX_CUSTOM_FREQUENCY_HZ);
+}
+
+export function frequencyKey(value: number) {
+  return normalizeFrequency(value).toFixed(2);
+}
+
+export function createDefaultAudioConfig(): AudioConfigShape {
+  return {
+    ...DEFAULT_CONFIG,
+    selectedFrequencies: [...DEFAULT_CONFIG.selectedFrequencies],
+    frequencyVolumes: { ...DEFAULT_CONFIG.frequencyVolumes },
+    rhythm: {
+      ...DEFAULT_CONFIG.rhythm,
+      steps: [...DEFAULT_CONFIG.rhythm.steps]
+    },
+    modulation: { ...DEFAULT_CONFIG.modulation },
+    sweep: { ...DEFAULT_CONFIG.sweep },
+    binaural: { ...DEFAULT_CONFIG.binaural }
+  };
+}
+
+export function normalizeRhythmSteps(input: unknown) {
+  if (!Array.isArray(input) || input.length === 0) {
+    return [...DEFAULT_CONFIG.rhythm.steps];
+  }
+
+  const steps = input
+    .slice(0, MAX_AUDIO_STEPS)
+    .map((value) => Boolean(value));
+
+  while (steps.length < MAX_AUDIO_STEPS) {
+    steps.push(false);
+  }
+
+  if (!steps.some(Boolean)) {
+    steps[0] = true;
+  }
+
+  return steps;
+}
+
+export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape {
+  const config = createDefaultAudioConfig();
+  const object = asObject(raw);
+
+  if (!object) {
+    return config;
+  }
+
+  const rawFrequencies = Array.isArray(object.selectedFrequencies) ? object.selectedFrequencies : [];
+  const selectedFrequencies = rawFrequencies
+    .map((value) => (typeof value === 'number' ? normalizeFrequency(value) : null))
+    .filter((value): value is number => value !== null);
+
+  const frequencyVolumes: Record<string, number> = {};
+  const rawVolumes = asObject(object.frequencyVolumes);
+  if (rawVolumes) {
+    for (const [key, value] of Object.entries(rawVolumes)) {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        frequencyVolumes[key] = clamp(0.01, value, 1);
+      }
+    }
+  }
+
+  const rhythm = asObject(object.rhythm);
+  const modulation = asObject(object.modulation);
+  const sweep = asObject(object.sweep);
+  const binaural = asObject(object.binaural);
+
+  return {
+    version: 1,
+    selectedFrequencies,
+    frequencyVolumes,
+    rhythm: {
+      enabled: asBoolean(rhythm?.enabled, config.rhythm.enabled),
+      bpm: clamp(35, asNumber(rhythm?.bpm, config.rhythm.bpm), 180),
+      subdivision: asString(rhythm?.subdivision, ['4n', '8n', '16n', '8t'], config.rhythm.subdivision),
+      steps: normalizeRhythmSteps(rhythm?.steps)
+    },
+    modulation: {
+      enabled: asBoolean(modulation?.enabled, config.modulation.enabled),
+      rateHz: clamp(0.01, asNumber(modulation?.rateHz, config.modulation.rateHz), 24),
+      depthHz: clamp(0.1, asNumber(modulation?.depthHz, config.modulation.depthHz), 220),
+      waveform: asString(modulation?.waveform, ['sine', 'triangle', 'square', 'sawtooth'], config.modulation.waveform)
+    },
+    sweep: {
+      enabled: asBoolean(sweep?.enabled, config.sweep.enabled),
+      targetHz: normalizeFrequency(asNumber(sweep?.targetHz, config.sweep.targetHz)),
+      durationSeconds: clamp(1, asNumber(sweep?.durationSeconds, config.sweep.durationSeconds), 180),
+      curve: asString(sweep?.curve, ['linear', 'exponential', 'easeInOut'], config.sweep.curve)
+    },
+    binaural: {
+      enabled: asBoolean(binaural?.enabled, config.binaural.enabled),
+      beatHz: clamp(0.1, asNumber(binaural?.beatHz, config.binaural.beatHz), 40),
+      panSpread: clamp(0.2, asNumber(binaural?.panSpread, config.binaural.panSpread), 1)
+    }
+  };
+}

@@ -7,6 +7,7 @@ import Modal from '@/components/ui/Modal';
 import WaveformVisualizer, { type VisualizerType } from '@/components/audio/WaveformVisualizer';
 import ThreeVisualizer from '@/components/audio/ThreeVisualizer';
 import { FrequencyGenerator } from '@/lib/audio/FrequencyGenerator';
+import { buildFrequencyMix, frequenciesForStorage, type MixStyle } from '@/lib/audio/mixProfiles';
 import { exportAudio } from '@/lib/audio/AudioExporter';
 import { DEFAULT_EFFECTS } from '@/lib/audio/effects';
 import { createSupabaseClient } from '@/lib/supabase/client';
@@ -20,6 +21,7 @@ import {
   AUDIO_FORMATS,
   DEFAULT_DURATION,
   MAX_FREQUENCIES,
+  MIX_STYLES,
   MP3_ESTIMATED_MAX_SECONDS,
   PRESET_FREQUENCIES,
   THUMBNAIL_BUCKET,
@@ -62,6 +64,7 @@ async function captureThumbnail(canvas: HTMLCanvasElement) {
 
 type DraftState = {
   selectedFrequencies: number[];
+  mixStyle: MixStyle;
   waveform: (typeof WAVEFORMS)[number];
   volume: number;
   duration: number;
@@ -76,6 +79,7 @@ type DraftState = {
 
 export default function FrequencyCreator() {
   const [selectedFrequencies, setSelectedFrequencies] = useState<number[]>([]);
+  const [mixStyle, setMixStyle] = useState<MixStyle>('manual');
   const [isPlaying, setIsPlaying] = useState(false);
   const [waveform, setWaveform] = useState<(typeof WAVEFORMS)[number]>('sine');
   const [volume, setVolume] = useState(DEFAULT_VOLUME);
@@ -96,9 +100,21 @@ export default function FrequencyCreator() {
   const [isIOS, setIsIOS] = useState(false);
   const mp3LimitSeconds = MP3_ESTIMATED_MAX_SECONDS;
   const showMp3Warning = audioFormat === 'mp3' && duration > mp3LimitSeconds;
+  const maxSelectableFrequencies =
+    mixStyle === 'golden432' ? PRESET_FREQUENCIES.length : MAX_FREQUENCIES;
 
   const generator = useMemo(() => new FrequencyGenerator(), []);
   const supabase = useMemo(() => createSupabaseClient(), []);
+  const mixedVoices = useMemo(
+    () =>
+      buildFrequencyMix({
+        mixStyle,
+        selectedFrequencies,
+        waveform,
+        volume
+      }),
+    [mixStyle, selectedFrequencies, waveform, volume]
+  );
 
   useEffect(() => {
     return () => {
@@ -155,6 +171,9 @@ export default function FrequencyCreator() {
       if (draft.selectedFrequencies) {
         setSelectedFrequencies(draft.selectedFrequencies);
       }
+      if (draft.mixStyle) {
+        setMixStyle(draft.mixStyle);
+      }
       if (draft.waveform) {
         setWaveform(draft.waveform);
       }
@@ -197,6 +216,7 @@ export default function FrequencyCreator() {
 
     const draft: DraftState = {
       selectedFrequencies,
+      mixStyle,
       waveform,
       volume,
       duration,
@@ -212,6 +232,7 @@ export default function FrequencyCreator() {
     window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
   }, [
     selectedFrequencies,
+    mixStyle,
     waveform,
     volume,
     duration,
@@ -231,16 +252,26 @@ export default function FrequencyCreator() {
   }, [generator, isPlaying, volume]);
 
   useEffect(() => {
-    if (isPlaying && selectedFrequencies.length > 0) {
-      generator.play(
-        selectedFrequencies.map((hz) => ({
-          frequency: hz,
-          volume,
-          waveform
-        }))
-      );
+    if (isPlaying && mixedVoices.length > 0) {
+      generator.play(mixedVoices);
     }
-  }, [generator, isPlaying, selectedFrequencies, volume, waveform]);
+  }, [generator, isPlaying, mixedVoices]);
+
+  useEffect(() => {
+    if (isPlaying && mixedVoices.length === 0) {
+      generator.stop();
+      setIsPlaying(false);
+      setStatus('Select at least one frequency.');
+    }
+  }, [generator, isPlaying, mixedVoices.length]);
+
+  useEffect(() => {
+    if (mixStyle !== 'golden432') {
+      if (selectedFrequencies.length > MAX_FREQUENCIES) {
+        setSelectedFrequencies((prev) => prev.slice(0, MAX_FREQUENCIES));
+      }
+    }
+  }, [mixStyle, selectedFrequencies.length]);
 
   useEffect(() => {
     if (isPlaying) {
@@ -252,7 +283,7 @@ export default function FrequencyCreator() {
     setSelectedFrequencies((prev) =>
       prev.includes(hz)
         ? prev.filter((value) => value !== hz)
-        : prev.length >= MAX_FREQUENCIES
+        : prev.length >= maxSelectableFrequencies
           ? prev
           : [...prev, hz]
     );
@@ -278,7 +309,7 @@ export default function FrequencyCreator() {
   };
 
   const handleSave = async () => {
-    if (selectedFrequencies.length === 0) {
+    if (mixedVoices.length === 0) {
       setStatus('Select at least one frequency.');
       return;
     }
@@ -381,8 +412,9 @@ export default function FrequencyCreator() {
         thumbnailUrl = supabase.storage.from(THUMBNAIL_BUCKET).getPublicUrl(thumbData.path).data.publicUrl;
       }
 
+      const frequenciesToStore = frequenciesForStorage(mixStyle, selectedFrequencies, mixedVoices);
       const frequencyVolumes: Json = Object.fromEntries(
-        selectedFrequencies.map((hz) => [String(hz), volume])
+        mixedVoices.map((voice) => [String(Math.round(voice.frequency * 100) / 100), voice.volume])
       );
       const effectsConfig: Json = {
         reverb: DEFAULT_EFFECTS.reverb
@@ -394,7 +426,8 @@ export default function FrequencyCreator() {
               feedback: DEFAULT_EFFECTS.delay.feedback,
               wet: DEFAULT_EFFECTS.delay.wet
             }
-          : null
+          : null,
+        mix_style: mixStyle
       };
 
       const { data: insertData, error: insertError } = await supabase
@@ -403,7 +436,7 @@ export default function FrequencyCreator() {
         user_id: activeUserId,
         title: title.trim() || 'Untitled Session',
         description,
-        frequencies: selectedFrequencies,
+        frequencies: frequenciesToStore,
         frequency_volumes: frequencyVolumes,
         duration,
         waveform,
@@ -461,7 +494,7 @@ export default function FrequencyCreator() {
         <div className="space-y-4">
           <h2 className="text-2xl font-semibold">Create your frequency ritual</h2>
           <p className="text-sm text-ink/70">
-            Pick up to six frequencies, tune the waveform, and watch the resonance unfold in real time.
+            Stack core tones, shape phi harmonics, and explore immersive resonance patterns in real time.
           </p>
           <div className="grid gap-3">
             <label className="text-xs uppercase tracking-[0.3em] text-ink/60">Title</label>
@@ -517,6 +550,26 @@ export default function FrequencyCreator() {
                   ))}
                 </select>
               </label>
+              <label className="flex items-center justify-between gap-3">
+                <span>Mix style</span>
+                <select
+                  value={mixStyle}
+                  onChange={(event) => setMixStyle(event.target.value as MixStyle)}
+                  className="rounded-full border border-ink/10 bg-white px-3 py-2"
+                >
+                  {MIX_STYLES.map((option) => (
+                    <option key={option} value={option}>
+                      {option === 'manual' ? 'Selected frequencies only' : 'Golden ratio ladder'}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {mixStyle === 'golden432' ? (
+                <p className="rounded-2xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs text-teal-700">
+                  Golden ladder mode uses each selected frequency as a base tone, then adds phi sidebands with
+                  reference-style left/right weighting.
+                </p>
+              ) : null}
               <label className="flex items-center justify-between gap-3">
                 <span>Visualization</span>
                 <select
@@ -610,7 +663,7 @@ export default function FrequencyCreator() {
             </div>
           </div>
           <div className="flex flex-wrap gap-3">
-            <Button onClick={handlePlay} disabled={selectedFrequencies.length === 0}>
+            <Button onClick={handlePlay} disabled={mixedVoices.length === 0}>
               {isPlaying ? 'Stop' : 'Play'}
             </Button>
             <Button variant="outline" onClick={handleSave} disabled={!isPlaying || isSaving}>
@@ -624,6 +677,11 @@ export default function FrequencyCreator() {
       <div className="grid gap-6 md:grid-cols-[1.2fr_0.8fr]">
         <div className="space-y-4">
           <h3 className="text-lg font-semibold">Selected frequencies</h3>
+          <p className="text-xs text-ink/60">
+            {mixStyle === 'golden432'
+              ? 'Select one or more base frequencies. Each selected tone generates its own phi ladder.'
+              : `Select up to ${MAX_FREQUENCIES} frequencies.`}
+          </p>
           <div className="grid gap-3 md:grid-cols-2">
             {PRESET_FREQUENCIES.map((freq) => (
               <button

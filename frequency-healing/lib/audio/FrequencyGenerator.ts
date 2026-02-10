@@ -10,6 +10,10 @@ export interface FrequencyConfig {
   frequency: number;
   volume: number;
   waveform: WaveformType;
+  pan?: number;
+  detuneCents?: number;
+  modulationRateHz?: number;
+  modulationDepth?: number;
 }
 
 export interface InitializeOptions {
@@ -18,6 +22,8 @@ export interface InitializeOptions {
 
 export class FrequencyGenerator {
   private synths: Tone.Synth[] = [];
+  private voicePanners: Tone.Panner[] = [];
+  private voiceTremolos: Tone.Tremolo[] = [];
   private master: Tone.Gain | null = null;
   private reverb: Tone.Reverb | null = null;
   private delay: Tone.FeedbackDelay | null = null;
@@ -132,7 +138,35 @@ export class FrequencyGenerator {
       });
 
       synth.volume.value = Tone.gainToDb(config.volume);
-      synth.connect(this.reverb!);
+      if (typeof config.detuneCents === 'number') {
+        synth.detune.value = config.detuneCents;
+      }
+
+      let destination: Tone.ToneAudioNode = synth;
+
+      if (
+        typeof config.modulationRateHz === 'number' &&
+        config.modulationRateHz > 0 &&
+        typeof config.modulationDepth === 'number' &&
+        config.modulationDepth > 0
+      ) {
+        const tremolo = new Tone.Tremolo({
+          frequency: config.modulationRateHz,
+          depth: Math.max(0, Math.min(1, config.modulationDepth))
+        }).start();
+        destination.connect(tremolo);
+        destination = tremolo;
+        this.voiceTremolos.push(tremolo);
+      }
+
+      if (typeof config.pan === 'number') {
+        const panner = new Tone.Panner(Math.max(-1, Math.min(1, config.pan)));
+        destination.connect(panner);
+        panner.connect(this.reverb!);
+        this.voicePanners.push(panner);
+      } else {
+        destination.connect(this.reverb!);
+      }
       synth.triggerAttack(config.frequency);
       return synth;
     });
@@ -264,6 +298,10 @@ export class FrequencyGenerator {
       synth.dispose();
     });
     this.synths = [];
+    this.voicePanners.forEach((panner) => panner.dispose());
+    this.voicePanners = [];
+    this.voiceTremolos.forEach((tremolo) => tremolo.dispose());
+    this.voiceTremolos = [];
     this.stopAmbient();
     if (!preserveFrequencies) {
       this.lastFrequencies = [];
@@ -447,6 +485,10 @@ export class FrequencyGenerator {
       synth.dispose();
     });
     this.synths = [];
+    this.voicePanners.forEach((panner) => panner.dispose());
+    this.voicePanners = [];
+    this.voiceTremolos.forEach((tremolo) => tremolo.dispose());
+    this.voiceTremolos = [];
     this.stopAmbient(true);
     this.teardownAudioBridge();
     this.reverb?.dispose();

@@ -80,6 +80,10 @@ const BASE_LAYER_TYPES: BaseVisualizationType[] = [
 ];
 
 const BLEND_MODES: LayerBlendMode[] = ['source-over', 'screen', 'overlay', 'lighter', 'multiply', 'soft-light'];
+const MIX_STYLE_LABELS: Record<MixStyle, string> = {
+  manual: 'Direct',
+  golden432: 'Golden'
+};
 type CompositionInsert = Database['public']['Tables']['compositions']['Insert'];
 
 async function captureThumbnail(canvas: HTMLCanvasElement) {
@@ -183,6 +187,7 @@ export default function FrequencyCreator() {
   const [includeVideo, setIncludeVideo] = useState(false);
   const [showSessionInfoOverlay, setShowSessionInfoOverlay] = useState(false);
   const [showPublishingTools, setShowPublishingTools] = useState(false);
+  const [showAdvancedSoundTools, setShowAdvancedSoundTools] = useState(false);
   const [liveVisualizationEnabled, setLiveVisualizationEnabled] = useState(true);
   const [showMobileLiveDock, setShowMobileLiveDock] = useState(true);
   const [isCompactViewport, setIsCompactViewport] = useState(false);
@@ -197,6 +202,7 @@ export default function FrequencyCreator() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   const frequencyStackRef = useRef<HTMLDivElement | null>(null);
+  const advancedSoundRef = useRef<HTMLDivElement | null>(null);
   const liveSectionRef = useRef<HTMLDivElement | null>(null);
   const mobileLiveCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const mp3LimitSeconds = MP3_ESTIMATED_MAX_SECONDS;
@@ -259,6 +265,25 @@ export default function FrequencyCreator() {
     const extra = selectedFrequencies.length - first.length;
     return `${first.join(' • ')}${extra > 0 ? ` +${extra}` : ''}`;
   }, [selectedFrequencies]);
+
+  const advancedSoundSummary = useMemo(() => {
+    const activeModules: string[] = [];
+    if (rhythmConfig.enabled) {
+      activeModules.push('Rhythm');
+    }
+    if (modulationConfig.enabled || sweepConfig.enabled) {
+      activeModules.push('Mod/Sweep');
+    }
+    if (binauralConfig.enabled) {
+      activeModules.push('Binaural');
+    }
+
+    if (activeModules.length === 0) {
+      return 'All advanced modules are currently off.';
+    }
+
+    return `Active: ${activeModules.join(' • ')}`;
+  }, [binauralConfig.enabled, modulationConfig.enabled, rhythmConfig.enabled, sweepConfig.enabled]);
 
   const sessionOverlayInfo = useMemo<VisualizationSessionOverlayData>(
     () => ({
@@ -327,6 +352,12 @@ export default function FrequencyCreator() {
     media.addListener(update);
     return () => media.removeListener(update);
   }, []);
+
+  useEffect(() => {
+    if (!isCompactViewport) {
+      setShowAdvancedSoundTools(true);
+    }
+  }, [isCompactViewport]);
 
   useEffect(() => {
     if (isIOS && includeVideo) {
@@ -1089,16 +1120,22 @@ export default function FrequencyCreator() {
                 >
                   {MIX_STYLES.map((option) => (
                     <option key={option} value={option}>
-                      {option === 'manual' ? 'Selected frequencies only' : 'Golden ratio ladder'}
+                      {MIX_STYLE_LABELS[option]}
                     </option>
                   ))}
                 </select>
               </label>
-              {mixStyle === 'golden432' ? (
-                <p className="rounded-2xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs text-teal-700">
-                  Golden ladder mode introduces harmonic sidebands for richer meditation textures.
-                </p>
-              ) : null}
+              <p
+                className={
+                  mixStyle === 'golden432'
+                    ? 'rounded-2xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs text-teal-700'
+                    : 'rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700'
+                }
+              >
+                {mixStyle === 'golden432'
+                  ? 'Golden: expands each tone using a golden-ratio ladder for a fuller, immersive field.'
+                  : 'Direct: plays only the exact frequencies you selected, with no extra ladder layers.'}
+              </p>
               <label className="flex items-center justify-between gap-3">
                 <span>Visualization</span>
                 <select
@@ -1332,7 +1369,7 @@ export default function FrequencyCreator() {
             ))}
           </div>
 
-          <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+          <div ref={advancedSoundRef} className="rounded-3xl border border-ink/10 bg-white/80 p-4">
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">
@@ -1385,288 +1422,316 @@ export default function FrequencyCreator() {
           </div>
 
           <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">Rhythm pattern</h4>
-                <HelpPopover
-                  align="left"
-                  label="Rhythm pattern help"
-                  text="The step grid gates sound on and off. BPM and subdivision control timing, and randomize creates a valid new pattern."
-                />
+            <button
+              type="button"
+              onClick={() => setShowAdvancedSoundTools((prev) => !prev)}
+              className="flex w-full items-center justify-between gap-4 text-left"
+              aria-expanded={showAdvancedSoundTools}
+              aria-controls="advanced-sound-tools"
+            >
+              <div>
+                <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">Advanced sound tools</h4>
+                <p className="mt-1 text-xs text-ink/65">
+                  Rhythm pattern, modulation + sweep, and binaural mode.
+                </p>
               </div>
-              <div className="flex items-center gap-2">
-                <label className="flex items-center gap-2 text-xs text-ink/70">
-                  <span>Enable</span>
-                  <input
-                    type="checkbox"
-                    checked={rhythmConfig.enabled}
-                    onChange={(event) =>
-                      setRhythmConfig((prev) => ({
-                        ...prev,
-                        enabled: event.target.checked
-                      }))
-                    }
-                    className="h-4 w-4"
-                  />
-                </label>
-                <Button size="sm" variant="outline" onClick={randomizeRhythm}>
-                  Randomize
-                </Button>
+              <span className="rounded-full border border-ink/15 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-ink/70">
+                {showAdvancedSoundTools ? 'Hide' : 'Show'}
+              </span>
+            </button>
+            <p className="mt-3 text-xs text-ink/60">
+              {isCompactViewport ? 'Hidden by default on mobile for a calmer starter flow.' : 'Ready for deep session shaping.'}{' '}
+              {advancedSoundSummary}
+            </p>
+
+            {showAdvancedSoundTools ? (
+              <div id="advanced-sound-tools" className="mt-4 space-y-4">
+                <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">Rhythm pattern</h4>
+                      <HelpPopover
+                        align="left"
+                        label="Rhythm pattern help"
+                        text="The step grid gates sound on and off. BPM and subdivision control timing, and randomize creates a valid new pattern."
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="flex items-center gap-2 text-xs text-ink/70">
+                        <span>Enable</span>
+                        <input
+                          type="checkbox"
+                          checked={rhythmConfig.enabled}
+                          onChange={(event) =>
+                            setRhythmConfig((prev) => ({
+                              ...prev,
+                              enabled: event.target.checked
+                            }))
+                          }
+                          className="h-4 w-4"
+                        />
+                      </label>
+                      <Button size="sm" variant="outline" onClick={randomizeRhythm}>
+                        Randomize
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>BPM</span>
+                      <input
+                        type="number"
+                        min={35}
+                        max={180}
+                        value={rhythmConfig.bpm}
+                        onChange={(event) =>
+                          setRhythmConfig((prev) => ({ ...prev, bpm: clamp(35, Number(event.target.value), 180) }))
+                        }
+                        className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Subdivision</span>
+                      <select
+                        value={rhythmConfig.subdivision}
+                        onChange={(event) =>
+                          setRhythmConfig((prev) => ({
+                            ...prev,
+                            subdivision: event.target.value as RhythmConfig['subdivision']
+                          }))
+                        }
+                        className="rounded-full border border-ink/10 bg-white px-3 py-2"
+                      >
+                        <option value="4n">4n</option>
+                        <option value="8n">8n</option>
+                        <option value="16n">16n</option>
+                        <option value="8t">8t</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="mt-3 grid grid-cols-8 gap-2">
+                    {rhythmConfig.steps.map((step, index) => (
+                      <button
+                        key={`step-${index}`}
+                        type="button"
+                        onClick={() => toggleRhythmStep(index)}
+                        className={`h-9 rounded-xl border text-xs ${
+                          step ? 'border-lagoon bg-lagoon text-white' : 'border-ink/15 bg-white text-ink/50'
+                        }`}
+                      >
+                        {index + 1}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">Modulation + sweep</h4>
+                    <HelpPopover
+                      align="left"
+                      label="Modulation and sweep help"
+                      text="LFO adds cyclic pitch movement. Sweep shifts tones toward a target frequency over a set duration and curve."
+                    />
+                  </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Enable LFO</span>
+                      <input
+                        type="checkbox"
+                        checked={modulationConfig.enabled}
+                        onChange={(event) =>
+                          setModulationConfig((prev) => ({
+                            ...prev,
+                            enabled: event.target.checked
+                          }))
+                        }
+                        className="h-4 w-4"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>LFO waveform</span>
+                      <select
+                        value={modulationConfig.waveform}
+                        onChange={(event) =>
+                          setModulationConfig((prev) => ({
+                            ...prev,
+                            waveform: event.target.value as ModulationConfig['waveform']
+                          }))
+                        }
+                        className="rounded-full border border-ink/10 bg-white px-3 py-2"
+                      >
+                        <option value="sine">sine</option>
+                        <option value="triangle">triangle</option>
+                        <option value="square">square</option>
+                        <option value="sawtooth">sawtooth</option>
+                      </select>
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Rate (Hz)</span>
+                      <input
+                        type="number"
+                        min={0.01}
+                        max={24}
+                        step={0.01}
+                        value={modulationConfig.rateHz}
+                        onChange={(event) =>
+                          setModulationConfig((prev) => ({
+                            ...prev,
+                            rateHz: clamp(0.01, Number(event.target.value), 24)
+                          }))
+                        }
+                        className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Depth (Hz)</span>
+                      <input
+                        type="number"
+                        min={0.1}
+                        max={220}
+                        step={0.1}
+                        value={modulationConfig.depthHz}
+                        onChange={(event) =>
+                          setModulationConfig((prev) => ({
+                            ...prev,
+                            depthHz: clamp(0.1, Number(event.target.value), 220)
+                          }))
+                        }
+                        className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
+                      />
+                    </label>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Enable sweep</span>
+                      <input
+                        type="checkbox"
+                        checked={sweepConfig.enabled}
+                        onChange={(event) =>
+                          setSweepConfig((prev) => ({
+                            ...prev,
+                            enabled: event.target.checked
+                          }))
+                        }
+                        className="h-4 w-4"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Curve</span>
+                      <select
+                        value={sweepConfig.curve}
+                        onChange={(event) =>
+                          setSweepConfig((prev) => ({
+                            ...prev,
+                            curve: event.target.value as SweepConfig['curve']
+                          }))
+                        }
+                        className="rounded-full border border-ink/10 bg-white px-3 py-2"
+                      >
+                        <option value="linear">linear</option>
+                        <option value="easeInOut">easeInOut</option>
+                        <option value="exponential">exponential</option>
+                      </select>
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Target Hz</span>
+                      <input
+                        type="number"
+                        min={MIN_CUSTOM_FREQUENCY_HZ}
+                        max={MAX_CUSTOM_FREQUENCY_HZ}
+                        value={sweepConfig.targetHz}
+                        onChange={(event) =>
+                          setSweepConfig((prev) => ({
+                            ...prev,
+                            targetHz: normalizeFrequency(Number(event.target.value))
+                          }))
+                        }
+                        className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Duration (s)</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={180}
+                        value={sweepConfig.durationSeconds}
+                        onChange={(event) =>
+                          setSweepConfig((prev) => ({
+                            ...prev,
+                            durationSeconds: clamp(1, Number(event.target.value), 180)
+                          }))
+                        }
+                        className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">Binaural mode</h4>
+                    <HelpPopover
+                      align="left"
+                      label="Binaural mode help"
+                      text="Binaural mode sends slightly different frequencies to left and right channels to create a perceived beat. Headphones are recommended."
+                    />
+                  </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Enable binaural</span>
+                      <input
+                        type="checkbox"
+                        checked={binauralConfig.enabled}
+                        onChange={(event) =>
+                          setBinauralConfig((prev) => ({
+                            ...prev,
+                            enabled: event.target.checked
+                          }))
+                        }
+                        className="h-4 w-4"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Beat offset (Hz)</span>
+                      <input
+                        type="number"
+                        min={0.1}
+                        max={40}
+                        step={0.1}
+                        value={binauralConfig.beatHz}
+                        onChange={(event) =>
+                          setBinauralConfig((prev) => ({
+                            ...prev,
+                            beatHz: clamp(0.1, Number(event.target.value), 40)
+                          }))
+                        }
+                        className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm sm:col-span-2">
+                      <span>Stereo spread</span>
+                      <input
+                        type="range"
+                        min={0.2}
+                        max={1}
+                        step={0.05}
+                        value={binauralConfig.panSpread}
+                        onChange={(event) =>
+                          setBinauralConfig((prev) => ({
+                            ...prev,
+                            panSpread: Number(event.target.value)
+                          }))
+                        }
+                        className="w-40"
+                      />
+                      <span className="w-10 text-right text-xs">{Math.round(binauralConfig.panSpread * 100)}%</span>
+                    </label>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="flex items-center justify-between gap-3 text-sm">
-                <span>BPM</span>
-                <input
-                  type="number"
-                  min={35}
-                  max={180}
-                  value={rhythmConfig.bpm}
-                  onChange={(event) =>
-                    setRhythmConfig((prev) => ({ ...prev, bpm: clamp(35, Number(event.target.value), 180) }))
-                  }
-                  className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
-                />
-              </label>
-              <label className="flex items-center justify-between gap-3 text-sm">
-                <span>Subdivision</span>
-                <select
-                  value={rhythmConfig.subdivision}
-                  onChange={(event) =>
-                    setRhythmConfig((prev) => ({
-                      ...prev,
-                      subdivision: event.target.value as RhythmConfig['subdivision']
-                    }))
-                  }
-                  className="rounded-full border border-ink/10 bg-white px-3 py-2"
-                >
-                  <option value="4n">4n</option>
-                  <option value="8n">8n</option>
-                  <option value="16n">16n</option>
-                  <option value="8t">8t</option>
-                </select>
-              </label>
-            </div>
-            <div className="mt-3 grid grid-cols-8 gap-2">
-              {rhythmConfig.steps.map((step, index) => (
-                <button
-                  key={`step-${index}`}
-                  type="button"
-                  onClick={() => toggleRhythmStep(index)}
-                  className={`h-9 rounded-xl border text-xs ${
-                    step ? 'border-lagoon bg-lagoon text-white' : 'border-ink/15 bg-white text-ink/50'
-                  }`}
-                >
-                  {index + 1}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
-            <div className="flex items-center gap-2">
-              <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">Modulation + sweep</h4>
-              <HelpPopover
-                align="left"
-                label="Modulation and sweep help"
-                text="LFO adds cyclic pitch movement. Sweep shifts tones toward a target frequency over a set duration and curve."
-              />
-            </div>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <label className="flex items-center justify-between gap-3 text-sm">
-                <span>Enable LFO</span>
-                <input
-                  type="checkbox"
-                  checked={modulationConfig.enabled}
-                  onChange={(event) =>
-                    setModulationConfig((prev) => ({
-                      ...prev,
-                      enabled: event.target.checked
-                    }))
-                  }
-                  className="h-4 w-4"
-                />
-              </label>
-              <label className="flex items-center justify-between gap-3 text-sm">
-                <span>LFO waveform</span>
-                <select
-                  value={modulationConfig.waveform}
-                  onChange={(event) =>
-                    setModulationConfig((prev) => ({
-                      ...prev,
-                      waveform: event.target.value as ModulationConfig['waveform']
-                    }))
-                  }
-                  className="rounded-full border border-ink/10 bg-white px-3 py-2"
-                >
-                  <option value="sine">sine</option>
-                  <option value="triangle">triangle</option>
-                  <option value="square">square</option>
-                  <option value="sawtooth">sawtooth</option>
-                </select>
-              </label>
-              <label className="flex items-center justify-between gap-3 text-sm">
-                <span>Rate (Hz)</span>
-                <input
-                  type="number"
-                  min={0.01}
-                  max={24}
-                  step={0.01}
-                  value={modulationConfig.rateHz}
-                  onChange={(event) =>
-                    setModulationConfig((prev) => ({
-                      ...prev,
-                      rateHz: clamp(0.01, Number(event.target.value), 24)
-                    }))
-                  }
-                  className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
-                />
-              </label>
-              <label className="flex items-center justify-between gap-3 text-sm">
-                <span>Depth (Hz)</span>
-                <input
-                  type="number"
-                  min={0.1}
-                  max={220}
-                  step={0.1}
-                  value={modulationConfig.depthHz}
-                  onChange={(event) =>
-                    setModulationConfig((prev) => ({
-                      ...prev,
-                      depthHz: clamp(0.1, Number(event.target.value), 220)
-                    }))
-                  }
-                  className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
-                />
-              </label>
-            </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <label className="flex items-center justify-between gap-3 text-sm">
-                <span>Enable sweep</span>
-                <input
-                  type="checkbox"
-                  checked={sweepConfig.enabled}
-                  onChange={(event) =>
-                    setSweepConfig((prev) => ({
-                      ...prev,
-                      enabled: event.target.checked
-                    }))
-                  }
-                  className="h-4 w-4"
-                />
-              </label>
-              <label className="flex items-center justify-between gap-3 text-sm">
-                <span>Curve</span>
-                <select
-                  value={sweepConfig.curve}
-                  onChange={(event) =>
-                    setSweepConfig((prev) => ({
-                      ...prev,
-                      curve: event.target.value as SweepConfig['curve']
-                    }))
-                  }
-                  className="rounded-full border border-ink/10 bg-white px-3 py-2"
-                >
-                  <option value="linear">linear</option>
-                  <option value="easeInOut">easeInOut</option>
-                  <option value="exponential">exponential</option>
-                </select>
-              </label>
-              <label className="flex items-center justify-between gap-3 text-sm">
-                <span>Target Hz</span>
-                <input
-                  type="number"
-                  min={MIN_CUSTOM_FREQUENCY_HZ}
-                  max={MAX_CUSTOM_FREQUENCY_HZ}
-                  value={sweepConfig.targetHz}
-                  onChange={(event) =>
-                    setSweepConfig((prev) => ({
-                      ...prev,
-                      targetHz: normalizeFrequency(Number(event.target.value))
-                    }))
-                  }
-                  className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
-                />
-              </label>
-              <label className="flex items-center justify-between gap-3 text-sm">
-                <span>Duration (s)</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={180}
-                  value={sweepConfig.durationSeconds}
-                  onChange={(event) =>
-                    setSweepConfig((prev) => ({
-                      ...prev,
-                      durationSeconds: clamp(1, Number(event.target.value), 180)
-                    }))
-                  }
-                  className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
-                />
-              </label>
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
-            <div className="flex items-center gap-2">
-              <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">Binaural mode</h4>
-              <HelpPopover
-                align="left"
-                label="Binaural mode help"
-                text="Binaural mode sends slightly different frequencies to left and right channels to create a perceived beat. Headphones are recommended."
-              />
-            </div>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <label className="flex items-center justify-between gap-3 text-sm">
-                <span>Enable binaural</span>
-                <input
-                  type="checkbox"
-                  checked={binauralConfig.enabled}
-                  onChange={(event) =>
-                    setBinauralConfig((prev) => ({
-                      ...prev,
-                      enabled: event.target.checked
-                    }))
-                  }
-                  className="h-4 w-4"
-                />
-              </label>
-              <label className="flex items-center justify-between gap-3 text-sm">
-                <span>Beat offset (Hz)</span>
-                <input
-                  type="number"
-                  min={0.1}
-                  max={40}
-                  step={0.1}
-                  value={binauralConfig.beatHz}
-                  onChange={(event) =>
-                    setBinauralConfig((prev) => ({
-                      ...prev,
-                      beatHz: clamp(0.1, Number(event.target.value), 40)
-                    }))
-                  }
-                  className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
-                />
-              </label>
-              <label className="flex items-center justify-between gap-3 text-sm sm:col-span-2">
-                <span>Stereo spread</span>
-                <input
-                  type="range"
-                  min={0.2}
-                  max={1}
-                  step={0.05}
-                  value={binauralConfig.panSpread}
-                  onChange={(event) =>
-                    setBinauralConfig((prev) => ({
-                      ...prev,
-                      panSpread: Number(event.target.value)
-                    }))
-                  }
-                  className="w-40"
-                />
-                <span className="w-10 text-right text-xs">{Math.round(binauralConfig.panSpread * 100)}%</span>
-              </label>
-            </div>
+            ) : null}
           </div>
         </div>
 
@@ -1975,6 +2040,16 @@ export default function FrequencyCreator() {
               className="rounded-full border border-ink/15 bg-white px-3 py-1 text-ink/70"
             >
               Live visualization
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowAdvancedSoundTools((prev) => !prev);
+                advancedSoundRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              className="rounded-full border border-ink/15 bg-white px-3 py-1 text-ink/70"
+            >
+              {showAdvancedSoundTools ? 'Hide advanced audio' : 'Show advanced audio'}
             </button>
             <button
               type="button"

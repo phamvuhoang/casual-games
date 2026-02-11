@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 import { Cormorant_Garamond, IBM_Plex_Sans } from 'next/font/google';
+import { Analytics } from '@vercel/analytics/next';
 import '@/app/globals.css';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
@@ -118,6 +119,7 @@ export default function RootLayout({
             <Footer />
           </div>
         </BackgroundRoot>
+        <Analytics />
       </body>
     </html>
   );

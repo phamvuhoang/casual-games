@@ -7,6 +7,7 @@ import HelpPopover from '@/components/ui/HelpPopover';
 import Modal from '@/components/ui/Modal';
 import WaveformVisualizer from '@/components/audio/WaveformVisualizer';
 import ThreeVisualizer from '@/components/audio/ThreeVisualizer';
+import type { VisualizationSessionOverlayData } from '@/components/audio/visualizationSessionOverlay';
 import { useBackgroundAudioBridge } from '@/components/background/BackgroundAudioBridge';
 import { FrequencyGenerator } from '@/lib/audio/FrequencyGenerator';
 import {
@@ -119,6 +120,7 @@ type DraftState = {
   ambientSound: (typeof AMBIENT_SOUNDS)[number];
   audioFormat: (typeof AUDIO_FORMATS)[number];
   includeVideo: boolean;
+  showSessionInfoOverlay: boolean;
   title: string;
   description: string;
   isPublic: boolean;
@@ -171,7 +173,7 @@ export default function FrequencyCreator() {
   const [modulationConfig, setModulationConfig] = useState<ModulationConfig>(defaultAudioConfig.modulation);
   const [sweepConfig, setSweepConfig] = useState<SweepConfig>(defaultAudioConfig.sweep);
   const [binauralConfig, setBinauralConfig] = useState<BinauralConfig>(defaultAudioConfig.binaural);
-  const [visualizationType, setVisualizationType] = useState<VisualizerType>('waveform');
+  const [visualizationType, setVisualizationType] = useState<VisualizerType>('sacred_geometry');
   const [visualizationLayers, setVisualizationLayers] = useState<VisualizationLayerConfig[]>(
     createDefaultVisualizationLayers()
   );
@@ -179,6 +181,7 @@ export default function FrequencyCreator() {
   const [ambientSound, setAmbientSound] = useState<(typeof AMBIENT_SOUNDS)[number]>('none');
   const [audioFormat, setAudioFormat] = useState<(typeof AUDIO_FORMATS)[number]>('webm');
   const [includeVideo, setIncludeVideo] = useState(false);
+  const [showSessionInfoOverlay, setShowSessionInfoOverlay] = useState(false);
   const [title, setTitle] = useState('Untitled Session');
   const [description, setDescription] = useState('');
   const [isPublic, setIsPublic] = useState(true);
@@ -239,6 +242,33 @@ export default function FrequencyCreator() {
     const layer = visualizationLayers.find((entry) => entry.type === visualizationType);
     return layer ? [layer] : createLayersForType(visualizationType);
   }, [visualizationLayers, visualizationType]);
+
+  const sessionOverlayInfo = useMemo<VisualizationSessionOverlayData>(
+    () => ({
+      title,
+      frequencies: selectedFrequencies.map((frequency) => ({
+        frequency,
+        gain: frequencyVolumes[frequencyKey(frequency)] ?? 1
+      })),
+      mixStyle,
+      waveform,
+      rhythm: rhythmConfig,
+      modulation: modulationConfig,
+      sweep: sweepConfig,
+      binaural: binauralConfig
+    }),
+    [
+      binauralConfig,
+      frequencyVolumes,
+      mixStyle,
+      modulationConfig,
+      rhythmConfig,
+      selectedFrequencies,
+      sweepConfig,
+      title,
+      waveform
+    ]
+  );
 
   const mixedVoices = useMemo(
     () =>
@@ -349,6 +379,9 @@ export default function FrequencyCreator() {
       if (typeof draft.includeVideo === 'boolean') {
         setIncludeVideo(draft.includeVideo);
       }
+      if (typeof draft.showSessionInfoOverlay === 'boolean') {
+        setShowSessionInfoOverlay(draft.showSessionInfoOverlay);
+      }
       if (draft.title) {
         setTitle(draft.title);
       }
@@ -380,6 +413,7 @@ export default function FrequencyCreator() {
       ambientSound,
       audioFormat,
       includeVideo,
+      showSessionInfoOverlay,
       title,
       description,
       isPublic,
@@ -395,6 +429,7 @@ export default function FrequencyCreator() {
     duration,
     frequencyVolumes,
     includeVideo,
+    showSessionInfoOverlay,
     isPublic,
     mixStyle,
     selectedFrequencies,
@@ -1510,13 +1545,21 @@ export default function FrequencyCreator() {
         <div className="space-y-4">
           <h3 className="text-lg font-semibold">Live visualization</h3>
           {visualizationType === 'orbital' ? (
-            <ThreeVisualizer analyser={analyser} isActive={isPlaying} onCanvasReady={setVisualCanvas} />
+            <ThreeVisualizer
+              analyser={analyser}
+              isActive={isPlaying}
+              showSessionInfo={showSessionInfoOverlay}
+              sessionInfo={sessionOverlayInfo}
+              onCanvasReady={setVisualCanvas}
+            />
           ) : (
             <WaveformVisualizer
               analyser={analyser}
               type={visualizationType}
               layers={effectiveVisualizationLayers}
               isActive={isPlaying}
+              showSessionInfo={showSessionInfoOverlay}
+              sessionInfo={sessionOverlayInfo}
               onCanvasReady={setVisualCanvas}
             />
           )}
@@ -1526,6 +1569,15 @@ export default function FrequencyCreator() {
           <p className="text-xs text-ink/55">
             The global background atmosphere also follows this audio energy while playback is running.
           </p>
+          <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/75 px-3 py-2 text-xs text-ink/70">
+            <span>Show session info overlay (preview + exports)</span>
+            <input
+              type="checkbox"
+              checked={showSessionInfoOverlay}
+              onChange={(event) => setShowSessionInfoOverlay(event.target.checked)}
+              className="h-4 w-4"
+            />
+          </label>
 
           {visualizationType !== 'orbital' ? (
             <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">

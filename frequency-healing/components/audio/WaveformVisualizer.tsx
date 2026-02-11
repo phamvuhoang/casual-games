@@ -9,12 +9,19 @@ import {
   type VisualizerType
 } from '@/lib/visualization/config';
 import { CompositorRenderer } from '@/lib/visualization/renderers/CompositorRenderer';
+import {
+  drawSessionOverlay,
+  getSessionOverlayLines,
+  type VisualizationSessionOverlayData
+} from '@/components/audio/visualizationSessionOverlay';
 
 interface WaveformVisualizerProps {
   analyser: AnalyserNode | null;
   type: VisualizerType;
   layers?: VisualizationLayerConfig[];
   isActive: boolean;
+  showSessionInfo?: boolean;
+  sessionInfo?: VisualizationSessionOverlayData | null;
   onCanvasReady?: (canvas: HTMLCanvasElement | null) => void;
 }
 
@@ -30,6 +37,8 @@ export default function WaveformVisualizer({
   type,
   layers,
   isActive,
+  showSessionInfo = false,
+  sessionInfo = null,
   onCanvasReady
 }: WaveformVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -79,6 +88,11 @@ export default function WaveformVisualizer({
     }));
   }, [isLowPower, layers, type]);
 
+  const overlayLines = useMemo(
+    () => (sessionInfo ? getSessionOverlayLines(sessionInfo) : []),
+    [sessionInfo]
+  );
+
   useEffect(() => {
     if (!canvasRef.current || !analyser || !compositorRef.current) {
       return;
@@ -104,6 +118,21 @@ export default function WaveformVisualizer({
   useEffect(() => {
     compositorRef.current?.setLayers(effectiveLayers);
   }, [effectiveLayers]);
+
+  useEffect(() => {
+    if (!engineRef.current) {
+      return;
+    }
+
+    if (!showSessionInfo || overlayLines.length === 0) {
+      engineRef.current.setOverlayRenderer(null);
+      return;
+    }
+
+    engineRef.current.setOverlayRenderer((frame) => {
+      drawSessionOverlay(frame.ctx, frame.width, frame.height, overlayLines, frame.energy);
+    });
+  }, [analyser, overlayLines, showSessionInfo]);
 
   useEffect(() => {
     onCanvasReady?.(canvasRef.current);

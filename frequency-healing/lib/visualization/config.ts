@@ -173,7 +173,7 @@ export function createVisualizationLayer(type: BaseVisualizationType): Visualiza
 }
 
 export function createDefaultVisualizationLayers(): VisualizationLayerConfig[] {
-  return [createVisualizationLayer('gradient'), createVisualizationLayer('particles')];
+  return [createVisualizationLayer('sacred_geometry'), createVisualizationLayer('gradient')];
 }
 
 export function createLayersForType(type: VisualizerType): VisualizationLayerConfig[] {

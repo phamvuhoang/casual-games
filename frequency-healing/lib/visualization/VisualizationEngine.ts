@@ -1,4 +1,7 @@
 import type { VisualizationRenderer } from '@/lib/visualization/renderers/types';
+import type { RenderFrame } from '@/lib/visualization/renderers/types';
+
+export type FrameOverlayRenderer = (frame: RenderFrame) => void;
 
 export class VisualizationEngine {
   private canvas: HTMLCanvasElement;
@@ -9,6 +12,7 @@ export class VisualizationEngine {
   private lastTime = 0;
   private waveformData: Uint8Array<ArrayBuffer>;
   private frequencyData: Uint8Array<ArrayBuffer>;
+  private overlayRenderer: FrameOverlayRenderer | null = null;
 
   constructor(canvas: HTMLCanvasElement, analyser: AnalyserNode, renderer: VisualizationRenderer) {
     const ctx = canvas.getContext('2d');
@@ -29,6 +33,10 @@ export class VisualizationEngine {
   setRenderer(renderer: VisualizationRenderer) {
     this.renderer.dispose?.();
     this.renderer = renderer;
+  }
+
+  setOverlayRenderer(renderer: FrameOverlayRenderer | null) {
+    this.overlayRenderer = renderer;
   }
 
   resize() {
@@ -60,7 +68,7 @@ export class VisualizationEngine {
       const height = this.canvas.getBoundingClientRect().height;
 
       this.ctx.clearRect(0, 0, width, height);
-      this.renderer.render({
+      const frame = {
         ctx: this.ctx,
         width,
         height,
@@ -69,7 +77,10 @@ export class VisualizationEngine {
         energy,
         time,
         delta
-      });
+      } satisfies RenderFrame;
+
+      this.renderer.render(frame);
+      this.overlayRenderer?.(frame);
     };
 
     this.animationId = requestAnimationFrame(draw);

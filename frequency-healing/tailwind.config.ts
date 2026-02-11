@@ -13,16 +13,16 @@ const config: Config = {
         body: ['var(--font-body)', 'sans-serif']
       },
       colors: {
-        ink: '#1b1f24',
-        mist: '#f4f0e8',
-        ember: '#f7b36a',
-        lagoon: '#2b8c8c',
-        dawn: '#f8dcb3',
-        tide: '#a6d3c8'
+        ink: '#172034',
+        mist: '#f2f0f9',
+        ember: '#c79b73',
+        lagoon: '#6a92c2',
+        dawn: '#eee0d1',
+        tide: '#b9ccc4'
       },
       boxShadow: {
-        glow: '0 0 40px rgba(247, 179, 106, 0.35)',
-        halo: '0 0 60px rgba(43, 140, 140, 0.25)'
+        glow: '0 18px 48px rgba(114, 92, 177, 0.28)',
+        halo: '0 24px 60px rgba(77, 109, 159, 0.24)'
       },
       keyframes: {
         float: {

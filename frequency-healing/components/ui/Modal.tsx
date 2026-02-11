@@ -33,11 +33,14 @@ export default function Modal({ open, onClose, title, children }: ModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className={cn('glass-panel w-full max-w-lg rounded-3xl p-6 shadow-lg')}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 backdrop-blur-sm">
+      <div className={cn('glass-panel w-full max-w-lg rounded-3xl p-6 shadow-[0_24px_64px_rgba(10,12,24,0.36)]')}>
         <div className="flex items-center justify-between">
           {title ? <h3 className="text-xl font-semibold">{title}</h3> : null}
-          <button onClick={onClose} className="rounded-full px-3 py-1 text-sm text-ink/70 hover:bg-black/5">
+          <button
+            onClick={onClose}
+            className="rounded-full border border-ink/12 px-3 py-1 text-sm text-ink/70 hover:bg-white/70"
+          >
             Close
           </button>
         </div>

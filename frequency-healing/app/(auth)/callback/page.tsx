@@ -1,5 +1,16 @@
 import { Suspense } from 'react';
+import type { Metadata } from 'next';
 import CallbackClient from '@/app/(auth)/callback/CallbackClient';
+import { buildPageMetadata } from '@/lib/utils/seo';
+
+export const metadata: Metadata = buildPageMetadata({
+  title: 'Auth Callback',
+  description: 'Completing your sign-in.',
+  path: '/callback',
+  noIndex: true,
+  image: '/opengraph-image',
+  imageAlt: 'Frequency Healing Studio auth callback'
+});
 
 export default function AuthCallbackPage() {
   return (

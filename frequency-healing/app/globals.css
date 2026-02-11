@@ -3,32 +3,42 @@
 @tailwind utilities;
 
 :root {
-  --bg-base: #f6efe6;
-  --bg-tide: #d6efe7;
-  --bg-ember: #f7b36a;
-  --bg-lagoon: #2b8c8c;
-  --bg-ink: #1b1f24;
+  --ink: #172034;
+  --ink-soft: #55617b;
+  --bg-night: #f2f0f9;
+  --bg-dawn: #e8eff8;
+  --bg-earth: #eee0d1;
+  --panel-bg: rgba(255, 255, 255, 0.68);
+  --panel-border: rgba(38, 46, 66, 0.14);
+  --panel-shadow: 0 24px 60px rgba(66, 45, 112, 0.14);
+  --focus-ring: #6c8fc0;
 }
 
 * {
   box-sizing: border-box;
 }
 
+html,
 body {
-  margin: 0;
   min-height: 100%;
-  font-family: var(--font-body), sans-serif;
-  color: var(--bg-ink);
-  background:
-    radial-gradient(circle at 15% 10%, rgba(247, 179, 106, 0.45), transparent 45%),
-    radial-gradient(circle at 80% 0%, rgba(43, 140, 140, 0.35), transparent 40%),
-    linear-gradient(135deg, var(--bg-base), var(--bg-tide));
-  background-attachment: fixed;
 }
 
-h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-display), serif;
-  letter-spacing: -0.02em;
+body {
+  margin: 0;
+  font-family: var(--font-body), sans-serif;
+  color: var(--ink);
+  line-height: 1.5;
+  background:
+    radial-gradient(circle at 14% 12%, rgba(143, 122, 219, 0.18), transparent 36%),
+    radial-gradient(circle at 82% 4%, rgba(188, 151, 118, 0.16), transparent 38%),
+    linear-gradient(138deg, var(--bg-night), var(--bg-dawn) 54%, var(--bg-earth));
+  background-attachment: fixed;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: rgba(132, 111, 210, 0.34);
+  color: #0f1322;
 }
 
 a {
@@ -36,36 +46,139 @@ a {
   text-decoration: none;
 }
 
-button {
-  font-family: inherit;
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin: 0;
+  font-family: var(--font-display), serif;
+  letter-spacing: -0.018em;
+  color: var(--ink);
+}
+
+.bg-canvas {
+  background: transparent;
 }
 
 .bg-aurora {
   background:
-    radial-gradient(circle at 20% 30%, rgba(43, 140, 140, 0.32), transparent 45%),
-    radial-gradient(circle at 75% 65%, rgba(247, 179, 106, 0.35), transparent 50%),
-    linear-gradient(130deg, rgba(248, 220, 179, 0.6), rgba(166, 211, 200, 0.45));
+    radial-gradient(circle at 20% 30%, rgba(140, 122, 218, 0.2), transparent 48%),
+    radial-gradient(circle at 77% 67%, rgba(196, 157, 125, 0.24), transparent 52%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(236, 243, 252, 0.68));
 }
 
 .glass-panel {
+  border: 1px solid var(--panel-border);
+  background: var(--panel-bg);
   backdrop-filter: blur(18px);
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(27, 31, 36, 0.08);
+  box-shadow: var(--panel-shadow);
+}
+
+.ui-panel {
+  border: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(16px);
+}
+
+.ui-chip-shadow {
+  box-shadow: 0 14px 34px rgba(32, 23, 56, 0.18);
+}
+
+.ui-field {
+  border-radius: 999px;
+  border: 1px solid rgba(42, 53, 77, 0.2);
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--ink);
+  padding: 0.6rem 0.95rem;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+.ui-field:focus-visible {
+  outline: none;
+  border-color: var(--focus-ring);
+  box-shadow: 0 0 0 3px rgba(108, 143, 192, 0.24);
+}
+
+input:not([type='checkbox']):not([type='range']):not([type='color']):not([type='radio']),
+select,
+textarea {
+  border: 1px solid rgba(42, 53, 77, 0.18);
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--ink);
+  transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+input:not([type='checkbox']):not([type='range']):not([type='color']):not([type='radio']):focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible {
+  outline: none;
+  border-color: var(--focus-ring);
+  box-shadow: 0 0 0 3px rgba(108, 143, 192, 0.24);
+}
+
+textarea {
+  border-radius: 1rem;
+}
+
+input[type='checkbox'] {
+  accent-color: #7e80d0;
 }
 
 .fade-in {
   opacity: 0;
-  animation: fadeUp 0.8s ease-out forwards;
+  animation: fadeUp 800ms ease-out forwards;
 }
 
 .fade-in.delay-1 {
-  animation-delay: 0.12s;
+  animation-delay: 120ms;
 }
 
 .fade-in.delay-2 {
-  animation-delay: 0.24s;
+  animation-delay: 220ms;
 }
 
 .fade-in.delay-3 {
-  animation-delay: 0.36s;
+  animation-delay: 320ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .fade-in {
+    opacity: 1;
+    animation: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --ink: #0c1426;
+    --ink-soft: #202a3f;
+    --panel-bg: rgba(255, 255, 255, 0.96);
+    --panel-border: rgba(12, 20, 38, 0.4);
+    --focus-ring: #214f90;
+  }
+
+  .glass-panel,
+  .ui-panel {
+    backdrop-filter: none;
+    box-shadow: none;
+  }
 }

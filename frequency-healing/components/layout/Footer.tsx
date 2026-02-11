@@ -1,9 +1,9 @@
 export default function Footer() {
   return (
-    <footer className="mt-16 border-t border-black/5 bg-white/60">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-6 py-6 text-sm text-ink/60 md:flex-row md:items-center md:justify-between md:px-10">
-        <p>Frequency Healing Studio - Crafted for calm and connection.</p>
-        <p>Audio created client-side. No medical claims are implied.</p>
+    <footer className="mt-20 pb-6">
+      <div className="mx-auto flex w-full max-w-[1220px] flex-col gap-3 rounded-3xl border border-white/45 bg-white/64 px-5 py-5 text-sm text-ink/65 shadow-[0_18px_44px_rgba(35,32,68,0.12)] backdrop-blur md:flex-row md:items-center md:justify-between md:px-7">
+        <p>Frequency Healing Studio - built for calm, focus, and restorative rituals.</p>
+        <p>Audio is generated client-side. Wellness support only; not medical advice.</p>
       </div>
     </footer>
   );

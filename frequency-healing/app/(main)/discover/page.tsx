@@ -145,49 +145,54 @@ export default function DiscoverPage() {
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-10">
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.35em] text-ink/60">Discover</p>
-          <h1 className="mt-3 text-3xl font-semibold md:text-4xl">Public healing compositions</h1>
-          <p className="mt-2 text-sm text-ink/70">Listen to the latest community sessions and find your flow.</p>
+    <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-8">
+      <section className="glass-panel rounded-3xl p-6 sm:p-7">
+        <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.28em] text-ink/60">Discover</p>
+            <h1 className="mt-3 text-3xl font-semibold md:text-4xl">Public healing compositions</h1>
+            <p className="mt-2 text-sm text-ink/70">
+              Listen with fewer distractions, save what resonates, and track community favorites.
+            </p>
+          </div>
+          <Button asChild size="sm">
+            <Link href="/create">Create your own</Link>
+          </Button>
         </div>
-        <Button asChild size="sm">
-          <Link href="/create">Create your own</Link>
-        </Button>
-      </div>
 
-      <div className="flex flex-wrap gap-3 text-sm">
-        <label className="flex items-center gap-3">
-          <span className="text-ink/60">Sort</span>
-          <select
-            value={sortMode}
-            onChange={(event) => setSortMode(event.target.value as keyof typeof SORT_OPTIONS)}
-            className="rounded-full border border-ink/10 bg-white px-3 py-2"
-          >
-            {Object.entries(SORT_OPTIONS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex items-center gap-3">
-          <span className="text-ink/60">Tag</span>
-          <select
-            value={tagFilter}
-            onChange={(event) => setTagFilter(event.target.value)}
-            className="rounded-full border border-ink/10 bg-white px-3 py-2"
-          >
-            <option value="all">All tags</option>
-            {availableTags.map((tag) => (
-              <option key={tag} value={tag}>
-                {tag}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+        <div className="mt-5 flex flex-wrap gap-3 text-sm">
+          <label className="flex items-center gap-2 rounded-full border border-ink/10 bg-white/72 px-3 py-2">
+            <span className="text-ink/65">Sort</span>
+            <select
+              value={sortMode}
+              onChange={(event) => setSortMode(event.target.value as keyof typeof SORT_OPTIONS)}
+              className="rounded-full border border-ink/10 bg-white px-3 py-1.5"
+            >
+              {Object.entries(SORT_OPTIONS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex items-center gap-2 rounded-full border border-ink/10 bg-white/72 px-3 py-2">
+            <span className="text-ink/65">Tag</span>
+            <select
+              value={tagFilter}
+              onChange={(event) => setTagFilter(event.target.value)}
+              className="rounded-full border border-ink/10 bg-white px-3 py-1.5"
+            >
+              <option value="all">All tags</option>
+              {availableTags.map((tag) => (
+                <option key={tag} value={tag}>
+                  {tag}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </section>
 
       {loading ? <p className="text-sm text-ink/70">Loading compositions...</p> : null}
       {status ? <p className="text-sm text-rose-500">{status}</p> : null}
@@ -195,7 +200,7 @@ export default function DiscoverPage() {
         <p className="text-sm text-ink/70">No compositions match those filters yet.</p>
       ) : null}
 
-      <div className="grid gap-5 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2">
         {compositions.map((composition) => (
           <Card key={composition.id} className="glass-panel">
             {(() => {
@@ -205,7 +210,7 @@ export default function DiscoverPage() {
               }
               const displayName = creator.display_name ?? creator.username ?? 'Unknown';
               return (
-                <div className="mb-2 text-xs text-ink/60">
+                <div className="mb-3 text-xs text-ink/60">
                   By{' '}
                   {creator.username ? (
                     <Link href={`/profile/${creator.username}`} className="font-semibold text-ink hover:text-ink/80">
@@ -217,31 +222,34 @@ export default function DiscoverPage() {
                 </div>
               );
             })()}
-            <div className="flex items-center justify-between">
+
+            <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-xl font-semibold">{composition.title}</h2>
-                <p className="text-sm text-ink/60">{formatFrequencyList(composition.frequencies)}</p>
+                <p className="mt-1 text-sm text-ink/65">{formatFrequencyList(composition.frequencies)}</p>
               </div>
               <Link
                 href={`/composition/${composition.id}`}
-                className="rounded-full border border-ink/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em]"
+                className="rounded-full border border-ink/20 bg-white/78 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] transition hover:bg-white"
               >
-                View
+                Listen
               </Link>
             </div>
+
             {composition.description ? (
-              <p className="mt-3 text-sm text-ink/70">{composition.description}</p>
+              <p className="mt-3 text-sm text-ink/72">{composition.description}</p>
             ) : null}
-            <div className="mt-4 flex flex-wrap gap-3 text-xs text-ink/60">
-              <span>{composition.like_count ?? 0} likes</span>
-              <span>{composition.play_count ?? 0} plays</span>
+
+            <div className="mt-4 flex flex-wrap gap-4 text-xs text-ink/60">
+              <span>{composition.like_count ?? 0} appreciations</span>
+              <span>{composition.play_count ?? 0} listens</span>
             </div>
           </Card>
         ))}
       </div>
 
       {totalPages > 1 ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+        <div className="glass-panel flex flex-wrap items-center justify-between gap-3 rounded-3xl p-4 text-sm">
           <Button
             variant="outline"
             size="sm"

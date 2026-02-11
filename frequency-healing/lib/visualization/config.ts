@@ -42,9 +42,9 @@ const DEFAULT_LAYER: Record<BaseVisualizationType, Omit<VisualizationLayerConfig
     intensity: 0.75,
     speed: 1,
     scale: 1,
-    colorA: '#f7b36a',
-    colorB: '#2b8c8c',
-    colorC: '#162325'
+    colorA: '#8f7adb',
+    colorB: '#6a92c2',
+    colorC: '#172034'
   },
   particles: {
     type: 'particles',
@@ -54,9 +54,9 @@ const DEFAULT_LAYER: Record<BaseVisualizationType, Omit<VisualizationLayerConfig
     intensity: 0.82,
     speed: 1,
     scale: 1,
-    colorA: '#f7b36a',
-    colorB: '#f8dcb3',
-    colorC: '#2b8c8c'
+    colorA: '#8f7adb',
+    colorB: '#b9ccc4',
+    colorC: '#6a92c2'
   },
   mandala: {
     type: 'mandala',
@@ -66,9 +66,9 @@ const DEFAULT_LAYER: Record<BaseVisualizationType, Omit<VisualizationLayerConfig
     intensity: 0.8,
     speed: 0.8,
     scale: 1,
-    colorA: '#2b8c8c',
-    colorB: '#f7b36a',
-    colorC: '#f8dcb3'
+    colorA: '#6a92c2',
+    colorB: '#8f7adb',
+    colorC: '#eee0d1'
   },
   spiral: {
     type: 'spiral',
@@ -78,9 +78,9 @@ const DEFAULT_LAYER: Record<BaseVisualizationType, Omit<VisualizationLayerConfig
     intensity: 0.9,
     speed: 1.2,
     scale: 1,
-    colorA: '#de443b',
-    colorB: '#006bb4',
-    colorC: '#162325'
+    colorA: '#8f7adb',
+    colorB: '#6a92c2',
+    colorC: '#172034'
   },
   gradient: {
     type: 'gradient',
@@ -90,9 +90,9 @@ const DEFAULT_LAYER: Record<BaseVisualizationType, Omit<VisualizationLayerConfig
     intensity: 0.82,
     speed: 0.62,
     scale: 1,
-    colorA: '#2b8c8c',
-    colorB: '#f7b36a',
-    colorC: '#a6d3c8'
+    colorA: '#6a92c2',
+    colorB: '#8f7adb',
+    colorC: '#b9ccc4'
   },
   ripple: {
     type: 'ripple',
@@ -102,9 +102,9 @@ const DEFAULT_LAYER: Record<BaseVisualizationType, Omit<VisualizationLayerConfig
     intensity: 0.76,
     speed: 1,
     scale: 1,
-    colorA: '#f8dcb3',
-    colorB: '#2b8c8c',
-    colorC: '#f7b36a'
+    colorA: '#eee0d1',
+    colorB: '#6a92c2',
+    colorC: '#c79b73'
   },
   sacred_geometry: {
     type: 'sacred_geometry',
@@ -114,9 +114,9 @@ const DEFAULT_LAYER: Record<BaseVisualizationType, Omit<VisualizationLayerConfig
     intensity: 0.88,
     speed: 0.72,
     scale: 1,
-    colorA: '#f7b36a',
-    colorB: '#2b8c8c',
-    colorC: '#f8dcb3'
+    colorA: '#8f7adb',
+    colorB: '#6a92c2',
+    colorC: '#eee0d1'
   }
 };
 

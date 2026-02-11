@@ -7,6 +7,7 @@ import HelpPopover from '@/components/ui/HelpPopover';
 import Modal from '@/components/ui/Modal';
 import WaveformVisualizer from '@/components/audio/WaveformVisualizer';
 import ThreeVisualizer from '@/components/audio/ThreeVisualizer';
+import { useBackgroundAudioBridge } from '@/components/background/BackgroundAudioBridge';
 import { FrequencyGenerator } from '@/lib/audio/FrequencyGenerator';
 import {
   buildFrequencyMix,
@@ -194,6 +195,7 @@ export default function FrequencyCreator() {
 
   const generator = useMemo(() => new FrequencyGenerator(), []);
   const supabase = useMemo(() => createSupabaseClient(), []);
+  const { setAnalyser: setBackgroundAnalyser } = useBackgroundAudioBridge();
 
   const audioConfig = useMemo<AudioConfigShape>(
     () => ({
@@ -433,6 +435,16 @@ export default function FrequencyCreator() {
       generator.setMasterVolume(volume);
     }
   }, [generator, isPlaying, volume]);
+
+  useEffect(() => {
+    setBackgroundAnalyser(isPlaying ? analyser : null);
+  }, [analyser, isPlaying, setBackgroundAnalyser]);
+
+  useEffect(() => {
+    return () => {
+      setBackgroundAnalyser(null);
+    };
+  }, [setBackgroundAnalyser]);
 
   useEffect(() => {
     if (isPlaying && mixedVoices.length > 0) {
@@ -1508,6 +1520,9 @@ export default function FrequencyCreator() {
           )}
           <p className="text-xs text-ink/60">
             Visuals are audio-reactive and auto-downgrade on constrained devices for stable frame times.
+          </p>
+          <p className="text-xs text-ink/55">
+            The global background atmosphere also follows this audio energy while playback is running.
           </p>
 
           {visualizationType !== 'orbital' ? (

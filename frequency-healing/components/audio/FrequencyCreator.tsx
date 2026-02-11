@@ -46,7 +46,7 @@ import { createSupabaseClient } from '@/lib/supabase/client';
 import { ensureProfile } from '@/lib/supabase/profile';
 import type { Database, Json } from '@/lib/supabase/types';
 import { captureVideo } from '@/lib/visualization/VideoCapture';
-import { isIOSDevice } from '@/lib/utils/platform';
+import { isAndroidDevice, isIOSDevice } from '@/lib/utils/platform';
 import {
   AMBIENT_SOUNDS,
   AUDIO_BUCKET,
@@ -690,8 +690,10 @@ export default function FrequencyCreator() {
     }
 
     try {
-      const shouldEnableBridge = isIOS || isIOSDevice();
-      await generator.initialize(DEFAULT_EFFECTS, { enableIOSAudioBridge: shouldEnableBridge });
+      const shouldEnableBridge = isIOS || isIOSDevice() || isAndroidDevice();
+      await generator.initialize(DEFAULT_EFFECTS, {
+        enableAudioBridge: shouldEnableBridge
+      });
       generator.setMasterVolume(volume);
       generator.setRhythmPattern(rhythmConfig);
       generator.setAutomation({ modulation: modulationConfig, sweep: sweepConfig });

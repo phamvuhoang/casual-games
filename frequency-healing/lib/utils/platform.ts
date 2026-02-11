@@ -11,3 +11,11 @@ export function isIOSDevice() {
 
   return isiOS || isIPadOS;
 }
+
+export function isAndroidDevice() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return /Android/i.test(window.navigator.userAgent);
+}

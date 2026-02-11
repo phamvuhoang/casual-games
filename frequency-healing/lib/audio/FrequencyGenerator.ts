@@ -27,6 +27,7 @@ export interface FrequencyConfig {
 }
 
 export interface InitializeOptions {
+  enableAudioBridge?: boolean;
   enableIOSAudioBridge?: boolean;
 }
 
@@ -115,17 +116,29 @@ export class FrequencyGenerator {
 
   async initialize(effects: EffectsConfig = DEFAULT_EFFECTS, options: InitializeOptions = {}) {
     this.lastEffects = effects;
+    const requestedAudioBridge =
+      typeof options.enableAudioBridge === 'boolean'
+        ? options.enableAudioBridge
+        : typeof options.enableIOSAudioBridge === 'boolean'
+          ? options.enableIOSAudioBridge
+          : undefined;
+
+    if (typeof requestedAudioBridge === 'boolean') {
+      this.audioBridgeEnabled = requestedAudioBridge;
+      if (!this.audioBridgeEnabled) {
+        this.teardownAudioBridge();
+      }
+    }
+
+    const shouldAttachLifecycleHandlers = isIOSDevice() || this.audioBridgeEnabled;
+    if (shouldAttachLifecycleHandlers) {
+      this.attachIOSLifecycleHandlers();
+    } else {
+      this.detachIOSLifecycleHandlers();
+    }
 
     if (isIOSDevice()) {
-      this.attachIOSLifecycleHandlers();
       this.configureIOSAudioSession();
-
-      if (typeof options.enableIOSAudioBridge === 'boolean') {
-        this.audioBridgeEnabled = options.enableIOSAudioBridge;
-        if (!this.audioBridgeEnabled) {
-          this.teardownAudioBridge();
-        }
-      }
     }
 
     if (this.initialized) {
@@ -209,7 +222,7 @@ export class FrequencyGenerator {
   }
 
   play(frequencies: FrequencyConfig[]) {
-    if (isIOSDevice()) {
+    if (isIOSDevice() || this.audioBridgeEnabled) {
       void this.ensureAudioRunning();
     }
 

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Button from '@/components/ui/Button';
 import HelpPopover from '@/components/ui/HelpPopover';
 import Modal from '@/components/ui/Modal';
@@ -182,6 +182,10 @@ export default function FrequencyCreator() {
   const [audioFormat, setAudioFormat] = useState<(typeof AUDIO_FORMATS)[number]>('webm');
   const [includeVideo, setIncludeVideo] = useState(false);
   const [showSessionInfoOverlay, setShowSessionInfoOverlay] = useState(false);
+  const [showPublishingTools, setShowPublishingTools] = useState(false);
+  const [liveVisualizationEnabled, setLiveVisualizationEnabled] = useState(true);
+  const [showMobileLiveDock, setShowMobileLiveDock] = useState(true);
+  const [isCompactViewport, setIsCompactViewport] = useState(false);
   const [title, setTitle] = useState('Untitled Session');
   const [description, setDescription] = useState('');
   const [isPublic, setIsPublic] = useState(true);
@@ -192,6 +196,9 @@ export default function FrequencyCreator() {
   const [userId, setUserId] = useState<string | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
+  const frequencyStackRef = useRef<HTMLDivElement | null>(null);
+  const liveSectionRef = useRef<HTMLDivElement | null>(null);
+  const mobileLiveCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const mp3LimitSeconds = MP3_ESTIMATED_MAX_SECONDS;
   const showMp3Warning = audioFormat === 'mp3' && duration > mp3LimitSeconds;
   const maxSelectableFrequencies = mixStyle === 'golden432' ? MAX_PHASE2_FREQUENCIES : MAX_PHASE2_FREQUENCIES;
@@ -243,6 +250,16 @@ export default function FrequencyCreator() {
     return layer ? [layer] : createLayersForType(visualizationType);
   }, [visualizationLayers, visualizationType]);
 
+  const selectedFrequencySummary = useMemo(() => {
+    if (selectedFrequencies.length === 0) {
+      return 'No tones selected';
+    }
+
+    const first = selectedFrequencies.slice(0, 3).map((value) => `${Math.round(value)}Hz`);
+    const extra = selectedFrequencies.length - first.length;
+    return `${first.join(' • ')}${extra > 0 ? ` +${extra}` : ''}`;
+  }, [selectedFrequencies]);
+
   const sessionOverlayInfo = useMemo<VisualizationSessionOverlayData>(
     () => ({
       title,
@@ -291,6 +308,24 @@ export default function FrequencyCreator() {
 
   useEffect(() => {
     setIsIOS(isIOSDevice());
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const media = window.matchMedia('(max-width: 820px)');
+    const update = () => setIsCompactViewport(media.matches);
+    update();
+
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', update);
+      return () => media.removeEventListener('change', update);
+    }
+
+    media.addListener(update);
+    return () => media.removeListener(update);
   }, []);
 
   useEffect(() => {
@@ -530,6 +565,50 @@ export default function FrequencyCreator() {
       return [...prev, createVisualizationLayer(visualizationType)];
     });
   }, [visualizationType]);
+
+  useEffect(() => {
+    if (!isCompactViewport) {
+      return;
+    }
+
+    if (!isPlaying || !liveVisualizationEnabled || !visualCanvas || !showMobileLiveDock || !mobileLiveCanvasRef.current) {
+      return;
+    }
+
+    const dockCanvas = mobileLiveCanvasRef.current;
+    const dockCtx = dockCanvas.getContext('2d');
+    if (!dockCtx) {
+      return;
+    }
+
+    let frameId: number | null = null;
+
+    const renderDock = () => {
+      frameId = requestAnimationFrame(renderDock);
+
+      const sourceWidth = visualCanvas.width || visualCanvas.clientWidth;
+      const sourceHeight = visualCanvas.height || visualCanvas.clientHeight;
+      if (!sourceWidth || !sourceHeight) {
+        return;
+      }
+
+      if (dockCanvas.width !== sourceWidth || dockCanvas.height !== sourceHeight) {
+        dockCanvas.width = sourceWidth;
+        dockCanvas.height = sourceHeight;
+      }
+
+      dockCtx.clearRect(0, 0, dockCanvas.width, dockCanvas.height);
+      dockCtx.drawImage(visualCanvas, 0, 0, dockCanvas.width, dockCanvas.height);
+    };
+
+    renderDock();
+
+    return () => {
+      if (frameId) {
+        cancelAnimationFrame(frameId);
+      }
+    };
+  }, [isCompactViewport, isPlaying, liveVisualizationEnabled, showMobileLiveDock, visualCanvas]);
 
   const addFrequency = (hz: number, defaultGain = 1) => {
     const normalized = normalizeFrequency(hz);
@@ -942,55 +1021,48 @@ export default function FrequencyCreator() {
   };
 
   return (
-    <div className="flex flex-col gap-8">
-      <div className="grid gap-6 rounded-3xl bg-white/70 p-6 shadow-halo md:grid-cols-[1.1fr_0.9fr]">
+    <div className="flex flex-col gap-8 pb-32 md:pb-14">
+      <div className="grid gap-6 rounded-3xl bg-white/70 p-6 shadow-halo md:grid-cols-[1.02fr_0.98fr]">
         <div className="space-y-4">
-          <h2 className="text-2xl font-semibold">Create your frequency ritual</h2>
+          <h2 className="text-2xl font-semibold">Quick resonance mode</h2>
           <p className="text-sm text-ink/70">
-            Stack core tones, drive rhythmic gates, automate sweeps, and design layered visuals in real time.
+            Start listening instantly, then refine only what you need. Publishing tools stay tucked away until you ask
+            for them.
           </p>
-          <div className="grid gap-3">
-            <label className="text-xs uppercase tracking-[0.3em] text-ink/60">Title</label>
-            <input
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              className="w-full rounded-2xl border border-ink/10 bg-white/80 px-4 py-3 text-sm"
-            />
-            <label className="text-xs uppercase tracking-[0.3em] text-ink/60">Description</label>
-            <textarea
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              className="min-h-[90px] w-full rounded-2xl border border-ink/10 bg-white/80 px-4 py-3 text-sm"
-            />
+          <div className="rounded-2xl border border-ink/10 bg-white/82 p-4">
+            <p className="text-xs uppercase tracking-[0.22em] text-ink/55">Active frequency stack</p>
+            <p className="mt-2 text-sm font-semibold text-ink/90">{selectedFrequencySummary}</p>
+            <p className="mt-1 text-xs text-ink/60">
+              {selectedFrequencies.length === 0
+                ? 'Tap a preset below to begin.'
+                : `${selectedFrequencies.length} tone${selectedFrequencies.length > 1 ? 's' : ''} selected.`}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button size="sm" onClick={handlePlay} disabled={mixedVoices.length === 0}>
+                {isPlaying ? 'Stop now' : 'Play now'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => frequencyStackRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              >
+                Tune frequencies
+              </Button>
+            </div>
           </div>
+          {status ? <p className="text-sm text-ink/70">{status}</p> : null}
         </div>
         <div className="space-y-4">
-          {!userId ? (
-            <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
-              <p className="text-sm text-ink/70">
-                You are composing as a guest. Sign in to save and share your session when it feels right.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-3">
-                <Button asChild size="sm">
-                  <Link href="/login?redirectTo=/create">Sign in to save</Link>
-                </Button>
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/signup?redirectTo=/discover">Create account</Link>
-                </Button>
-              </div>
-            </div>
-          ) : null}
           <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
-            <p className="text-xs uppercase tracking-[0.3em] text-ink/60">Session controls</p>
+            <p className="text-xs uppercase tracking-[0.3em] text-ink/60">Live session controls</p>
             {isIOS ? (
               <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                iOS tip: Tap Play to unlock audio. If you still hear nothing, flip the silent switch off on the side of
-                your iPhone. Video export is unavailable on iPhone/iPad.
+                iOS tip: Tap Play once to unlock audio. If sound is muted, turn off the side silent switch.
               </div>
             ) : null}
             {binauralConfig.enabled ? (
               <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                Binaural mode is most effective on headphones. Speakers reduce channel separation and beat perception.
+                Binaural mode is optimized for headphones and gentle listening environments.
               </div>
             ) : null}
             <div className="mt-4 grid gap-3 text-sm">
@@ -1024,7 +1096,7 @@ export default function FrequencyCreator() {
               </label>
               {mixStyle === 'golden432' ? (
                 <p className="rounded-2xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs text-teal-700">
-                  Golden ladder mode generates phi-sideband textures. Binaural mode overrides this with direct dual-oscillator voices.
+                  Golden ladder mode introduces harmonic sidebands for richer meditation textures.
                 </p>
               ) : null}
               <label className="flex items-center justify-between gap-3">
@@ -1056,36 +1128,6 @@ export default function FrequencyCreator() {
                 </select>
               </label>
               <label className="flex items-center justify-between gap-3">
-                <span>Export format</span>
-                <select
-                  value={audioFormat}
-                  onChange={(event) => setAudioFormat(event.target.value as typeof audioFormat)}
-                  className="rounded-full border border-ink/10 bg-white px-3 py-2"
-                >
-                  {AUDIO_FORMATS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {showMp3Warning ? (
-                <p className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                  MP3 export is optimized for shorter sessions (up to {mp3LimitSeconds}s). Reduce duration or choose WAV for
-                  longer renders.
-                </p>
-              ) : null}
-              <label className="flex items-center justify-between gap-3">
-                <span>Capture video</span>
-                <input
-                  type="checkbox"
-                  checked={includeVideo}
-                  onChange={(event) => setIncludeVideo(event.target.checked)}
-                  disabled={isIOS}
-                  className="h-4 w-4"
-                />
-              </label>
-              <label className="flex items-center justify-between gap-3">
                 <span>Duration (sec)</span>
                 <input
                   type="number"
@@ -1108,7 +1150,91 @@ export default function FrequencyCreator() {
                   className="w-40"
                 />
               </label>
-              <label className="flex items-center justify-between gap-3">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+        <button
+          type="button"
+          onClick={() => setShowPublishingTools((prev) => !prev)}
+          className="flex w-full items-center justify-between gap-4 text-left"
+          aria-expanded={showPublishingTools}
+          aria-controls="publishing-tools"
+        >
+          <div>
+            <p className="text-xs uppercase tracking-[0.25em] text-ink/55">Publishing tools</p>
+            <p className="mt-1 text-sm text-ink/70">
+              {showPublishingTools
+                ? 'Set title, export options, and sharing details.'
+                : 'Open when you want to save, share, or sign in.'}
+            </p>
+          </div>
+          <span className="rounded-full border border-ink/15 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-ink/70">
+            {showPublishingTools ? 'Hide' : 'Show'}
+          </span>
+        </button>
+
+        {showPublishingTools ? (
+          <div id="publishing-tools" className="mt-4 space-y-4">
+            {!userId ? (
+              <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+                <p className="text-sm text-ink/70">
+                  You are composing as a guest. Sign in whenever you want to save and publish this session.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-3">
+                  <Button asChild size="sm">
+                    <Link href="/login?redirectTo=/create">Sign in to save</Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/signup?redirectTo=/discover">Create account</Link>
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="grid gap-3">
+              <label className="text-xs uppercase tracking-[0.3em] text-ink/60">Title</label>
+              <input
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                className="w-full rounded-2xl border border-ink/10 bg-white/80 px-4 py-3 text-sm"
+              />
+              <label className="text-xs uppercase tracking-[0.3em] text-ink/60">Description</label>
+              <textarea
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                className="min-h-[90px] w-full rounded-2xl border border-ink/10 bg-white/80 px-4 py-3 text-sm"
+              />
+            </div>
+
+            <div className="grid gap-3 text-sm md:grid-cols-2">
+              <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/80 px-3 py-2">
+                <span>Export format</span>
+                <select
+                  value={audioFormat}
+                  onChange={(event) => setAudioFormat(event.target.value as typeof audioFormat)}
+                  className="rounded-full border border-ink/10 bg-white px-3 py-2"
+                >
+                  {AUDIO_FORMATS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/80 px-3 py-2">
+                <span>Capture video</span>
+                <input
+                  type="checkbox"
+                  checked={includeVideo}
+                  onChange={(event) => setIncludeVideo(event.target.checked)}
+                  disabled={isIOS}
+                  className="h-4 w-4"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/80 px-3 py-2">
                 <span>Public share</span>
                 <input
                   type="checkbox"
@@ -1117,23 +1243,25 @@ export default function FrequencyCreator() {
                   className="h-4 w-4"
                 />
               </label>
+              <div className="flex items-center gap-3">
+                <Button variant="outline" onClick={handleSave} disabled={!isPlaying || isSaving}>
+                  {isSaving ? 'Saving...' : 'Save & Share'}
+                </Button>
+              </div>
             </div>
+            {showMp3Warning ? (
+              <p className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                MP3 export is optimized for shorter sessions (up to {mp3LimitSeconds}s). Reduce duration or choose WAV
+                for longer renders.
+              </p>
+            ) : null}
           </div>
-          <div className="flex flex-wrap gap-3">
-            <Button onClick={handlePlay} disabled={mixedVoices.length === 0}>
-              {isPlaying ? 'Stop' : 'Play'}
-            </Button>
-            <Button variant="outline" onClick={handleSave} disabled={!isPlaying || isSaving}>
-              {isSaving ? 'Saving...' : 'Save & Share'}
-            </Button>
-          </div>
-          {status ? <p className="text-sm text-ink/70">{status}</p> : null}
-        </div>
+        ) : null}
       </div>
 
       <div className="grid gap-6 md:grid-cols-[1.2fr_0.8fr]">
         <div className="space-y-4">
-          <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+          <div ref={frequencyStackRef} className="rounded-3xl border border-ink/10 bg-white/80 p-4">
             <h3 className="text-lg font-semibold">Selected frequencies</h3>
             <p className="text-xs text-ink/60">
               Add arbitrary frequencies ({MIN_CUSTOM_FREQUENCY_HZ}-{MAX_CUSTOM_FREQUENCY_HZ}Hz), then use harmonics,
@@ -1542,12 +1670,24 @@ export default function FrequencyCreator() {
           </div>
         </div>
 
-        <div className="space-y-4">
+        <div ref={liveSectionRef} className="space-y-4 md:sticky md:top-28 md:self-start">
           <h3 className="text-lg font-semibold">Live visualization</h3>
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-ink/10 bg-white/78 px-3 py-2 text-xs text-ink/70">
+            <span>{liveVisualizationEnabled ? 'Live rendering on' : 'Live rendering paused'}</span>
+            <label className="flex items-center gap-2">
+              <span>Live</span>
+              <input
+                type="checkbox"
+                checked={liveVisualizationEnabled}
+                onChange={(event) => setLiveVisualizationEnabled(event.target.checked)}
+                className="h-4 w-4"
+              />
+            </label>
+          </div>
           {visualizationType === 'orbital' ? (
             <ThreeVisualizer
               analyser={analyser}
-              isActive={isPlaying}
+              isActive={isPlaying && liveVisualizationEnabled}
               showSessionInfo={showSessionInfoOverlay}
               sessionInfo={sessionOverlayInfo}
               onCanvasReady={setVisualCanvas}
@@ -1557,7 +1697,7 @@ export default function FrequencyCreator() {
               analyser={analyser}
               type={visualizationType}
               layers={effectiveVisualizationLayers}
-              isActive={isPlaying}
+              isActive={isPlaying && liveVisualizationEnabled}
               showSessionInfo={showSessionInfoOverlay}
               sessionInfo={sessionOverlayInfo}
               onCanvasReady={setVisualCanvas}
@@ -1581,7 +1721,7 @@ export default function FrequencyCreator() {
 
           {visualizationType !== 'orbital' ? (
             <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">Visualization layers</h4>
                   <HelpPopover
@@ -1591,11 +1731,11 @@ export default function FrequencyCreator() {
                   />
                 </div>
                 {visualizationType === 'multi-layer' ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
                     <select
                       value={layerToAdd}
                       onChange={(event) => setLayerToAdd(event.target.value as BaseVisualizationType)}
-                      className="rounded-full border border-ink/10 bg-white px-2 py-1 text-xs"
+                      className="min-w-0 flex-1 rounded-full border border-ink/10 bg-white px-2 py-1 text-xs sm:flex-none"
                     >
                       {BASE_LAYER_TYPES.map((type) => (
                         <option key={`layer-type-${type}`} value={type}>
@@ -1618,7 +1758,7 @@ export default function FrequencyCreator() {
                     <div key={layer.id} className="rounded-2xl border border-ink/10 bg-white px-3 py-3">
                       <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs uppercase tracking-[0.2em] text-ink/60">
                         <span>{layer.type}</span>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           {visualizationType === 'multi-layer' ? (
                             <>
                               <button
@@ -1658,7 +1798,7 @@ export default function FrequencyCreator() {
                       </div>
 
                       <div className="grid gap-2 sm:grid-cols-2">
-                        <label className="flex items-center justify-between gap-2 text-xs text-ink/70">
+                        <label className="flex flex-col gap-2 text-xs text-ink/70 sm:flex-row sm:items-center sm:justify-between">
                           <span>Blend</span>
                           <select
                             value={layer.blendMode}
@@ -1667,7 +1807,7 @@ export default function FrequencyCreator() {
                                 blendMode: event.target.value as LayerBlendMode
                               })
                             }
-                            className="rounded-full border border-ink/10 bg-white px-2 py-1"
+                            className="w-full rounded-full border border-ink/10 bg-white px-2 py-1 sm:w-auto"
                           >
                             {BLEND_MODES.map((mode) => (
                               <option key={`${layer.id}-${mode}`} value={mode}>
@@ -1677,7 +1817,7 @@ export default function FrequencyCreator() {
                           </select>
                         </label>
 
-                        <label className="flex items-center justify-between gap-2 text-xs text-ink/70">
+                        <label className="flex flex-col gap-2 text-xs text-ink/70 sm:flex-row sm:items-center sm:justify-between">
                           <span>Opacity</span>
                           <input
                             type="range"
@@ -1686,11 +1826,11 @@ export default function FrequencyCreator() {
                             step={0.01}
                             value={layer.opacity}
                             onChange={(event) => updateLayer(layer.id, { opacity: Number(event.target.value) })}
-                            className="w-28"
+                            className="w-full sm:w-28"
                           />
                         </label>
 
-                        <label className="flex items-center justify-between gap-2 text-xs text-ink/70">
+                        <label className="flex flex-col gap-2 text-xs text-ink/70 sm:flex-row sm:items-center sm:justify-between">
                           <span>Intensity</span>
                           <input
                             type="range"
@@ -1699,11 +1839,11 @@ export default function FrequencyCreator() {
                             step={0.01}
                             value={layer.intensity}
                             onChange={(event) => updateLayer(layer.id, { intensity: Number(event.target.value) })}
-                            className="w-28"
+                            className="w-full sm:w-28"
                           />
                         </label>
 
-                        <label className="flex items-center justify-between gap-2 text-xs text-ink/70">
+                        <label className="flex flex-col gap-2 text-xs text-ink/70 sm:flex-row sm:items-center sm:justify-between">
                           <span>Speed</span>
                           <input
                             type="range"
@@ -1712,11 +1852,11 @@ export default function FrequencyCreator() {
                             step={0.01}
                             value={layer.speed}
                             onChange={(event) => updateLayer(layer.id, { speed: Number(event.target.value) })}
-                            className="w-28"
+                            className="w-full sm:w-28"
                           />
                         </label>
 
-                        <label className="flex items-center justify-between gap-2 text-xs text-ink/70">
+                        <label className="flex flex-col gap-2 text-xs text-ink/70 sm:flex-row sm:items-center sm:justify-between">
                           <span>Scale</span>
                           <input
                             type="range"
@@ -1725,13 +1865,13 @@ export default function FrequencyCreator() {
                             step={0.01}
                             value={layer.scale}
                             onChange={(event) => updateLayer(layer.id, { scale: Number(event.target.value) })}
-                            className="w-28"
+                            className="w-full sm:w-28"
                           />
                         </label>
                       </div>
 
-                      <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-ink/70">
-                        <label className="flex items-center gap-2">
+                      <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-ink/70 sm:grid-cols-3">
+                        <label className="flex items-center justify-between gap-2 sm:justify-start">
                           <span>A</span>
                           <input
                             type="color"
@@ -1740,7 +1880,7 @@ export default function FrequencyCreator() {
                             className="h-8 w-full rounded border border-ink/10"
                           />
                         </label>
-                        <label className="flex items-center gap-2">
+                        <label className="flex items-center justify-between gap-2 sm:justify-start">
                           <span>B</span>
                           <input
                             type="color"
@@ -1749,7 +1889,7 @@ export default function FrequencyCreator() {
                             className="h-8 w-full rounded border border-ink/10"
                           />
                         </label>
-                        <label className="flex items-center gap-2">
+                        <label className="flex items-center justify-between gap-2 sm:justify-start">
                           <span>C</span>
                           <input
                             type="color"
@@ -1767,6 +1907,86 @@ export default function FrequencyCreator() {
           ) : null}
         </div>
       </div>
+
+      {isCompactViewport ? (
+        showMobileLiveDock ? (
+          <div className="fixed bottom-24 right-3 z-30 w-40 overflow-hidden rounded-2xl border border-white/25 bg-slate-950/65 shadow-2xl backdrop-blur-sm md:hidden">
+            <div className="flex items-center justify-between border-b border-white/10 px-2 py-1.5 text-[10px] uppercase tracking-[0.2em] text-white/80">
+              <span>Live</span>
+              <button
+                type="button"
+                onClick={() => setShowMobileLiveDock(false)}
+                className="rounded-full border border-white/25 px-2 py-0.5 text-[10px]"
+              >
+                Hide
+              </button>
+            </div>
+            <div className="relative aspect-square w-full overflow-hidden bg-black/30">
+              <canvas ref={mobileLiveCanvasRef} className="h-full w-full" />
+              {!liveVisualizationEnabled ? (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/45 px-2 text-center text-[10px] text-white/90">
+                  Live paused
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowMobileLiveDock(true)}
+            className="fixed bottom-24 right-3 z-30 rounded-full border border-white/30 bg-slate-900/70 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white backdrop-blur-sm md:hidden"
+          >
+            Live
+          </button>
+        )
+      ) : null}
+
+      <div className="fixed bottom-3 left-3 right-3 z-40 md:left-auto md:right-6 md:w-[430px]">
+        <div className="rounded-2xl border border-white/35 bg-white/88 px-3 py-3 shadow-[0_18px_34px_rgba(20,25,42,0.24)] backdrop-blur-md">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-xs uppercase tracking-[0.2em] text-ink/55">Now tuned</p>
+              <p className="truncate text-sm font-semibold text-ink/90">{selectedFrequencySummary}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={handlePlay} disabled={mixedVoices.length === 0}>
+                {isPlaying ? 'Stop' : 'Play'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setLiveVisualizationEnabled((prev) => !prev)}
+              >
+                {liveVisualizationEnabled ? 'Live on' : 'Live off'}
+              </Button>
+            </div>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs">
+            <button
+              type="button"
+              onClick={() => frequencyStackRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              className="rounded-full border border-ink/15 bg-white px-3 py-1 text-ink/70"
+            >
+              Frequency stack
+            </button>
+            <button
+              type="button"
+              onClick={() => liveSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              className="rounded-full border border-ink/15 bg-white px-3 py-1 text-ink/70"
+            >
+              Live visualization
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowPublishingTools((prev) => !prev)}
+              className="rounded-full border border-ink/15 bg-white px-3 py-1 text-ink/70"
+            >
+              {showPublishingTools ? 'Hide publishing' : 'Open publishing'}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <Modal open={authModalOpen} onClose={() => setAuthModalOpen(false)} title="Save your session">
         <p className="text-sm text-ink/70">
           Create a free account to save, publish, and revisit your healing compositions anytime. Your draft is stored

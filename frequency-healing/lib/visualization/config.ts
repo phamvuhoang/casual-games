@@ -104,7 +104,7 @@ const DEFAULT_LAYER: Record<BaseVisualizationType, Omit<VisualizationLayerConfig
     scale: 1,
     colorA: '#eee0d1',
     colorB: '#6a92c2',
-    colorC: '#c79b73'
+    colorC: '#b9ccc4'
   },
   sacred_geometry: {
     type: 'sacred_geometry',

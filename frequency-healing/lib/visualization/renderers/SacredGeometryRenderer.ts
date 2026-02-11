@@ -5,11 +5,11 @@ export class SacredGeometryRenderer implements VisualizationRenderer {
     const intensity = layer?.intensity ?? 1;
     const speed = layer?.speed ?? 1;
     const scale = layer?.scale ?? 1;
-    const colorA = layer?.colorA ?? '#f7b36a';
-    const colorB = layer?.colorB ?? '#2b8c8c';
-    const colorC = layer?.colorC ?? '#f8dcb3';
+    const colorA = layer?.colorA ?? '#8f7adb';
+    const colorB = layer?.colorB ?? '#6a92c2';
+    const colorC = layer?.colorC ?? '#eee0d1';
 
-    ctx.fillStyle = '#10181a24';
+    ctx.fillStyle = '#17203424';
     ctx.fillRect(0, 0, width, height);
 
     const centerX = width / 2;

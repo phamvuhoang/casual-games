@@ -5,10 +5,10 @@ export class MandalaRenderer implements VisualizationRenderer {
     const intensity = layer?.intensity ?? 1;
     const speed = layer?.speed ?? 1;
     const scale = layer?.scale ?? 1;
-    const primary = layer?.colorA ?? '#2b8c8c';
-    const secondary = layer?.colorB ?? '#f7b36a';
+    const primary = layer?.colorA ?? '#6a92c2';
+    const secondary = layer?.colorB ?? '#8f7adb';
 
-    ctx.fillStyle = '#1623251f';
+    ctx.fillStyle = '#1720341f';
     ctx.fillRect(0, 0, width, height);
 
     const centerX = width / 2;

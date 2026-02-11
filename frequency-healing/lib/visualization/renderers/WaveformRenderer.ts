@@ -3,9 +3,9 @@ import type { RenderFrame, VisualizationRenderer } from '@/lib/visualization/ren
 export class WaveformRenderer implements VisualizationRenderer {
   render({ ctx, width, height, waveformData, energy, layer }: RenderFrame) {
     const intensity = layer?.intensity ?? 1;
-    const primary = layer?.colorA ?? '#f7b36a';
-    const secondary = layer?.colorB ?? '#2b8c8c';
-    const tertiary = layer?.colorC ?? '#162325';
+    const primary = layer?.colorA ?? '#8f7adb';
+    const secondary = layer?.colorB ?? '#6a92c2';
+    const tertiary = layer?.colorC ?? '#1f2a44';
 
     ctx.fillStyle = `${tertiary}22`;
     ctx.fillRect(0, 0, width, height);

@@ -7,9 +7,9 @@ export class RippleRenderer implements VisualizationRenderer {
     const intensity = layer?.intensity ?? 1;
     const speed = layer?.speed ?? 1;
     const scale = layer?.scale ?? 1;
-    const colorA = layer?.colorA ?? '#f8dcb3';
-    const colorB = layer?.colorB ?? '#2b8c8c';
-    const colorC = layer?.colorC ?? '#f7b36a';
+    const colorA = layer?.colorA ?? '#eee0d1';
+    const colorB = layer?.colorB ?? '#6a92c2';
+    const colorC = layer?.colorC ?? '#b9ccc4';
 
     ctx.fillStyle = `${colorB}16`;
     ctx.fillRect(0, 0, width, height);

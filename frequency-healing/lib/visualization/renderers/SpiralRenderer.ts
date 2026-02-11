@@ -8,9 +8,9 @@ export class SpiralRenderer implements VisualizationRenderer {
     const intensity = layer?.intensity ?? 1;
     const speed = layer?.speed ?? 1;
     const scale = layer?.scale ?? 1;
-    const colorA = layer?.colorA ?? '#de443b';
-    const colorB = layer?.colorB ?? '#006bb4';
-    const colorC = layer?.colorC ?? '#162325';
+    const colorA = layer?.colorA ?? '#8f7adb';
+    const colorB = layer?.colorB ?? '#6a92c2';
+    const colorC = layer?.colorC ?? '#1f2a44';
 
     ctx.fillStyle = `${colorC}24`;
     ctx.fillRect(0, 0, width, height);

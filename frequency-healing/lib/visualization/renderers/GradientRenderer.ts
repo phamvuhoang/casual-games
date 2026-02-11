@@ -20,9 +20,9 @@ export class GradientRenderer implements VisualizationRenderer {
     const intensity = layer?.intensity ?? 1;
     const speed = layer?.speed ?? 1;
     const scale = layer?.scale ?? 1;
-    const colorA = layer?.colorA ?? '#2b8c8c';
-    const colorB = layer?.colorB ?? '#f7b36a';
-    const colorC = layer?.colorC ?? '#a6d3c8';
+    const colorA = layer?.colorA ?? '#6a92c2';
+    const colorB = layer?.colorB ?? '#8f7adb';
+    const colorC = layer?.colorC ?? '#b9ccc4';
 
     const baseGradient = ctx.createLinearGradient(0, 0, width, height);
     baseGradient.addColorStop(0, `${colorA}90`);

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>AR Anime Skills</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        #game-container { position: relative; width: 100vw; height: 100vh; }
+        #webcam { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+        #canvas-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        .ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; color: white; text-shadow: 2px 2px 4px #000; text-align: center;}
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1640029074/camera_utils.js"></script>
+</head>
+<body>
+    <div id="game-container">
+        <video id="webcam" playsinline></video>
+        <canvas id="canvas-layer"></canvas>
+        <div id="ui-layer" class="ui-layer">
+            <h1>AR Anime Skills</h1>
+            <h2 id="score">Score: 0</h2>
+            <h2 id="timer">Time: 5.0</h2>
+            <h2 id="prompt">Perform a Skill!</h2>
+            <h2 id="error" style="color: red; display: none;"></h2>
+        </div>
+    </div>
+    <script>
+        // --- Basic Setup ---
+        const videoElement = document.getElementById('webcam');
+        const canvasElement = document.getElementById('canvas-layer');
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 10;
+        const renderer = new THREE.WebGLRenderer({ canvas: canvasElement, alpha: true, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+
+        const videoTexture = new THREE.VideoTexture(videoElement);
+        videoTexture.minFilter = THREE.LinearFilter;
+        videoTexture.magFilter = THREE.LinearFilter;
+        videoTexture.format = THREE.RGBFormat;
+        scene.background = videoTexture;
+
+
+        // --- MediaPipe Initialization ---
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/${file}`});
+        hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        hands.onResults(onHandsResults);
+
+        const pose = new Pose({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${file}`});
+        pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        pose.onResults(onPoseResults);
+
+        const cameraUtils = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+                await pose.send({image: videoElement});
+            },
+            width: 1280,
+            height: 720
+        });
+
+        async function startCamera() {
+            try {
+                await cameraUtils.start();
+            } catch (e) {
+                console.error(e);
+                const errorElement = document.getElementById('error');
+                errorElement.innerText = "WEBCAM ERROR: Please enable your webcam and refresh the page.";
+                errorElement.style.display = 'block';
+            }
+        }
+        startCamera();
+
+        // --- Game State & Config ---
+        const CONFIG = {
+            SPIRIT_GUN_CHARGE_TIME: 1000, // ms
+            KAMEHAMEHA_CHARGE_TIME: 1000, // ms
+            WRIST_THRESHOLD: 0.15
+        };
+        const SKILLS = ["Spirit Gun", "Kamehameha"];
+        let game = {
+            score: 0,
+            currentSkill: null,
+            skillStartTime: 0,
+            timeLimit: 5000 // 5 seconds per skill
+        };
+        let spiritGunState = { active: false, hand: null, landmarks: null, beam: null };
+        let kamehamehaState = { charging: false, firing: false, chargeTime: 0, energyBall: null, beam: null };
+
+        function onHandsResults(results) {
+            spiritGunState.active = false; // Reset state each frame
+
+            if (results.multiHandLandmarks && results.multiHandedness) {
+                for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+                    const landmarks = results.multiHandLandmarks[i];
+
+                    if (isSpiritGun(landmarks)) {
+                        spiritGunState.active = true;
+                        spiritGunState.hand = results.multiHandedness[i].label.toLowerCase();
+                        spiritGunState.landmarks = landmarks;
+
+                        if (game.currentSkill === "Spirit Gun") {
+                            correctSkillPerformed();
+                            if (!spiritGunState.beam) {
+                                fireSpiritGun(landmarks);
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        function isSpiritGun(landmarks) {
+            const indexTip = landmarks[8];
+            const indexPip = landmarks[6];
+            const middleTip = landmarks[12];
+            const middlePip = landmarks[10];
+            const ringTip = landmarks[16];
+            const ringPip = landmarks[14];
+            const pinkyTip = landmarks[20];
+            const pinkyPip = landmarks[18];
+            const thumbTip = landmarks[4];
+            const thumbIp = landmarks[3];
+
+            const isIndexExtended = indexTip.y < indexPip.y;
+            const areFingersCurled = middleTip.y > middlePip.y && ringTip.y > ringPip.y && pinkyTip.y > pinkyPip.y;
+            const isThumbUp = thumbTip.y < thumbIp.y;
+
+            return isIndexExtended && areFingersCurled && isThumbUp;
+        }
+
+        function onPoseResults(results) {
+            if (results.poseLandmarks) {
+                kamehamehaState.poseLandmarks = results.poseLandmarks; // Store landmarks
+                if (isKamehamehaCharging(results.poseLandmarks)) {
+                    if (!kamehamehaState.charging) {
+                        kamehamehaState.charging = true;
+                        kamehamehaState.chargeTime = Date.now();
+                    }
+                } else {
+                    if (kamehamehaState.charging && Date.now() - kamehamehaState.chargeTime > CONFIG.KAMEHAMEHA_CHARGE_TIME) {
+                        if (game.currentSkill === "Kamehameha") {
+                            correctSkillPerformed();
+                            kamehamehaState.firing = true;
+                        }
+                    }
+                    kamehamehaState.charging = false;
+                }
+            }
+        }
+
+        function isKamehamehaCharging(landmarks) {
+            const leftWrist = landmarks[15];
+            const rightWrist = landmarks[16];
+            const leftHip = landmarks[23];
+
+            const wristDistance = Math.hypot(leftWrist.x - rightWrist.x, leftWrist.y - rightWrist.y);
+            const chargePosition = leftWrist.x > leftHip.x && rightWrist.x > leftHip.x;
+
+            return wristDistance < CONFIG.WRIST_THRESHOLD && chargePosition;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const elapsedTime = (Date.now() - game.skillStartTime);
+            const remainingTime = Math.max(0, (game.timeLimit - elapsedTime) / 1000).toFixed(1);
+            document.getElementById('timer').innerText = `Time: ${remainingTime}`;
+
+            if (elapsedTime > game.timeLimit) {
+                nextSkill();
+            }
+
+            if (spiritGunState.beam) {
+                spiritGunState.beam.position.z -= 1;
+                if (spiritGunState.beam.position.z < -50) {
+                    scene.remove(spiritGunState.beam);
+                    spiritGunState.beam = null;
+                }
+            }
+
+            if (kamehamehaState.charging && !kamehamehaState.energyBall) {
+                createKamehamehaCharge();
+            } else if (!kamehamehaState.charging && kamehamehaState.energyBall) {
+                scene.remove(kamehamehaState.energyBall);
+                kamehamehaState.energyBall = null;
+            }
+
+            if (kamehamehaState.energyBall) {
+                const scale = 1 + (Date.now() - kamehamehaState.chargeTime) / 500;
+                kamehamehaState.energyBall.scale.set(scale, scale, scale);
+            }
+
+            if (kamehamehaState.firing) {
+                fireKamehameha();
+                kamehamehaState.firing = false;
+            }
+
+            if (kamehamehaState.beam) {
+                kamehamehaState.beam.position.z -= 2;
+                if (kamehamehaState.beam.position.z < -100) {
+                    scene.remove(kamehamehaState.beam);
+                    kamehamehaState.beam = null;
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+        animate();
+        nextSkill(); // Start the game loop
+
+        function nextSkill() {
+            const next = SKILLS[Math.floor(Math.random() * SKILLS.length)];
+            game.currentSkill = next;
+            game.skillStartTime = Date.now();
+            document.getElementById('prompt').innerText = `Perform: ${next}!`;
+        }
+
+        function correctSkillPerformed() {
+            game.score += 100;
+            document.getElementById('score').innerText = `Score: ${game.score}`;
+            nextSkill();
+        }
+
+        function createKamehamehaCharge() {
+            const geometry = new THREE.SphereGeometry(0.5, 32, 32);
+            const material = new THREE.MeshBasicMaterial({ color: 0x00aaff, transparent: true, opacity: 0.7 });
+            kamehamehaState.energyBall = new THREE.Mesh(geometry, material);
+
+            const midPoint = getWristMidpoint(kamehamehaState.poseLandmarks);
+            const vector = new THREE.Vector3((midPoint.x - 0.5) * 2, -(midPoint.y - 0.5) * 2, 0.5);
+            vector.unproject(camera);
+            kamehamehaState.energyBall.position.set(vector.x, vector.y, vector.z);
+
+            scene.add(kamehamehaState.energyBall);
+        }
+
+        function fireKamehameha() {
+            const geometry = new THREE.CylinderGeometry(1, 1, 50, 32);
+            const material = new THREE.MeshBasicMaterial({ color: 0x00aaff });
+            kamehamehaState.beam = new THREE.Mesh(geometry, material);
+
+            const midPoint = getWristMidpoint(kamehamehaState.poseLandmarks);
+            const vector = new THREE.Vector3((midPoint.x - 0.5) * 2, -(midPoint.y - 0.5) * 2, 0.5);
+            vector.unproject(camera);
+            kamehamehaState.beam.position.set(vector.x, vector.y, vector.z);
+
+            kamehamehaState.beam.rotation.x = Math.PI / 2;
+            scene.add(kamehamehaState.beam);
+        }
+
+        function getWristMidpoint(landmarks) {
+            const leftWrist = landmarks[15];
+            const rightWrist = landmarks[16];
+            return {
+                x: (leftWrist.x + rightWrist.x) / 2,
+                y: (leftWrist.y + rightWrist.y) / 2,
+                z: (leftWrist.z + rightWrist.z) / 2
+            };
+        }
+
+        function fireSpiritGun(landmarks) {
+            const indexTip = landmarks[8];
+
+            const beamGeometry = new THREE.CylinderGeometry(0.1, 0.1, 20, 32);
+            const beamMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.8 });
+            spiritGunState.beam = new THREE.Mesh(beamGeometry, beamMaterial);
+
+            const vector = new THREE.Vector3((indexTip.x - 0.5) * 2, -(indexTip.y - 0.5) * 2, 0.5);
+            vector.unproject(camera);
+
+            spiritGunState.beam.position.set(vector.x, vector.y, vector.z);
+            spiritGunState.beam.rotation.x = Math.PI / 2;
+
+            scene.add(spiritGunState.beam);
+        }
+    </script>
+</body>
+</html>

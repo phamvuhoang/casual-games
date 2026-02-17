@@ -6,13 +6,13 @@ type VideoRecordingType = {
 };
 
 const VIDEO_RECORDING_TYPES: VideoRecordingType[] = [
+  { mimeType: 'video/mp4;codecs=h264,aac', extension: 'mp4' },
+  { mimeType: 'video/mp4', extension: 'mp4' },
   { mimeType: 'video/webm;codecs=vp9,opus', extension: 'webm' },
   { mimeType: 'video/webm;codecs=vp8,opus', extension: 'webm' },
   { mimeType: 'video/webm;codecs=vp9', extension: 'webm' },
   { mimeType: 'video/webm;codecs=vp8', extension: 'webm' },
-  { mimeType: 'video/webm', extension: 'webm' },
-  { mimeType: 'video/mp4;codecs=h264,aac', extension: 'mp4' },
-  { mimeType: 'video/mp4', extension: 'mp4' }
+  { mimeType: 'video/webm', extension: 'webm' }
 ];
 
 function selectVideoType(): VideoRecordingType {
@@ -35,6 +35,8 @@ export async function captureVideo(
   options: {
     fps?: number;
     audioStream?: MediaStream | null;
+    videoBitsPerSecond?: number;
+    audioBitsPerSecond?: number;
   } = {}
 ): Promise<Blob | null> {
   if (typeof window === 'undefined') {
@@ -57,18 +59,36 @@ export async function captureVideo(
   }
 
   const videoType = selectVideoType();
+  const recorderOptions: MediaRecorderOptions = {
+    mimeType: videoType.mimeType
+  };
+  if (typeof options.videoBitsPerSecond === 'number' && Number.isFinite(options.videoBitsPerSecond)) {
+    recorderOptions.videoBitsPerSecond = Math.max(1, Math.floor(options.videoBitsPerSecond));
+  }
+  if (typeof options.audioBitsPerSecond === 'number' && Number.isFinite(options.audioBitsPerSecond)) {
+    recorderOptions.audioBitsPerSecond = Math.max(1, Math.floor(options.audioBitsPerSecond));
+  }
+
   let recorder: MediaRecorder;
   try {
-    recorder = new MediaRecorder(
-      mergedStream,
-      videoType.mimeType ? { mimeType: videoType.mimeType } : undefined
-    );
+    recorder = new MediaRecorder(mergedStream, recorderOptions);
   } catch (_error) {
     try {
-      recorder = new MediaRecorder(mergedStream);
-    } catch (_fallbackError) {
-      mergedStream.getTracks().forEach((track) => track.stop());
-      return null;
+      const fallbackOptions: MediaRecorderOptions = {};
+      if (typeof recorderOptions.videoBitsPerSecond === 'number') {
+        fallbackOptions.videoBitsPerSecond = recorderOptions.videoBitsPerSecond;
+      }
+      if (typeof recorderOptions.audioBitsPerSecond === 'number') {
+        fallbackOptions.audioBitsPerSecond = recorderOptions.audioBitsPerSecond;
+      }
+      recorder = new MediaRecorder(mergedStream, fallbackOptions);
+    } catch (_bitrateFallbackError) {
+      try {
+        recorder = new MediaRecorder(mergedStream);
+      } catch (_finalFallbackError) {
+        mergedStream.getTracks().forEach((track) => track.stop());
+        return null;
+      }
     }
   }
 

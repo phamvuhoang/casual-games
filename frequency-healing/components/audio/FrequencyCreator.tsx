@@ -66,6 +66,11 @@ import { createSlug } from '@/lib/utils/helpers';
 const DEFAULT_VOLUME = 0.35;
 const DRAFT_KEY = 'frequency-healing:draft';
 const MAX_EXPORT_SECONDS = 300;
+const SUPABASE_OBJECT_LIMIT_BYTES = 50 * 1024 * 1024;
+const VIDEO_UPLOAD_TARGET_BYTES = 49 * 1024 * 1024;
+const VIDEO_AUDIO_BITRATE_BPS = 96_000;
+const MIN_VIDEO_BITRATE_BPS = 320_000;
+const MAX_VIDEO_BITRATE_BPS = 2_200_000;
 const THUMBNAIL_WIDTH = 640;
 const MAX_PHASE2_FREQUENCIES = 12;
 
@@ -1029,6 +1034,13 @@ export default function FrequencyCreator() {
       const wasTruncated = duration > MAX_EXPORT_SECONDS;
       const exportDuration = Math.min(duration, MAX_EXPORT_SECONDS);
       const canvas = visualCanvas;
+      const targetTotalBitrateBps = Math.floor((VIDEO_UPLOAD_TARGET_BYTES * 8) / Math.max(1, exportDuration));
+      const videoBitrateBps = clamp(
+        MIN_VIDEO_BITRATE_BPS,
+        targetTotalBitrateBps - VIDEO_AUDIO_BITRATE_BPS,
+        MAX_VIDEO_BITRATE_BPS
+      );
+      const captureFps = exportDuration >= 240 ? 24 : 30;
 
       if (includeVideo && !canvas) {
         setStatus('Video capture is not ready yet. Please try again in a moment.');
@@ -1048,7 +1060,10 @@ export default function FrequencyCreator() {
       const videoPromise =
         includeVideo && canvas
           ? captureVideo(canvas, exportDuration, {
-              audioStream: destinationAudioCapture?.stream ?? null
+              audioStream: destinationAudioCapture?.stream ?? null,
+              fps: captureFps,
+              videoBitsPerSecond: videoBitrateBps,
+              audioBitsPerSecond: VIDEO_AUDIO_BITRATE_BPS
             })
           : Promise.resolve(null);
       const thumbnailPromise = canvas ? captureThumbnail(canvas) : Promise.resolve(null);
@@ -1078,18 +1093,32 @@ export default function FrequencyCreator() {
       }
 
       if (videoBlob) {
-        setStatus('Uploading video...');
-        const videoExtension = videoBlob.type.includes('mp4') ? 'mp4' : 'webm';
-        const videoName = `${activeUserId}/${timestamp}-${slug}.${videoExtension}`;
-        const { data: videoData, error: videoError } = await supabase.storage
-          .from(VIDEO_BUCKET)
-          .upload(videoName, videoBlob, { contentType: videoBlob.type || 'video/webm', upsert: true });
+        if (videoBlob.size > SUPABASE_OBJECT_LIMIT_BYTES) {
+          const maxMb = Math.round(SUPABASE_OBJECT_LIMIT_BYTES / (1024 * 1024));
+          const videoMb = (videoBlob.size / (1024 * 1024)).toFixed(1);
+          setStatus(
+            `Video export is ${videoMb}MB and exceeds your storage object limit (~${maxMb}MB). Saved audio only.`
+          );
+        } else {
+          setStatus('Uploading video...');
+          const videoExtension = videoBlob.type.includes('mp4') ? 'mp4' : 'webm';
+          const videoName = `${activeUserId}/${timestamp}-${slug}.${videoExtension}`;
+          const { data: videoData, error: videoError } = await supabase.storage
+            .from(VIDEO_BUCKET)
+            .upload(videoName, videoBlob, { contentType: videoBlob.type || 'video/webm', upsert: true });
 
-        if (videoError) {
-          throw videoError;
+          if (videoError) {
+            const message = videoError.message.toLowerCase();
+            if (message.includes('maximum allowed size')) {
+              const maxMb = Math.round(SUPABASE_OBJECT_LIMIT_BYTES / (1024 * 1024));
+              setStatus(`Video file exceeded storage object limit (~${maxMb}MB). Saved audio only.`);
+            } else {
+              throw videoError;
+            }
+          } else {
+            videoUrl = supabase.storage.from(VIDEO_BUCKET).getPublicUrl(videoData.path).data.publicUrl;
+          }
         }
-
-        videoUrl = supabase.storage.from(VIDEO_BUCKET).getPublicUrl(videoData.path).data.publicUrl;
       }
 
       if (thumbnailBlob) {
@@ -1458,6 +1487,12 @@ export default function FrequencyCreator() {
               <p className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
                 MP3 export is optimized for shorter sessions (up to {mp3LimitSeconds}s). Reduce duration or choose WAV
                 for longer renders.
+              </p>
+            ) : null}
+            {includeVideo ? (
+              <p className="rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-700">
+                Video export is lmited to 50MB per file. MP4 is used when the
+                browser supports MP4 recording; otherwise export falls back to WebM.
               </p>
             ) : null}
             {savedCompositionId ? (

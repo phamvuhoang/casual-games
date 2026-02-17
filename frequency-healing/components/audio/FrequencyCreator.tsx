@@ -15,7 +15,7 @@ import {
   frequenciesForStorage,
   type MixStyle
 } from '@/lib/audio/mixProfiles';
-import { exportAudio } from '@/lib/audio/AudioExporter';
+import { createDestinationAudioCapture, exportAudio } from '@/lib/audio/AudioExporter';
 import { DEFAULT_EFFECTS } from '@/lib/audio/effects';
 import {
   clamp,
@@ -201,6 +201,10 @@ export default function FrequencyCreator() {
   const [userId, setUserId] = useState<string | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
+  const [origin, setOrigin] = useState('');
+  const [savedCompositionId, setSavedCompositionId] = useState<string | null>(null);
+  const [savedCompositionPublic, setSavedCompositionPublic] = useState<boolean | null>(null);
+  const [shareStatus, setShareStatus] = useState<string | null>(null);
   const frequencyStackRef = useRef<HTMLDivElement | null>(null);
   const advancedSoundRef = useRef<HTMLDivElement | null>(null);
   const liveSectionRef = useRef<HTMLDivElement | null>(null);
@@ -265,6 +269,14 @@ export default function FrequencyCreator() {
     const extra = selectedFrequencies.length - first.length;
     return `${first.join(' • ')}${extra > 0 ? ` +${extra}` : ''}`;
   }, [selectedFrequencies]);
+  const savedCompositionPath = savedCompositionId ? `/composition/${savedCompositionId}` : null;
+  const savedCompositionUrl = savedCompositionPath ? `${origin}${savedCompositionPath}` : null;
+  const savedEmbedCode = useMemo(() => {
+    if (!savedCompositionUrl) {
+      return null;
+    }
+    return `<iframe src="${savedCompositionUrl}?embed=1" width="640" height="360" allow="autoplay" loading="lazy"></iframe>`;
+  }, [savedCompositionUrl]);
 
   const advancedSoundSummary = useMemo(() => {
     const activeModules: string[] = [];
@@ -333,6 +345,13 @@ export default function FrequencyCreator() {
 
   useEffect(() => {
     setIsIOS(isIOSDevice());
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    setOrigin(window.location.origin);
   }, []);
 
   useEffect(() => {
@@ -823,6 +842,10 @@ export default function FrequencyCreator() {
   const currentLayerEntries = visualizationType === 'multi-layer' ? visualizationLayers : effectiveVisualizationLayers;
 
   const handlePlay = async () => {
+    if (isSaving) {
+      return;
+    }
+
     if (isPlaying) {
       generator.stop();
       setIsPlaying(false);
@@ -851,7 +874,116 @@ export default function FrequencyCreator() {
     }
   };
 
+  const resolveSavedShareUrl = () => {
+    if (!savedCompositionPath) {
+      return null;
+    }
+
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin}${savedCompositionPath}`;
+    }
+
+    return savedCompositionUrl ?? savedCompositionPath;
+  };
+
+  const handleCopyShareLink = async () => {
+    const shareUrl = resolveSavedShareUrl();
+    if (!shareUrl) {
+      return;
+    }
+
+    if (!navigator.clipboard?.writeText) {
+      setShareStatus('Clipboard access is unavailable in this browser.');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareStatus('Share link copied.');
+    } catch (error) {
+      console.error(error);
+      setShareStatus('Could not copy share link.');
+    }
+  };
+
+  const handleNativeShare = async () => {
+    const shareUrl = resolveSavedShareUrl();
+    if (!shareUrl) {
+      return;
+    }
+
+    if (!navigator.share) {
+      await handleCopyShareLink();
+      return;
+    }
+
+    try {
+      await navigator.share({
+        title: title.trim() || 'Healing Session',
+        text: 'Listen to this healing frequency session.',
+        url: shareUrl
+      });
+      setShareStatus('Shared.');
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        return;
+      }
+      console.error(error);
+      setShareStatus('Share was canceled or unavailable.');
+    }
+  };
+
+  const handleCopyEmbedCode = async () => {
+    if (!savedEmbedCode) {
+      return;
+    }
+
+    if (!navigator.clipboard?.writeText) {
+      setShareStatus('Clipboard access is unavailable in this browser.');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(savedEmbedCode);
+      setShareStatus('Embed code copied.');
+    } catch (error) {
+      console.error(error);
+      setShareStatus('Could not copy embed code.');
+    }
+  };
+
+  const handleSocialShare = (channel: 'x' | 'facebook' | 'linkedin') => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const shareUrl = resolveSavedShareUrl();
+    if (!shareUrl) {
+      return;
+    }
+
+    const encodedUrl = encodeURIComponent(shareUrl);
+    const encodedText = encodeURIComponent(`${title.trim() || 'Healing Session'} | Frequency Healing Studio`);
+    const socialTarget =
+      channel === 'x'
+        ? `https://twitter.com/intent/tweet?url=${encodedUrl}&text=${encodedText}`
+        : channel === 'facebook'
+          ? `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`
+          : `https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`;
+
+    window.open(socialTarget, '_blank', 'noopener,noreferrer');
+  };
+
   const handleSave = async () => {
+    if (isSaving) {
+      return;
+    }
+
+    if (!isPlaying) {
+      setStatus('Press Play before saving so your current mix is captured.');
+      return;
+    }
+
     if (mixedVoices.length === 0) {
       setStatus('Select at least one frequency.');
       return;
@@ -877,39 +1009,58 @@ export default function FrequencyCreator() {
       return;
     }
 
+    setSavedCompositionId(null);
+    setSavedCompositionPublic(null);
+    setShareStatus(null);
+
     try {
       await ensureProfile(supabase, activeUser);
     } catch (profileError) {
       console.error(profileError);
       setStatus('We could not finish your profile setup. Please try again.');
-      setIsSaving(false);
       return;
     }
 
     setIsSaving(true);
     setStatus('Preparing your session...');
+    let destinationAudioCapture: ReturnType<typeof createDestinationAudioCapture> | null = null;
 
     try {
+      const wasTruncated = duration > MAX_EXPORT_SECONDS;
       const exportDuration = Math.min(duration, MAX_EXPORT_SECONDS);
       const canvas = visualCanvas;
 
       if (includeVideo && !canvas) {
         setStatus('Video capture is not ready yet. Please try again in a moment.');
-        setIsSaving(false);
         return;
       }
 
+      if (includeVideo) {
+        try {
+          destinationAudioCapture = createDestinationAudioCapture();
+        } catch (error) {
+          console.error(error);
+          setStatus('Synchronized video capture is not supported in this browser. Try audio-only export.');
+          return;
+        }
+      }
+
       const videoPromise =
-        includeVideo && canvas ? captureVideo(canvas, exportDuration) : Promise.resolve(null);
+        includeVideo && canvas
+          ? captureVideo(canvas, exportDuration, {
+              audioStream: destinationAudioCapture?.stream ?? null
+            })
+          : Promise.resolve(null);
       const thumbnailPromise = canvas ? captureThumbnail(canvas) : Promise.resolve(null);
 
-      setStatus(includeVideo ? 'Recording audio and video...' : 'Rendering audio...');
+      setStatus(includeVideo ? 'Recording synchronized audio and video...' : 'Recording audio...');
       const exportResult = await exportAudio(exportDuration, audioFormat);
       const [videoBlob, thumbnailBlob] = await Promise.all([videoPromise, thumbnailPromise]);
 
       const slug = createSlug(title) || 'session';
       const timestamp = Date.now();
       const fileName = `${activeUserId}/${timestamp}-${slug}.${exportResult.extension}`;
+      setStatus('Uploading audio...');
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from(AUDIO_BUCKET)
         .upload(fileName, exportResult.blob, { contentType: exportResult.mimeType, upsert: true });
@@ -983,7 +1134,7 @@ export default function FrequencyCreator() {
         description,
         frequencies: frequenciesToStore,
         frequency_volumes: frequencyVolumesPayload,
-        duration,
+        duration: exportDuration,
         waveform,
         ambient_sound: ambientSound === 'none' ? null : ambientSound,
         effects: effectsConfig,
@@ -1021,6 +1172,9 @@ export default function FrequencyCreator() {
       }
 
       if (insertResult.data?.id) {
+        setSavedCompositionId(insertResult.data.id);
+        setSavedCompositionPublic(Boolean(isPublic));
+
         const tasks = ['normalize_audio'];
         if (videoUrl) {
           tasks.push('transcode_video');
@@ -1036,7 +1190,19 @@ export default function FrequencyCreator() {
         window.localStorage.removeItem(DRAFT_KEY);
       }
 
-      setStatus('Saved! Your composition is now available in Discover.');
+      if (isPublic) {
+        setStatus(
+          wasTruncated
+            ? `Saved! Your public composition is live. Export includes the first ${MAX_EXPORT_SECONDS}s.`
+            : 'Saved! Your public composition is now available in Discover.'
+        );
+      } else {
+        setStatus(
+          wasTruncated
+            ? `Saved as a private composition. Export includes the first ${MAX_EXPORT_SECONDS}s.`
+            : 'Saved as a private composition.'
+        );
+      }
     } catch (error) {
       console.error(error);
       const message =
@@ -1047,6 +1213,7 @@ export default function FrequencyCreator() {
         setStatus('Could not save the composition. Check Supabase storage bucket setup.');
       }
     } finally {
+      destinationAudioCapture?.disconnect();
       setIsSaving(false);
     }
   };
@@ -1069,7 +1236,7 @@ export default function FrequencyCreator() {
                 : `${selectedFrequencies.length} tone${selectedFrequencies.length > 1 ? 's' : ''} selected.`}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              <Button size="sm" onClick={handlePlay} disabled={mixedVoices.length === 0}>
+              <Button size="sm" onClick={handlePlay} disabled={mixedVoices.length === 0 || isSaving}>
                 {isPlaying ? 'Stop now' : 'Play now'}
               </Button>
               <Button
@@ -1291,6 +1458,45 @@ export default function FrequencyCreator() {
                 MP3 export is optimized for shorter sessions (up to {mp3LimitSeconds}s). Reduce duration or choose WAV
                 for longer renders.
               </p>
+            ) : null}
+            {savedCompositionId ? (
+              <div className="rounded-2xl border border-ink/10 bg-white/80 p-4">
+                <p className="text-sm font-semibold text-ink/85">Session saved.</p>
+                <p className="mt-1 text-xs text-ink/60">
+                  {savedCompositionPublic
+                    ? 'Share your public composition link, post it socially, or copy an embed snippet.'
+                    : 'This composition is private. You can open it directly, but it will not appear in Discover.'}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={savedCompositionPath ?? '/discover'}>Open composition</Link>
+                  </Button>
+                  {savedCompositionPublic ? (
+                    <>
+                      <Button size="sm" variant="outline" onClick={handleCopyShareLink}>
+                        Copy link
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={handleNativeShare}>
+                        Share
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={handleCopyEmbedCode}>
+                        Copy embed
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => handleSocialShare('x')}>
+                        X
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => handleSocialShare('facebook')}>
+                        Facebook
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => handleSocialShare('linkedin')}>
+                        LinkedIn
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
+                {savedCompositionUrl ? <p className="mt-3 text-xs text-ink/55">{savedCompositionUrl}</p> : null}
+                {shareStatus ? <p className="mt-2 text-xs text-ink/65">{shareStatus}</p> : null}
+              </div>
             ) : null}
           </div>
         ) : null}
@@ -2014,7 +2220,7 @@ export default function FrequencyCreator() {
               <p className="truncate text-sm font-semibold text-ink/90">{selectedFrequencySummary}</p>
             </div>
             <div className="flex items-center gap-2">
-              <Button size="sm" onClick={handlePlay} disabled={mixedVoices.length === 0}>
+              <Button size="sm" onClick={handlePlay} disabled={mixedVoices.length === 0 || isSaving}>
                 {isPlaying ? 'Stop' : 'Play'}
               </Button>
               <Button

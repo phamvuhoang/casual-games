@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import AudioPlayer from '@/components/audio/AudioPlayer';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
@@ -20,6 +20,7 @@ type CommentWithAuthor = CommentRow & { author?: CommentAuthor };
 
 export default function CompositionPage() {
   const { id } = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const supabase = createSupabaseClient();
   const [composition, setComposition] = useState<Composition | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -36,6 +37,7 @@ export default function CompositionPage() {
   const [collectionSelections, setCollectionSelections] = useState<string[]>([]);
   const [collectionStatus, setCollectionStatus] = useState<string | null>(null);
   const [isUpdatingCollection, setIsUpdatingCollection] = useState(false);
+  const isEmbedMode = searchParams.get('embed') === '1';
 
   useEffect(() => {
     let isMounted = true;
@@ -446,6 +448,25 @@ export default function CompositionPage() {
     });
   };
 
+  if (isEmbedMode) {
+    return (
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4">
+        <AudioPlayer
+          title={composition.title}
+          audioUrl={composition.audio_url}
+          videoUrl={composition.video_url}
+          thumbnailUrl={composition.thumbnail_url}
+          sharePath={`/composition/${composition.id}`}
+          frequencies={composition.frequencies}
+          onPlay={handlePlay}
+        />
+        <div className="rounded-3xl border border-ink/10 bg-white/80 p-4 text-sm text-ink/70">
+          {composition.description?.trim() || 'Listen and reset with this healing session.'}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
       <div>
@@ -457,6 +478,9 @@ export default function CompositionPage() {
       <AudioPlayer
         title={composition.title}
         audioUrl={composition.audio_url}
+        videoUrl={composition.video_url}
+        thumbnailUrl={composition.thumbnail_url}
+        sharePath={`/composition/${composition.id}`}
         frequencies={composition.frequencies}
         onPlay={handlePlay}
       />

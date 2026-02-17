@@ -49,6 +49,35 @@ function extensionForMimeType(mimeType?: string, fallback = 'webm') {
 
 export type AudioExportFormat = 'webm' | 'wav' | 'mp3';
 
+export type DestinationAudioCapture = {
+  stream: MediaStream;
+  disconnect: () => void;
+};
+
+export function createDestinationAudioCapture(): DestinationAudioCapture {
+  const rawContext = Tone.getContext().rawContext;
+  const realtimeContext = rawContext as AudioContext;
+  if (typeof realtimeContext.createMediaStreamDestination !== 'function') {
+    throw new Error('Audio capture stream is not supported in this browser.');
+  }
+
+  const destination = realtimeContext.createMediaStreamDestination();
+  Tone.Destination.connect(destination);
+
+  return {
+    stream: destination.stream,
+    disconnect: () => {
+      try {
+        Tone.Destination.disconnect(destination);
+      } catch (_error) {
+        // Ignore if the node was already disconnected.
+      }
+
+      destination.stream.getTracks().forEach((track) => track.stop());
+    }
+  };
+}
+
 export async function exportAudio(durationSeconds: number, format: AudioExportFormat = 'webm') {
   if (!Tone.Recorder.supported) {
     throw new Error('Audio recording is not supported in this browser.');

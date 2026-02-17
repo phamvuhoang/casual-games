@@ -6,9 +6,12 @@ type VideoRecordingType = {
 };
 
 const VIDEO_RECORDING_TYPES: VideoRecordingType[] = [
+  { mimeType: 'video/webm;codecs=vp9,opus', extension: 'webm' },
+  { mimeType: 'video/webm;codecs=vp8,opus', extension: 'webm' },
   { mimeType: 'video/webm;codecs=vp9', extension: 'webm' },
   { mimeType: 'video/webm;codecs=vp8', extension: 'webm' },
   { mimeType: 'video/webm', extension: 'webm' },
+  { mimeType: 'video/mp4;codecs=h264,aac', extension: 'mp4' },
   { mimeType: 'video/mp4', extension: 'mp4' }
 ];
 
@@ -29,7 +32,10 @@ function selectVideoType(): VideoRecordingType {
 export async function captureVideo(
   canvas: HTMLCanvasElement,
   durationSeconds: number,
-  fps = 30
+  options: {
+    fps?: number;
+    audioStream?: MediaStream | null;
+  } = {}
 ): Promise<Blob | null> {
   if (typeof window === 'undefined') {
     return null;
@@ -43,12 +49,29 @@ export async function captureVideo(
     return null;
   }
 
-  const stream = canvas.captureStream(fps);
+  const canvasStream = canvas.captureStream(options.fps ?? 30);
+  const audioTracks = options.audioStream?.getAudioTracks() ?? [];
+  const mergedStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
+  if (mergedStream.getVideoTracks().length === 0) {
+    return null;
+  }
+
   const videoType = selectVideoType();
-  const recorder = new MediaRecorder(
-    stream,
-    videoType.mimeType ? { mimeType: videoType.mimeType } : undefined
-  );
+  let recorder: MediaRecorder;
+  try {
+    recorder = new MediaRecorder(
+      mergedStream,
+      videoType.mimeType ? { mimeType: videoType.mimeType } : undefined
+    );
+  } catch (_error) {
+    try {
+      recorder = new MediaRecorder(mergedStream);
+    } catch (_fallbackError) {
+      mergedStream.getTracks().forEach((track) => track.stop());
+      return null;
+    }
+  }
+
   const chunks: Blob[] = [];
 
   recorder.ondataavailable = (event) => {
@@ -57,13 +80,30 @@ export async function captureVideo(
     }
   };
 
-  recorder.start();
-  await new Promise((resolve) => setTimeout(resolve, durationSeconds * 1000));
-  recorder.stop();
+  try {
+    recorder.start();
+  } catch (_error) {
+    mergedStream.getTracks().forEach((track) => track.stop());
+    return null;
+  }
 
   return new Promise((resolve) => {
+    const stopTimer = window.setTimeout(() => {
+      if (recorder.state !== 'inactive') {
+        recorder.stop();
+      }
+    }, durationSeconds * 1000);
+
+    recorder.onerror = () => {
+      window.clearTimeout(stopTimer);
+      mergedStream.getTracks().forEach((track) => track.stop());
+      resolve(null);
+    };
+
     recorder.onstop = () => {
-      resolve(new Blob(chunks, { type: videoType.mimeType || 'video/webm' }));
+      window.clearTimeout(stopTimer);
+      mergedStream.getTracks().forEach((track) => track.stop());
+      resolve(new Blob(chunks, { type: recorder.mimeType || videoType.mimeType || 'video/webm' }));
     };
   });
 }

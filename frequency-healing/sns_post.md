@@ -3,6 +3,90 @@
 Use `{{APP_LINK}}` as a placeholder and replace it with your real URL before posting.
 Each message includes platform-specific versions for Facebook, YouTube, X (Twitter), Threads, Instagram, and LinkedIn.
 
+## Keyword Bank (SEO + SNS)
+
+Use these in captions, titles, alt text, comments, and hashtags. Rotate naturally and avoid stuffing.
+
+### Core search keywords
+
+- frequency healing
+- healing frequencies
+- sound healing music
+- meditation frequencies
+- binaural beats
+- sleep frequencies
+- deep focus frequencies
+- chakra frequency music
+- relaxation soundscape
+- ambient wellness audio
+- calming background music
+- stress relief audio
+- anxiety relief music
+- mindfulness sound journey
+- nervous system reset audio
+- brainwave entrainment
+- isochronic tones
+- theta meditation music
+- alpha focus music
+- delta sleep music
+
+### Frequency-number keywords (Hz)
+
+- 40 Hz focus
+- 110 Hz grounding tone
+- 174 Hz healing frequency
+- 210 Hz calming tone
+- 222 Hz balance frequency
+- 256 Hz tuning
+- 285 Hz tissue healing frequency
+- 320 Hz resonance
+- 341.3 Hz earth year tone
+- 396 Hz liberation frequency
+- 417 Hz change frequency
+- 432 Hz healing music
+- 440 Hz standard tuning
+- 444 Hz angelic frequency
+- 528 Hz love frequency
+- 639 Hz relationship harmony frequency
+- 741 Hz detox frequency
+- 852 Hz intuition frequency
+- 888 Hz abundance frequency
+- 963 Hz crown chakra frequency
+- 1000 Hz pure tone meditation
+
+### Long-tail keyword ideas
+
+- 5 minute frequency reset for stress
+- morning frequency routine for calm
+- frequency stack for focus and productivity
+- sleep frequency session before bed
+- meditation music with healing frequencies
+- best frequency for anxiety relief at night
+- chakra balancing music with 432 hz
+- 528 hz sound bath for emotional release
+- frequency healing app for daily routines
+- create your own healing frequency mix
+- audio visualizer meditation experience
+- background music for yoga and breathwork
+
+### Hashtag packs
+
+Pack A:
+#FrequencyHealing #HealingFrequencies #SoundHealing #MeditationMusic #WellnessAudio #Mindfulness #StressRelief #BinauralBeats #RelaxationMusic #NervousSystemRegulation
+
+Pack B:
+#432Hz #528Hz #396Hz #417Hz #639Hz #741Hz #852Hz #963Hz #Solfeggio #ChakraHealing
+
+Pack C:
+#SleepMusic #DeepSleep #FocusMusic #StudyMusic #YogaMusic #Breathwork #CalmVibes #SelfCare #MentalWellness #HolisticHealth
+
+### Quick frequency phrasing templates
+
+- "Try a {{FREQ_1}} + {{FREQ_2}} Hz stack for {{GOAL}}."
+- "Today’s reset: {{FREQ}} Hz for {{STATE_CHANGE}}."
+- "Save this {{DURATION}}-minute {{FREQ}} Hz session for {{TIME_OF_DAY}}."
+- "Built with {{FREQ_1}}/{{FREQ_2}}/{{FREQ_3}} Hz for {{INTENT}}."
+
 ## Message 001 - 5-minute morning reset / Ground & Release
 
 **Facebook**

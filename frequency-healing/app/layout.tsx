@@ -7,8 +7,10 @@ import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import BackgroundRoot from '@/components/background/BackgroundRoot';
 import {
+  DEFAULT_KEYWORDS,
   DEFAULT_DESCRIPTION,
   SITE_NAME,
+  buildSiteVerification,
   buildOrganizationJsonLd,
   buildSiteJsonLd,
   canonicalUrl,
@@ -37,16 +39,25 @@ export const metadata: Metadata = {
   },
   description: DEFAULT_DESCRIPTION,
   applicationName: SITE_NAME,
-  alternates: {
-    canonical: canonicalUrl('/')
+  manifest: '/manifest.webmanifest',
+  referrer: 'origin-when-cross-origin',
+  formatDetection: {
+    telephone: false,
+    email: false,
+    address: false
   },
-  keywords: [
-    'healing frequencies',
-    'meditation audio',
-    'binaural beats',
-    'sound therapy',
-    'wellness music'
-  ],
+  authors: [{ name: SITE_NAME }],
+  creator: SITE_NAME,
+  publisher: SITE_NAME,
+  verification: buildSiteVerification(),
+  alternates: {
+    canonical: canonicalUrl('/'),
+    languages: {
+      'en-US': canonicalUrl('/'),
+      'x-default': canonicalUrl('/')
+    }
+  },
+  keywords: [...DEFAULT_KEYWORDS],
   category: 'wellness',
   robots: {
     index: true,

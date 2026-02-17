@@ -65,7 +65,7 @@ import { createSlug } from '@/lib/utils/helpers';
 
 const DEFAULT_VOLUME = 0.35;
 const DRAFT_KEY = 'frequency-healing:draft';
-const MAX_EXPORT_SECONDS = 120;
+const MAX_EXPORT_SECONDS = 300;
 const THUMBNAIL_WIDTH = 640;
 const MAX_PHASE2_FREQUENCIES = 12;
 
@@ -447,7 +447,7 @@ export default function FrequencyCreator() {
         setVolume(draft.volume);
       }
       if (typeof draft.duration === 'number') {
-        setDuration(clamp(60, draft.duration, 600));
+        setDuration(clamp(60, draft.duration, MAX_EXPORT_SECONDS));
       }
       if (draft.visualizationType) {
         setVisualizationType(draft.visualizationType);
@@ -1336,12 +1336,13 @@ export default function FrequencyCreator() {
                 <input
                   type="number"
                   min={60}
-                  max={600}
+                  max={MAX_EXPORT_SECONDS}
                   value={duration}
-                  onChange={(event) => setDuration(clamp(60, Number(event.target.value), 600))}
+                  onChange={(event) => setDuration(clamp(60, Number(event.target.value), MAX_EXPORT_SECONDS))}
                   className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
                 />
               </label>
+              <p className="text-xs text-ink/55">Exports support up to {MAX_EXPORT_SECONDS}s (5 minutes).</p>
               <label className="flex items-center justify-between gap-3">
                 <span>Master volume</span>
                 <input

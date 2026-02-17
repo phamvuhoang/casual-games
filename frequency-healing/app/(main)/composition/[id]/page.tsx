@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import AudioPlayer from '@/components/audio/AudioPlayer';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import { createSupabaseClient } from '@/lib/supabase/client';
 import { ensureProfile } from '@/lib/supabase/profile';
+import { AUDIO_BUCKET, THUMBNAIL_BUCKET, VIDEO_BUCKET } from '@/lib/utils/constants';
 import { formatFrequencyList } from '@/lib/utils/helpers';
 import type { Database } from '@/lib/supabase/types';
 
@@ -18,8 +19,41 @@ type CollectionRow = Database['public']['Tables']['collections']['Row'];
 type CommentAuthor = Pick<ProfileRow, 'id' | 'username' | 'display_name' | 'avatar_url'>;
 type CommentWithAuthor = CommentRow & { author?: CommentAuthor };
 
+function extractStorageObjectPath(publicUrl: string | null, bucket: string) {
+  if (!publicUrl) {
+    return null;
+  }
+
+  try {
+    const url = new URL(publicUrl);
+    const pathname = decodeURIComponent(url.pathname);
+    const markers = [
+      `/storage/v1/object/public/${bucket}/`,
+      `/object/public/${bucket}/`,
+      `/${bucket}/`
+    ];
+
+    for (const marker of markers) {
+      const markerIndex = pathname.indexOf(marker);
+      if (markerIndex === -1) {
+        continue;
+      }
+
+      const rawPath = pathname.slice(markerIndex + marker.length).replace(/^\/+/, '');
+      if (rawPath) {
+        return rawPath;
+      }
+    }
+  } catch (error) {
+    console.warn('Unable to parse storage URL.', error);
+  }
+
+  return null;
+}
+
 export default function CompositionPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createSupabaseClient();
   const [composition, setComposition] = useState<Composition | null>(null);
@@ -37,6 +71,8 @@ export default function CompositionPage() {
   const [collectionSelections, setCollectionSelections] = useState<string[]>([]);
   const [collectionStatus, setCollectionStatus] = useState<string | null>(null);
   const [isUpdatingCollection, setIsUpdatingCollection] = useState(false);
+  const [isDeletingComposition, setIsDeletingComposition] = useState(false);
+  const [deleteStatus, setDeleteStatus] = useState<string | null>(null);
   const isEmbedMode = searchParams.get('embed') === '1';
 
   useEffect(() => {
@@ -433,6 +469,95 @@ export default function CompositionPage() {
     setIsCountingPlay(false);
   };
 
+  const handleDeleteComposition = async () => {
+    if (!composition || isDeletingComposition) {
+      return;
+    }
+
+    if (!userId) {
+      setDeleteStatus('Sign in to delete your composition.');
+      return;
+    }
+
+    if (!composition.user_id || composition.user_id !== userId) {
+      setDeleteStatus('Only the creator can delete this composition.');
+      return;
+    }
+
+    const confirmed =
+      typeof window === 'undefined'
+        ? false
+        : window.confirm(
+            'Delete this composition permanently? Audio, video, and thumbnail files will also be removed from storage.'
+          );
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeletingComposition(true);
+    setDeleteStatus(null);
+
+    try {
+      const mediaTargets: Array<{ bucket: string; url: string | null; label: string }> = [
+        { bucket: AUDIO_BUCKET, url: composition.audio_url, label: 'audio' },
+        { bucket: VIDEO_BUCKET, url: composition.video_url, label: 'video' },
+        { bucket: THUMBNAIL_BUCKET, url: composition.thumbnail_url, label: 'thumbnail' }
+      ];
+
+      const pathsByBucket = new Map<string, Set<string>>();
+
+      for (const target of mediaTargets) {
+        if (!target.url) {
+          continue;
+        }
+
+        const parsedPath = extractStorageObjectPath(target.url, target.bucket);
+        if (!parsedPath) {
+          throw new Error(`Could not parse ${target.label} file path for deletion.`);
+        }
+
+        if (!pathsByBucket.has(target.bucket)) {
+          pathsByBucket.set(target.bucket, new Set<string>());
+        }
+        pathsByBucket.get(target.bucket)?.add(parsedPath);
+      }
+
+      for (const [bucket, pathSet] of pathsByBucket.entries()) {
+        const paths = Array.from(pathSet);
+        if (paths.length === 0) {
+          continue;
+        }
+
+        const { error } = await supabase.storage.from(bucket).remove(paths);
+        if (error) {
+          throw new Error(`Could not delete media files from ${bucket}: ${error.message}`);
+        }
+      }
+
+      const { error: deleteError } = await supabase
+        .from('compositions')
+        .delete()
+        .eq('id', composition.id)
+        .eq('user_id', userId);
+
+      if (deleteError) {
+        throw new Error(deleteError.message);
+      }
+
+      router.push('/profile');
+      router.refresh();
+    } catch (error) {
+      console.error(error);
+      const message =
+        error && typeof error === 'object' && 'message' in error
+          ? String(error.message)
+          : 'Could not delete composition.';
+      setDeleteStatus(message);
+    } finally {
+      setIsDeletingComposition(false);
+    }
+  };
+
   if (!composition) {
     return <p className="text-sm text-ink/70">{status ?? 'Loading composition...'}</p>;
   }
@@ -447,6 +572,7 @@ export default function CompositionPage() {
       year: 'numeric'
     });
   };
+  const isOwner = Boolean(userId && composition.user_id && userId === composition.user_id);
 
   if (isEmbedMode) {
     return (
@@ -510,6 +636,25 @@ export default function CompositionPage() {
           {status ? <p className="mt-3 text-sm text-rose-500">{status}</p> : null}
         </Card>
       </div>
+
+      {isOwner ? (
+        <Card className="glass-panel border border-rose-200/70 bg-rose-50/70">
+          <h2 className="text-lg font-semibold text-rose-900">Creator tools</h2>
+          <p className="mt-3 text-sm text-rose-900/80">
+            Delete this composition permanently. Audio, video, and thumbnail files will be physically removed from
+            storage.
+          </p>
+          <Button
+            variant="outline"
+            onClick={handleDeleteComposition}
+            disabled={isDeletingComposition}
+            className="mt-4 border-rose-300 bg-white text-rose-700 hover:bg-rose-100"
+          >
+            {isDeletingComposition ? 'Deleting...' : 'Delete composition'}
+          </Button>
+          {deleteStatus ? <p className="mt-3 text-sm text-rose-700">{deleteStatus}</p> : null}
+        </Card>
+      ) : null}
 
       <Card className="glass-panel">
         <h2 className="text-lg font-semibold">Save to collection</h2>

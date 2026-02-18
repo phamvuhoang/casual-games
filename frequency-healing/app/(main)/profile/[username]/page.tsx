@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
@@ -12,6 +12,122 @@ import Link from 'next/link';
 type Profile = Database['public']['Tables']['profiles']['Row'];
 type Composition = Database['public']['Tables']['compositions']['Row'];
 type Collection = Database['public']['Tables']['collections']['Row'];
+type VoiceProfileRow = Database['public']['Tables']['voice_profiles']['Row'];
+
+interface VoiceHistoryEntry {
+  id: string;
+  createdAt: string;
+  capturedAt: string;
+  confidence: number;
+  captureDurationMs: number;
+  analysisDurationMs: number;
+  dominantFrequencies: number[];
+  recommendedFrequencies: number[];
+  bandEnergy: {
+    low: number;
+    mid: number;
+    upperMid: number;
+    high: number;
+  };
+}
+
+function clamp(min: number, value: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function asObject(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function asNumber(value: unknown, fallback = 0) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function toNumberArray(value: unknown, max = 8) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => (typeof item === 'number' && Number.isFinite(item) ? item : null))
+    .filter((item): item is number => item !== null)
+    .slice(0, max);
+}
+
+function toRecommendationFrequencies(value: unknown, max = 6) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => {
+      const object = asObject(entry);
+      return object ? asNumber(object.frequency, NaN) : NaN;
+    })
+    .filter((item) => Number.isFinite(item))
+    .slice(0, max);
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  }).format(date);
+}
+
+function formatHz(values: number[]) {
+  if (values.length === 0) {
+    return 'None';
+  }
+  return values.map((value) => `${Math.round(value)}Hz`).join(', ');
+}
+
+function formatPercent(value: number) {
+  return `${Math.round(clamp(0, value, 1) * 100)}%`;
+}
+
+function formatSignedPercent(value: number) {
+  const scaled = Math.round(value * 100);
+  if (scaled > 0) {
+    return `+${scaled}%`;
+  }
+  return `${scaled}%`;
+}
+
+function parseVoiceHistoryEntry(row: VoiceProfileRow): VoiceHistoryEntry {
+  const profile = asObject(row.profile);
+  const bandEnergy = asObject(profile?.bandEnergy);
+
+  const createdAt = row.created_at ?? new Date().toISOString();
+  const capturedAt = typeof profile?.capturedAt === 'string' ? profile.capturedAt : createdAt;
+
+  return {
+    id: row.id,
+    createdAt,
+    capturedAt,
+    confidence: clamp(0, asNumber(row.confidence, asNumber(profile?.confidence, 0)), 1),
+    captureDurationMs: Math.max(0, asNumber(row.capture_duration_ms, asNumber(profile?.captureDurationMs, 0))),
+    analysisDurationMs: Math.max(0, asNumber(row.analysis_duration_ms, asNumber(profile?.analysisDurationMs, 0))),
+    dominantFrequencies: toNumberArray(profile?.dominantFrequencies),
+    recommendedFrequencies: toRecommendationFrequencies(profile?.recommendations),
+    bandEnergy: {
+      low: Math.max(0, asNumber(bandEnergy?.low, 0)),
+      mid: Math.max(0, asNumber(bandEnergy?.mid, 0)),
+      upperMid: Math.max(0, asNumber(bandEnergy?.upperMid, 0)),
+      high: Math.max(0, asNumber(bandEnergy?.high, 0))
+    }
+  };
+}
 
 export default function ProfilePage() {
   const { username } = useParams<{ username: string }>();
@@ -33,6 +149,10 @@ export default function ProfilePage() {
   const [profileAvatarUrl, setProfileAvatarUrl] = useState('');
   const [profileStatus, setProfileStatus] = useState<string | null>(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [voiceHistory, setVoiceHistory] = useState<VoiceHistoryEntry[]>([]);
+  const [voiceHistoryStatus, setVoiceHistoryStatus] = useState<string | null>(null);
+  const [compareCurrentId, setCompareCurrentId] = useState('');
+  const [compareBaselineId, setCompareBaselineId] = useState('');
 
   useEffect(() => {
     let isMounted = true;
@@ -143,6 +263,89 @@ export default function ProfilePage() {
       isMounted = false;
     };
   }, [supabase, username]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadVoiceHistory = async () => {
+      if (!profile || !isOwner) {
+        setVoiceHistory([]);
+        setVoiceHistoryStatus(null);
+        setCompareCurrentId('');
+        setCompareBaselineId('');
+        return;
+      }
+
+      setVoiceHistoryStatus(null);
+
+      const { data, error } = await supabase
+        .from('voice_profiles')
+        .select('*')
+        .eq('user_id', profile.id)
+        .order('created_at', { ascending: false })
+        .limit(24);
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (error) {
+        setVoiceHistory([]);
+        setVoiceHistoryStatus(error.message);
+        return;
+      }
+
+      const parsed = (data ?? []).map(parseVoiceHistoryEntry);
+      setVoiceHistory(parsed);
+      setCompareCurrentId(parsed[0]?.id ?? '');
+      setCompareBaselineId(parsed[1]?.id ?? parsed[0]?.id ?? '');
+    };
+
+    loadVoiceHistory();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOwner, profile, supabase]);
+
+  const latestVoiceProfile = voiceHistory[0] ?? null;
+  const previousVoiceProfile = voiceHistory[1] ?? null;
+  const latestConfidenceDelta =
+    latestVoiceProfile && previousVoiceProfile
+      ? latestVoiceProfile.confidence - previousVoiceProfile.confidence
+      : null;
+
+  const compareCurrent = useMemo(
+    () => voiceHistory.find((entry) => entry.id === compareCurrentId) ?? voiceHistory[0] ?? null,
+    [voiceHistory, compareCurrentId]
+  );
+  const compareBaseline = useMemo(
+    () => voiceHistory.find((entry) => entry.id === compareBaselineId) ?? voiceHistory[1] ?? voiceHistory[0] ?? null,
+    [voiceHistory, compareBaselineId]
+  );
+
+  const canCompare =
+    Boolean(compareCurrent) && Boolean(compareBaseline) && compareCurrent?.id !== compareBaseline?.id;
+  const compareConfidenceDelta =
+    canCompare && compareCurrent && compareBaseline
+      ? compareCurrent.confidence - compareBaseline.confidence
+      : null;
+  const compareLowDelta =
+    canCompare && compareCurrent && compareBaseline
+      ? compareCurrent.bandEnergy.low - compareBaseline.bandEnergy.low
+      : null;
+  const compareMidDelta =
+    canCompare && compareCurrent && compareBaseline
+      ? compareCurrent.bandEnergy.mid - compareBaseline.bandEnergy.mid
+      : null;
+  const compareUpperMidDelta =
+    canCompare && compareCurrent && compareBaseline
+      ? compareCurrent.bandEnergy.upperMid - compareBaseline.bandEnergy.upperMid
+      : null;
+  const compareHighDelta =
+    canCompare && compareCurrent && compareBaseline
+      ? compareCurrent.bandEnergy.high - compareBaseline.bandEnergy.high
+      : null;
 
   const handleCreateCollection = async () => {
     if (!profile || !viewerId || !isOwner) {
@@ -337,6 +540,158 @@ export default function ProfilePage() {
           ) : null}
         </div>
       </Card>
+
+      {isOwner ? (
+        <Card className="glass-panel">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Voice Bioprint History</h2>
+              <p className="text-sm text-ink/60">
+                Private capture history from your voice profile sessions, with trend comparisons.
+              </p>
+            </div>
+            <span className="text-xs uppercase tracking-[0.2em] text-ink/50">
+              {voiceHistory.length} captures
+            </span>
+          </div>
+
+          {voiceHistoryStatus ? (
+            <p className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-600">
+              {voiceHistoryStatus}
+            </p>
+          ) : null}
+
+          {voiceHistory.length === 0 ? (
+            <div className="mt-4 rounded-2xl border border-ink/10 bg-white/70 p-4 text-sm text-ink/60">
+              <p>No voice profiles yet. Create one from the Voice Bioprint panel in Creator.</p>
+              <div className="mt-3">
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/create">Open Creator</Link>
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <div className="rounded-2xl border border-ink/10 bg-white/80 p-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Latest confidence</p>
+                  <p className="mt-1 text-lg font-semibold text-ink/85">
+                    {latestVoiceProfile ? formatPercent(latestVoiceProfile.confidence) : 'N/A'}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-ink/10 bg-white/80 p-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Capture trend</p>
+                  <p className="mt-1 text-lg font-semibold text-ink/85">
+                    {latestConfidenceDelta !== null ? formatSignedPercent(latestConfidenceDelta) : 'N/A'}
+                  </p>
+                  <p className="text-xs text-ink/55">Compared to previous profile</p>
+                </div>
+                <div className="rounded-2xl border border-ink/10 bg-white/80 p-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Last captured</p>
+                  <p className="mt-1 text-sm font-semibold text-ink/85">
+                    {latestVoiceProfile ? formatDateTime(latestVoiceProfile.capturedAt) : 'N/A'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-ink/10 bg-white/75 p-4">
+                <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">Compare trends</h3>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <label className="text-sm text-ink/70">
+                    <span className="mb-1 block text-xs uppercase tracking-[0.2em] text-ink/55">Current</span>
+                    <select
+                      value={compareCurrentId}
+                      onChange={(event) => setCompareCurrentId(event.target.value)}
+                      className="w-full rounded-2xl border border-ink/10 bg-white/90 px-3 py-2 text-sm"
+                    >
+                      {voiceHistory.map((entry) => (
+                        <option key={`current-${entry.id}`} value={entry.id}>
+                          {formatDateTime(entry.capturedAt)} ({formatPercent(entry.confidence)})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-sm text-ink/70">
+                    <span className="mb-1 block text-xs uppercase tracking-[0.2em] text-ink/55">Baseline</span>
+                    <select
+                      value={compareBaselineId}
+                      onChange={(event) => setCompareBaselineId(event.target.value)}
+                      className="w-full rounded-2xl border border-ink/10 bg-white/90 px-3 py-2 text-sm"
+                    >
+                      {voiceHistory.map((entry) => (
+                        <option key={`baseline-${entry.id}`} value={entry.id}>
+                          {formatDateTime(entry.capturedAt)} ({formatPercent(entry.confidence)})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                {canCompare ? (
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <div className="rounded-xl border border-ink/10 bg-white px-3 py-2 text-sm text-ink/70">
+                      <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Confidence delta</p>
+                      <p className="mt-1 font-semibold text-ink/85">
+                        {compareConfidenceDelta !== null ? formatSignedPercent(compareConfidenceDelta) : 'N/A'}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-ink/10 bg-white px-3 py-2 text-sm text-ink/70">
+                      <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Band energy delta</p>
+                      <p className="mt-1 text-xs text-ink/70">
+                        Low: {compareLowDelta !== null ? formatSignedPercent(compareLowDelta) : 'N/A'} | Mid:{' '}
+                        {compareMidDelta !== null ? formatSignedPercent(compareMidDelta) : 'N/A'}
+                      </p>
+                      <p className="text-xs text-ink/70">
+                        Upper-mid: {compareUpperMidDelta !== null ? formatSignedPercent(compareUpperMidDelta) : 'N/A'} | High:{' '}
+                        {compareHighDelta !== null ? formatSignedPercent(compareHighDelta) : 'N/A'}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-ink/10 bg-white px-3 py-2 text-sm text-ink/70">
+                      <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Current dominant tones</p>
+                      <p className="mt-1 text-xs text-ink/75">
+                        {compareCurrent ? formatHz(compareCurrent.dominantFrequencies) : 'N/A'}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-ink/10 bg-white px-3 py-2 text-sm text-ink/70">
+                      <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Current recommendations</p>
+                      <p className="mt-1 text-xs text-ink/75">
+                        {compareCurrent ? formatHz(compareCurrent.recommendedFrequencies) : 'N/A'}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-xs text-ink/60">Select two different captures to compare trends.</p>
+                )}
+              </div>
+
+              <div className="mt-4 grid gap-3">
+                {voiceHistory.map((entry, index) => (
+                  <div key={entry.id} className="rounded-2xl border border-ink/10 bg-white/80 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-ink/85">
+                        Capture #{voiceHistory.length - index} · {formatDateTime(entry.capturedAt)}
+                      </p>
+                      <span className="text-xs text-ink/60">
+                        Confidence {formatPercent(entry.confidence)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-ink/60">
+                      Dominant: {formatHz(entry.dominantFrequencies)} | Recommended: {formatHz(entry.recommendedFrequencies)}
+                    </p>
+                    <p className="mt-1 text-xs text-ink/55">
+                      Low {formatPercent(entry.bandEnergy.low)} · Mid {formatPercent(entry.bandEnergy.mid)} · Upper-mid{' '}
+                      {formatPercent(entry.bandEnergy.upperMid)} · High {formatPercent(entry.bandEnergy.high)}
+                    </p>
+                    <p className="mt-1 text-xs text-ink/50">
+                      Capture {Math.round(entry.captureDurationMs / 1000)}s · Analysis {entry.analysisDurationMs}ms
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </Card>
+      ) : null}
 
       <div className="grid gap-5 md:grid-cols-2">
         {compositions.map((composition) => (

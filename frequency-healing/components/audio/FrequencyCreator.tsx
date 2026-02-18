@@ -7,9 +7,16 @@ import HelpPopover from '@/components/ui/HelpPopover';
 import Modal from '@/components/ui/Modal';
 import WaveformVisualizer from '@/components/audio/WaveformVisualizer';
 import ThreeVisualizer from '@/components/audio/ThreeVisualizer';
+import VoicePortraitCard from '@/components/audio/VoicePortraitCard';
 import type { VisualizationSessionOverlayData } from '@/components/audio/visualizationSessionOverlay';
 import { useBackgroundAudioBridge } from '@/components/background/BackgroundAudioBridge';
 import { FrequencyGenerator } from '@/lib/audio/FrequencyGenerator';
+import { MicrophoneAnalysisService } from '@/lib/audio/MicrophoneAnalysisService';
+import {
+  analyzeVoiceBioprint,
+  createFallbackVoiceBioprintProfile,
+  type VoiceBioprintProfile
+} from '@/lib/audio/VoiceBioprintEngine';
 import {
   buildFrequencyMix,
   frequenciesForStorage,
@@ -30,7 +37,8 @@ import {
   type BinauralConfig,
   type ModulationConfig,
   type RhythmConfig,
-  type SweepConfig
+  type SweepConfig,
+  type VoiceBioprintConfig
 } from '@/lib/audio/audioConfig';
 import {
   createDefaultVisualizationLayers,
@@ -210,6 +218,18 @@ export default function FrequencyCreator() {
   const [savedCompositionId, setSavedCompositionId] = useState<string | null>(null);
   const [savedCompositionPublic, setSavedCompositionPublic] = useState<boolean | null>(null);
   const [shareStatus, setShareStatus] = useState<string | null>(null);
+  const [voiceBioprintConfig, setVoiceBioprintConfig] = useState<VoiceBioprintConfig>(
+    defaultAudioConfig.innovation.voiceBioprint
+  );
+  const [voiceProfile, setVoiceProfile] = useState<VoiceBioprintProfile | null>(null);
+  const [voiceProfileId, setVoiceProfileId] = useState<string | null>(null);
+  const [isCapturingVoice, setIsCapturingVoice] = useState(false);
+  const [voiceCaptureError, setVoiceCaptureError] = useState<string | null>(null);
+  const [voiceTelemetry, setVoiceTelemetry] = useState<{
+    captureMs: number;
+    analysisMs: number;
+    frameCount: number;
+  } | null>(null);
   const frequencyStackRef = useRef<HTMLDivElement | null>(null);
   const advancedSoundRef = useRef<HTMLDivElement | null>(null);
   const liveSectionRef = useRef<HTMLDivElement | null>(null);
@@ -219,20 +239,36 @@ export default function FrequencyCreator() {
   const maxSelectableFrequencies = mixStyle === 'golden432' ? MAX_PHASE2_FREQUENCIES : MAX_PHASE2_FREQUENCIES;
 
   const generator = useMemo(() => new FrequencyGenerator(), []);
+  const micService = useMemo(() => new MicrophoneAnalysisService(), []);
   const supabase = useMemo(() => createSupabaseClient(), []);
   const { setAnalyser: setBackgroundAnalyser } = useBackgroundAudioBridge();
 
   const audioConfig = useMemo<AudioConfigShape>(
     () => ({
-      version: 1,
+      version: 2,
       selectedFrequencies,
       frequencyVolumes,
       rhythm: rhythmConfig,
       modulation: modulationConfig,
       sweep: sweepConfig,
-      binaural: binauralConfig
+      binaural: binauralConfig,
+      innovation: {
+        voiceBioprint: {
+          ...voiceBioprintConfig,
+          profileId: voiceProfileId ?? voiceBioprintConfig.profileId
+        }
+      }
     }),
-    [binauralConfig, frequencyVolumes, modulationConfig, rhythmConfig, selectedFrequencies, sweepConfig]
+    [
+      binauralConfig,
+      frequencyVolumes,
+      modulationConfig,
+      rhythmConfig,
+      selectedFrequencies,
+      sweepConfig,
+      voiceBioprintConfig,
+      voiceProfileId
+    ]
   );
 
   const audioConfigJson = useMemo<Json>(
@@ -243,7 +279,13 @@ export default function FrequencyCreator() {
       rhythm: { ...audioConfig.rhythm, steps: [...audioConfig.rhythm.steps] },
       modulation: { ...audioConfig.modulation },
       sweep: { ...audioConfig.sweep },
-      binaural: { ...audioConfig.binaural }
+      binaural: { ...audioConfig.binaural },
+      innovation: {
+        voiceBioprint: {
+          ...audioConfig.innovation.voiceBioprint,
+          recommendations: audioConfig.innovation.voiceBioprint.recommendations.map((item) => ({ ...item }))
+        }
+      }
     }),
     [audioConfig]
   );
@@ -345,8 +387,9 @@ export default function FrequencyCreator() {
   useEffect(() => {
     return () => {
       generator.dispose();
+      void micService.stop();
     };
-  }, [generator]);
+  }, [generator, micService]);
 
   useEffect(() => {
     setIsIOS(isIOSDevice());
@@ -433,6 +476,8 @@ export default function FrequencyCreator() {
         setModulationConfig(parsed.modulation);
         setSweepConfig(parsed.sweep);
         setBinauralConfig(parsed.binaural);
+        setVoiceBioprintConfig(parsed.innovation.voiceBioprint);
+        setVoiceProfileId(parsed.innovation.voiceBioprint.profileId);
       } else {
         if (draft.selectedFrequencies) {
           setSelectedFrequencies(dedupeFrequencies(draft.selectedFrequencies));
@@ -844,6 +889,148 @@ export default function FrequencyCreator() {
     });
   };
 
+  const persistVoiceProfile = async (profile: VoiceBioprintProfile) => {
+    const { data } = await supabase.auth.getUser();
+    if (!data.user) {
+      return null;
+    }
+
+    try {
+      await ensureProfile(supabase, data.user);
+    } catch (error) {
+      console.warn('Voice profile could not ensure profile record.', error);
+      return null;
+    }
+
+    const payload: Database['public']['Tables']['voice_profiles']['Insert'] = {
+      user_id: data.user.id,
+      profile: profile as unknown as Json,
+      confidence: profile.confidence,
+      capture_duration_ms: profile.captureDurationMs,
+      analysis_duration_ms: profile.analysisDurationMs
+    };
+
+    const { data: inserted, error } = await supabase
+      .from('voice_profiles')
+      .insert(payload)
+      .select('id')
+      .single();
+
+    if (error) {
+      console.warn('Voice profile persistence failed.', error);
+      return null;
+    }
+
+    return inserted.id;
+  };
+
+  const handleCaptureVoiceBioprint = async () => {
+    if (isCapturingVoice) {
+      return;
+    }
+
+    if (!voiceBioprintConfig.disclaimerAccepted) {
+      setVoiceCaptureError('Please acknowledge the wellness disclaimer before recording.');
+      return;
+    }
+
+    setIsCapturingVoice(true);
+    setVoiceCaptureError(null);
+    setStatus('Listening to your voice profile...');
+
+    try {
+      const snapshot = await micService.captureSpectrum({
+        durationMs: 5500,
+        fftSize: 2048,
+        smoothingTimeConstant: 0.78
+      });
+
+      const profile = analyzeVoiceBioprint(snapshot);
+      const insertedProfileId = await persistVoiceProfile(profile);
+
+      setVoiceProfile(profile);
+      setVoiceProfileId(insertedProfileId);
+      setVoiceTelemetry({
+        captureMs: profile.captureDurationMs,
+        analysisMs: profile.analysisDurationMs,
+        frameCount: profile.frameCount
+      });
+      setVoiceBioprintConfig((prev) => ({
+        ...prev,
+        enabled: true,
+        lastCapturedAt: profile.capturedAt,
+        confidence: profile.confidence,
+        analysisDurationMs: profile.analysisDurationMs,
+        recommendations: profile.recommendations,
+        profileId: insertedProfileId ?? prev.profileId
+      }));
+
+      if (profile.confidence < 0.35) {
+        setVoiceCaptureError('Confidence is low. Try speaking closer to the mic in a quieter room.');
+      } else {
+        setVoiceCaptureError(null);
+      }
+
+      setStatus('Voice Bioprint captured. Review the recommendations below.');
+    } catch (error) {
+      console.error(error);
+      const message =
+        error instanceof Error && error.name === 'NotAllowedError'
+          ? 'Microphone access was denied. Use starter profile mode or allow mic access.'
+          : 'Voice capture failed. Check microphone permission and try again.';
+      setVoiceCaptureError(message);
+      setStatus(message);
+    } finally {
+      await micService.stop();
+      setIsCapturingVoice(false);
+    }
+  };
+
+  const handleUseStarterBioprintProfile = () => {
+    const profile = createFallbackVoiceBioprintProfile();
+    setVoiceProfile(profile);
+    setVoiceProfileId(null);
+    setVoiceBioprintConfig((prev) => ({
+      ...prev,
+      enabled: true,
+      lastCapturedAt: profile.capturedAt,
+      confidence: profile.confidence,
+      analysisDurationMs: profile.analysisDurationMs,
+      recommendations: profile.recommendations,
+      profileId: null
+    }));
+    setVoiceTelemetry({
+      captureMs: profile.captureDurationMs,
+      analysisMs: profile.analysisDurationMs,
+      frameCount: profile.frameCount
+    });
+    setVoiceCaptureError(null);
+    setStatus('Starter Voice Bioprint profile loaded.');
+  };
+
+  const handleApplyVoiceRecommendations = () => {
+    if (voiceBioprintConfig.recommendations.length === 0) {
+      setStatus('Capture a voice profile first to generate recommendations.');
+      return;
+    }
+
+    let added = 0;
+    voiceBioprintConfig.recommendations.forEach((recommendation) => {
+      const normalized = normalizeFrequency(recommendation.frequency);
+      if (!selectedFrequencies.includes(normalized)) {
+        added += 1;
+      }
+      addFrequency(recommendation.frequency, recommendation.gain);
+    });
+
+    if (added === 0) {
+      setStatus('Recommended frequencies are already in your stack.');
+      return;
+    }
+
+    setStatus(`Applied ${added} voice-bioprint recommendation${added > 1 ? 's' : ''}.`);
+  };
+
   const currentLayerEntries = visualizationType === 'multi-layer' ? visualizationLayers : effectiveVisualizationLayers;
 
   const handlePlay = async () => {
@@ -1168,6 +1355,20 @@ export default function FrequencyCreator() {
         ambient_sound: ambientSound === 'none' ? null : ambientSound,
         effects: effectsConfig,
         audio_config: audioConfigJson,
+        innovation_config: {
+          voiceBioprint: {
+            enabled: voiceBioprintConfig.enabled,
+            confidence: voiceBioprintConfig.confidence,
+            profileId: voiceProfileId,
+            recommendations: voiceBioprintConfig.recommendations.map((entry) => ({ ...entry })),
+            analysisDurationMs: voiceBioprintConfig.analysisDurationMs
+          }
+        },
+        innovation_flags: [voiceBioprintConfig.enabled ? 'voice_bioprint' : null].filter(
+          (value): value is string => Boolean(value)
+        ),
+        scientific_disclaimer_ack: voiceBioprintConfig.disclaimerAccepted,
+        voice_profile_id: voiceProfileId,
         visualization_type: visualizationType,
         visualization_config: { palette: 'ember-lagoon' },
         visualization_layers: toVisualizationLayersPayload(effectiveVisualizationLayers),
@@ -1175,7 +1376,7 @@ export default function FrequencyCreator() {
         video_url: videoUrl,
         thumbnail_url: thumbnailUrl,
         is_public: isPublic,
-        tags: [ambientSound, binauralConfig.enabled ? 'binaural' : null].filter(
+        tags: [ambientSound, binauralConfig.enabled ? 'binaural' : null, voiceBioprintConfig.enabled ? 'voice-bioprint' : null].filter(
           (tag): tag is string => Boolean(tag) && tag !== 'none'
         )
       };
@@ -1185,10 +1386,19 @@ export default function FrequencyCreator() {
       if (
         insertResult.error &&
         (insertResult.error.message.includes('audio_config') ||
-          insertResult.error.message.includes('visualization_layers'))
+          insertResult.error.message.includes('visualization_layers') ||
+          insertResult.error.message.includes('innovation_config') ||
+          insertResult.error.message.includes('voice_profile_id'))
       ) {
-        const { audio_config: _audioConfig, visualization_layers: _visualizationLayers, ...fallbackPayload } =
-          insertPayload;
+        const {
+          audio_config: _audioConfig,
+          visualization_layers: _visualizationLayers,
+          innovation_config: _innovationConfig,
+          innovation_flags: _innovationFlags,
+          scientific_disclaimer_ack: _scientificDisclaimerAck,
+          voice_profile_id: _voiceProfileId,
+          ...fallbackPayload
+        } = insertPayload;
         insertResult = await supabase
           .from('compositions')
           .insert(fallbackPayload as CompositionInsert)
@@ -1588,6 +1798,70 @@ export default function FrequencyCreator() {
                 Frequency must be between {MIN_CUSTOM_FREQUENCY_HZ}Hz and {MAX_CUSTOM_FREQUENCY_HZ}Hz.
               </p>
             ) : null}
+          </div>
+
+          <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="space-y-1">
+                <h3 className="text-lg font-semibold">Voice Bioprint (beta)</h3>
+                <p className="text-xs text-ink/60">
+                  Record ~5 seconds, analyze your vocal spectrum, then auto-suggest supporting frequencies.
+                </p>
+              </div>
+              <HelpPopover
+                align="left"
+                label="Voice Bioprint help"
+                text="This is a wellness personalization tool and not a medical diagnostic system. Capture quality depends on room noise and mic quality."
+              />
+            </div>
+
+            <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              Use for personal audio tuning only. Do not interpret this as medical advice, diagnosis, or treatment.
+            </div>
+
+            <label className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/80 px-3 py-2 text-sm text-ink/70">
+              <span>I understand the Voice Bioprint wellness disclaimer</span>
+              <input
+                type="checkbox"
+                checked={voiceBioprintConfig.disclaimerAccepted}
+                onChange={(event) =>
+                  setVoiceBioprintConfig((prev) => ({
+                    ...prev,
+                    disclaimerAccepted: event.target.checked
+                  }))
+                }
+                className="h-4 w-4"
+              />
+            </label>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                onClick={handleCaptureVoiceBioprint}
+                disabled={isCapturingVoice || !voiceBioprintConfig.disclaimerAccepted}
+              >
+                {isCapturingVoice ? 'Capturing...' : 'Capture voice profile'}
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleUseStarterBioprintProfile} disabled={isCapturingVoice}>
+                Use starter profile
+              </Button>
+            </div>
+
+            {voiceCaptureError ? <p className="mt-2 text-xs text-rose-600">{voiceCaptureError}</p> : null}
+            {voiceTelemetry ? (
+              <p className="mt-2 text-xs text-ink/55">
+                Capture {voiceTelemetry.captureMs}ms, analysis {voiceTelemetry.analysisMs}ms, {voiceTelemetry.frameCount} frames.
+              </p>
+            ) : null}
+
+            <div className="mt-3">
+              <VoicePortraitCard
+                profile={voiceProfile}
+                recommendations={voiceBioprintConfig.recommendations}
+                onApply={handleApplyVoiceRecommendations}
+                disabled={isSaving}
+              />
+            </div>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">

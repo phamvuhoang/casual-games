@@ -35,20 +35,42 @@ export interface BinauralConfig {
   panSpread: number;
 }
 
+export interface VoiceBioprintRecommendationConfig {
+  frequency: number;
+  gain: number;
+  score: number;
+  reason: string;
+}
+
+export interface VoiceBioprintConfig {
+  enabled: boolean;
+  disclaimerAccepted: boolean;
+  lastCapturedAt: string | null;
+  confidence: number;
+  analysisDurationMs: number;
+  profileId: string | null;
+  recommendations: VoiceBioprintRecommendationConfig[];
+}
+
+export interface InnovationConfig {
+  voiceBioprint: VoiceBioprintConfig;
+}
+
 export interface AudioConfigShape {
-  version: 1;
+  version: 2;
   selectedFrequencies: number[];
   frequencyVolumes: Record<string, number>;
   rhythm: RhythmConfig;
   modulation: ModulationConfig;
   sweep: SweepConfig;
   binaural: BinauralConfig;
+  innovation: InnovationConfig;
 }
 
 const DEFAULT_STEPS = [true, false, true, false, true, false, true, false, true, false, true, false, true, false, true, false];
 
 const DEFAULT_CONFIG: AudioConfigShape = {
-  version: 1,
+  version: 2,
   selectedFrequencies: [],
   frequencyVolumes: {},
   rhythm: {
@@ -73,6 +95,17 @@ const DEFAULT_CONFIG: AudioConfigShape = {
     enabled: false,
     beatHz: 8,
     panSpread: 0.85
+  },
+  innovation: {
+    voiceBioprint: {
+      enabled: false,
+      disclaimerAccepted: false,
+      lastCapturedAt: null,
+      confidence: 0,
+      analysisDurationMs: 0,
+      profileId: null,
+      recommendations: []
+    }
   }
 };
 
@@ -122,7 +155,13 @@ export function createDefaultAudioConfig(): AudioConfigShape {
     },
     modulation: { ...DEFAULT_CONFIG.modulation },
     sweep: { ...DEFAULT_CONFIG.sweep },
-    binaural: { ...DEFAULT_CONFIG.binaural }
+    binaural: { ...DEFAULT_CONFIG.binaural },
+    innovation: {
+      voiceBioprint: {
+        ...DEFAULT_CONFIG.innovation.voiceBioprint,
+        recommendations: [...DEFAULT_CONFIG.innovation.voiceBioprint.recommendations]
+      }
+    }
   };
 }
 
@@ -173,9 +212,22 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
   const modulation = asObject(object.modulation);
   const sweep = asObject(object.sweep);
   const binaural = asObject(object.binaural);
+  const innovation = asObject(object.innovation);
+  const voiceBioprint = asObject(innovation?.voiceBioprint);
+  const rawRecommendations = Array.isArray(voiceBioprint?.recommendations) ? voiceBioprint?.recommendations : [];
+  const recommendations = rawRecommendations
+    .map((entry) => asObject(entry))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+    .map((entry) => ({
+      frequency: normalizeFrequency(asNumber(entry.frequency, 432)),
+      gain: clamp(0.05, asNumber(entry.gain, 0.55), 1),
+      score: clamp(0, asNumber(entry.score, 0), 1),
+      reason: typeof entry.reason === 'string' ? entry.reason : 'Personalized recommendation'
+    }))
+    .slice(0, 6);
 
   return {
-    version: 1,
+    version: 2,
     selectedFrequencies,
     frequencyVolumes,
     rhythm: {
@@ -200,6 +252,30 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
       enabled: asBoolean(binaural?.enabled, config.binaural.enabled),
       beatHz: clamp(0.1, asNumber(binaural?.beatHz, config.binaural.beatHz), 40),
       panSpread: clamp(0.2, asNumber(binaural?.panSpread, config.binaural.panSpread), 1)
+    },
+    innovation: {
+      voiceBioprint: {
+        enabled: asBoolean(voiceBioprint?.enabled, config.innovation.voiceBioprint.enabled),
+        disclaimerAccepted: asBoolean(
+          voiceBioprint?.disclaimerAccepted,
+          config.innovation.voiceBioprint.disclaimerAccepted
+        ),
+        lastCapturedAt:
+          typeof voiceBioprint?.lastCapturedAt === 'string'
+            ? voiceBioprint.lastCapturedAt
+            : config.innovation.voiceBioprint.lastCapturedAt,
+        confidence: clamp(0, asNumber(voiceBioprint?.confidence, config.innovation.voiceBioprint.confidence), 1),
+        analysisDurationMs: clamp(
+          0,
+          asNumber(voiceBioprint?.analysisDurationMs, config.innovation.voiceBioprint.analysisDurationMs),
+          60000
+        ),
+        profileId:
+          typeof voiceBioprint?.profileId === 'string'
+            ? voiceBioprint.profileId
+            : config.innovation.voiceBioprint.profileId,
+        recommendations
+      }
     }
   };
 }

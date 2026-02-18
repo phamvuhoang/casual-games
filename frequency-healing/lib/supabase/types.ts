@@ -50,6 +50,10 @@ export interface Database {
           ambient_sound: string | null;
           effects: Json | null;
           audio_config: Json | null;
+          innovation_config: Json | null;
+          innovation_flags: string[] | null;
+          scientific_disclaimer_ack: boolean | null;
+          voice_profile_id: string | null;
           visualization_type: string | null;
           visualization_config: Json | null;
           visualization_layers: Json | null;
@@ -75,6 +79,10 @@ export interface Database {
           ambient_sound?: string | null;
           effects?: Json | null;
           audio_config?: Json | null;
+          innovation_config?: Json | null;
+          innovation_flags?: string[] | null;
+          scientific_disclaimer_ack?: boolean | null;
+          voice_profile_id?: string | null;
           visualization_type?: string | null;
           visualization_config?: Json | null;
           visualization_layers?: Json | null;
@@ -98,6 +106,10 @@ export interface Database {
           ambient_sound?: string | null;
           effects?: Json | null;
           audio_config?: Json | null;
+          innovation_config?: Json | null;
+          innovation_flags?: string[] | null;
+          scientific_disclaimer_ack?: boolean | null;
+          voice_profile_id?: string | null;
           visualization_type?: string | null;
           visualization_config?: Json | null;
           visualization_layers?: Json | null;
@@ -190,6 +202,33 @@ export interface Database {
           collection_id?: string;
           composition_id?: string;
           added_at?: string | null;
+        };
+        Relationships: [];
+      };
+      voice_profiles: {
+        Row: {
+          id: string;
+          user_id: string;
+          profile: Json;
+          confidence: number | null;
+          capture_duration_ms: number | null;
+          analysis_duration_ms: number | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          profile: Json;
+          confidence?: number | null;
+          capture_duration_ms?: number | null;
+          analysis_duration_ms?: number | null;
+          created_at?: string | null;
+        };
+        Update: {
+          profile?: Json;
+          confidence?: number | null;
+          capture_duration_ms?: number | null;
+          analysis_duration_ms?: number | null;
         };
         Relationships: [];
       };

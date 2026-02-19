@@ -232,6 +232,42 @@ export interface Database {
         };
         Relationships: [];
       };
+      room_scans: {
+        Row: {
+          id: string;
+          user_id: string;
+          composition_id: string | null;
+          mode: string;
+          dominant_frequencies: Json;
+          spectrum: Json | null;
+          confidence: number | null;
+          noise_floor_db: number | null;
+          peak_db: number | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          composition_id?: string | null;
+          mode: string;
+          dominant_frequencies: Json;
+          spectrum?: Json | null;
+          confidence?: number | null;
+          noise_floor_db?: number | null;
+          peak_db?: number | null;
+          created_at?: string | null;
+        };
+        Update: {
+          composition_id?: string | null;
+          mode?: string;
+          dominant_frequencies?: Json;
+          spectrum?: Json | null;
+          confidence?: number | null;
+          noise_floor_db?: number | null;
+          peak_db?: number | null;
+        };
+        Relationships: [];
+      };
     };
     Views: {};
     Functions: {

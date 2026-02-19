@@ -52,8 +52,22 @@ export interface VoiceBioprintConfig {
   recommendations: VoiceBioprintRecommendationConfig[];
 }
 
+export type SympatheticResonanceMode = 'harmonize' | 'cleanse';
+
+export interface SympatheticResonanceConfig {
+  enabled: boolean;
+  mode: SympatheticResonanceMode;
+  scanIntervalSeconds: number;
+  confidenceThreshold: number;
+  calibratedNoiseFloorDb: number | null;
+  lastScanAt: string | null;
+  lastConfidence: number;
+  lastDominantFrequencies: number[];
+}
+
 export interface InnovationConfig {
   voiceBioprint: VoiceBioprintConfig;
+  sympatheticResonance: SympatheticResonanceConfig;
 }
 
 export interface AudioConfigShape {
@@ -105,6 +119,16 @@ const DEFAULT_CONFIG: AudioConfigShape = {
       analysisDurationMs: 0,
       profileId: null,
       recommendations: []
+    },
+    sympatheticResonance: {
+      enabled: false,
+      mode: 'harmonize',
+      scanIntervalSeconds: 5,
+      confidenceThreshold: 0.35,
+      calibratedNoiseFloorDb: null,
+      lastScanAt: null,
+      lastConfidence: 0,
+      lastDominantFrequencies: []
     }
   }
 };
@@ -160,6 +184,10 @@ export function createDefaultAudioConfig(): AudioConfigShape {
       voiceBioprint: {
         ...DEFAULT_CONFIG.innovation.voiceBioprint,
         recommendations: [...DEFAULT_CONFIG.innovation.voiceBioprint.recommendations]
+      },
+      sympatheticResonance: {
+        ...DEFAULT_CONFIG.innovation.sympatheticResonance,
+        lastDominantFrequencies: [...DEFAULT_CONFIG.innovation.sympatheticResonance.lastDominantFrequencies]
       }
     }
   };
@@ -214,7 +242,11 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
   const binaural = asObject(object.binaural);
   const innovation = asObject(object.innovation);
   const voiceBioprint = asObject(innovation?.voiceBioprint);
+  const sympatheticResonance = asObject(innovation?.sympatheticResonance);
   const rawRecommendations = Array.isArray(voiceBioprint?.recommendations) ? voiceBioprint?.recommendations : [];
+  const rawDominantFrequencies = Array.isArray(sympatheticResonance?.lastDominantFrequencies)
+    ? sympatheticResonance?.lastDominantFrequencies
+    : [];
   const recommendations = rawRecommendations
     .map((entry) => asObject(entry))
     .filter((entry): entry is Record<string, unknown> => Boolean(entry))
@@ -225,6 +257,10 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
       reason: typeof entry.reason === 'string' ? entry.reason : 'Personalized recommendation'
     }))
     .slice(0, 6);
+  const lastDominantFrequencies = rawDominantFrequencies
+    .map((entry) => (typeof entry === 'number' && Number.isFinite(entry) ? normalizeFrequency(entry) : null))
+    .filter((value): value is number => value !== null)
+    .slice(0, 8);
 
   return {
     version: 2,
@@ -275,6 +311,51 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
             ? voiceBioprint.profileId
             : config.innovation.voiceBioprint.profileId,
         recommendations
+      },
+      sympatheticResonance: {
+        enabled: asBoolean(
+          sympatheticResonance?.enabled,
+          config.innovation.sympatheticResonance.enabled
+        ),
+        mode: asString(
+          sympatheticResonance?.mode,
+          ['harmonize', 'cleanse'],
+          config.innovation.sympatheticResonance.mode
+        ),
+        scanIntervalSeconds: clamp(
+          2,
+          asNumber(
+            sympatheticResonance?.scanIntervalSeconds,
+            config.innovation.sympatheticResonance.scanIntervalSeconds
+          ),
+          30
+        ),
+        confidenceThreshold: clamp(
+          0.05,
+          asNumber(
+            sympatheticResonance?.confidenceThreshold,
+            config.innovation.sympatheticResonance.confidenceThreshold
+          ),
+          0.98
+        ),
+        calibratedNoiseFloorDb:
+          typeof sympatheticResonance?.calibratedNoiseFloorDb === 'number' &&
+          Number.isFinite(sympatheticResonance.calibratedNoiseFloorDb)
+            ? clamp(-120, sympatheticResonance.calibratedNoiseFloorDb, 0)
+            : config.innovation.sympatheticResonance.calibratedNoiseFloorDb,
+        lastScanAt:
+          typeof sympatheticResonance?.lastScanAt === 'string'
+            ? sympatheticResonance.lastScanAt
+            : config.innovation.sympatheticResonance.lastScanAt,
+        lastConfidence: clamp(
+          0,
+          asNumber(
+            sympatheticResonance?.lastConfidence,
+            config.innovation.sympatheticResonance.lastConfidence
+          ),
+          1
+        ),
+        lastDominantFrequencies
       }
     }
   };

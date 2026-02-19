@@ -8,10 +8,17 @@ import Modal from '@/components/ui/Modal';
 import WaveformVisualizer from '@/components/audio/WaveformVisualizer';
 import ThreeVisualizer from '@/components/audio/ThreeVisualizer';
 import VoicePortraitCard from '@/components/audio/VoicePortraitCard';
+import RoomFrequencyMap from '@/components/audio/RoomFrequencyMap';
 import type { VisualizationSessionOverlayData } from '@/components/audio/visualizationSessionOverlay';
 import { useBackgroundAudioBridge } from '@/components/background/BackgroundAudioBridge';
 import { FrequencyGenerator } from '@/lib/audio/FrequencyGenerator';
 import { MicrophoneAnalysisService } from '@/lib/audio/MicrophoneAnalysisService';
+import {
+  analyzeRoomSpectrum,
+  buildRoomResponseTones,
+  createRoomResponseVoices,
+  type RoomScanResult
+} from '@/lib/audio/SympatheticResonanceEngine';
 import {
   analyzeVoiceBioprint,
   createFallbackVoiceBioprintProfile,
@@ -37,6 +44,8 @@ import {
   type BinauralConfig,
   type ModulationConfig,
   type RhythmConfig,
+  type SympatheticResonanceConfig,
+  type SympatheticResonanceMode,
   type SweepConfig,
   type VoiceBioprintConfig
 } from '@/lib/audio/audioConfig';
@@ -221,6 +230,9 @@ export default function FrequencyCreator() {
   const [voiceBioprintConfig, setVoiceBioprintConfig] = useState<VoiceBioprintConfig>(
     defaultAudioConfig.innovation.voiceBioprint
   );
+  const [sympatheticConfig, setSympatheticConfig] = useState<SympatheticResonanceConfig>(
+    defaultAudioConfig.innovation.sympatheticResonance
+  );
   const [voiceProfile, setVoiceProfile] = useState<VoiceBioprintProfile | null>(null);
   const [voiceProfileId, setVoiceProfileId] = useState<string | null>(null);
   const [isCapturingVoice, setIsCapturingVoice] = useState(false);
@@ -230,16 +242,23 @@ export default function FrequencyCreator() {
     analysisMs: number;
     frameCount: number;
   } | null>(null);
+  const [roomScanResult, setRoomScanResult] = useState<RoomScanResult | null>(null);
+  const [roomResponseFrequencies, setRoomResponseFrequencies] = useState<number[]>([]);
+  const [roomScanStatus, setRoomScanStatus] = useState<string | null>(null);
+  const [isCalibratingRoom, setIsCalibratingRoom] = useState(false);
+  const [isRoomMonitoring, setIsRoomMonitoring] = useState(false);
   const frequencyStackRef = useRef<HTMLDivElement | null>(null);
   const advancedSoundRef = useRef<HTMLDivElement | null>(null);
   const liveSectionRef = useRef<HTMLDivElement | null>(null);
   const mobileLiveCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const roomScanLockRef = useRef(false);
   const mp3LimitSeconds = MP3_ESTIMATED_MAX_SECONDS;
   const showMp3Warning = audioFormat === 'mp3' && duration > mp3LimitSeconds;
   const maxSelectableFrequencies = mixStyle === 'golden432' ? MAX_PHASE2_FREQUENCIES : MAX_PHASE2_FREQUENCIES;
 
   const generator = useMemo(() => new FrequencyGenerator(), []);
   const micService = useMemo(() => new MicrophoneAnalysisService(), []);
+  const roomMicService = useMemo(() => new MicrophoneAnalysisService(), []);
   const supabase = useMemo(() => createSupabaseClient(), []);
   const { setAnalyser: setBackgroundAnalyser } = useBackgroundAudioBridge();
 
@@ -256,6 +275,12 @@ export default function FrequencyCreator() {
         voiceBioprint: {
           ...voiceBioprintConfig,
           profileId: voiceProfileId ?? voiceBioprintConfig.profileId
+        },
+        sympatheticResonance: {
+          ...sympatheticConfig,
+          lastDominantFrequencies: roomScanResult?.dominantFrequencies ?? sympatheticConfig.lastDominantFrequencies,
+          lastConfidence: roomScanResult?.confidence ?? sympatheticConfig.lastConfidence,
+          lastScanAt: roomScanResult?.capturedAt ?? sympatheticConfig.lastScanAt
         }
       }
     }),
@@ -266,6 +291,8 @@ export default function FrequencyCreator() {
       rhythmConfig,
       selectedFrequencies,
       sweepConfig,
+      sympatheticConfig,
+      roomScanResult,
       voiceBioprintConfig,
       voiceProfileId
     ]
@@ -284,6 +311,10 @@ export default function FrequencyCreator() {
         voiceBioprint: {
           ...audioConfig.innovation.voiceBioprint,
           recommendations: audioConfig.innovation.voiceBioprint.recommendations.map((item) => ({ ...item }))
+        },
+        sympatheticResonance: {
+          ...audioConfig.innovation.sympatheticResonance,
+          lastDominantFrequencies: [...audioConfig.innovation.sympatheticResonance.lastDominantFrequencies]
         }
       }
     }),
@@ -336,13 +367,23 @@ export default function FrequencyCreator() {
     if (binauralConfig.enabled) {
       activeModules.push('Binaural');
     }
+    if (sympatheticConfig.enabled) {
+      activeModules.push(`Room-${sympatheticConfig.mode === 'cleanse' ? 'Cleanse' : 'Harmonize'}`);
+    }
 
     if (activeModules.length === 0) {
       return 'All advanced modules are currently off.';
     }
 
     return `Active: ${activeModules.join(' • ')}`;
-  }, [binauralConfig.enabled, modulationConfig.enabled, rhythmConfig.enabled, sweepConfig.enabled]);
+  }, [
+    binauralConfig.enabled,
+    modulationConfig.enabled,
+    rhythmConfig.enabled,
+    sweepConfig.enabled,
+    sympatheticConfig.enabled,
+    sympatheticConfig.mode
+  ]);
 
   const sessionOverlayInfo = useMemo<VisualizationSessionOverlayData>(
     () => ({
@@ -371,7 +412,7 @@ export default function FrequencyCreator() {
     ]
   );
 
-  const mixedVoices = useMemo(
+  const baseMixedVoices = useMemo(
     () =>
       buildFrequencyMix({
         mixStyle,
@@ -384,12 +425,51 @@ export default function FrequencyCreator() {
     [mixStyle, selectedFrequencies, waveform, volume, frequencyVolumes, binauralConfig]
   );
 
+  const roomResponseVoices = useMemo(
+    () =>
+      createRoomResponseVoices({
+        tones: buildRoomResponseTones(
+          roomScanResult ?? {
+            capturedAt: new Date().toISOString(),
+            dominantFrequencies: sympatheticConfig.lastDominantFrequencies,
+            spectrumMap: [],
+            confidence: sympatheticConfig.lastConfidence,
+            noiseFloorDb: sympatheticConfig.calibratedNoiseFloorDb ?? -90,
+            peakDb: -25,
+            dynamicRangeDb: 0
+          },
+          sympatheticConfig.mode
+        ),
+        mode: sympatheticConfig.mode,
+        waveform,
+        masterVolume: volume,
+        confidence: roomScanResult?.confidence ?? sympatheticConfig.lastConfidence,
+        confidenceThreshold: sympatheticConfig.confidenceThreshold
+      }),
+    [
+      roomScanResult,
+      sympatheticConfig.lastDominantFrequencies,
+      sympatheticConfig.lastConfidence,
+      sympatheticConfig.calibratedNoiseFloorDb,
+      sympatheticConfig.mode,
+      sympatheticConfig.confidenceThreshold,
+      waveform,
+      volume
+    ]
+  );
+
+  const mixedVoices = useMemo(
+    () => [...baseMixedVoices, ...(sympatheticConfig.enabled ? roomResponseVoices : [])],
+    [baseMixedVoices, roomResponseVoices, sympatheticConfig.enabled]
+  );
+
   useEffect(() => {
     return () => {
       generator.dispose();
       void micService.stop();
+      void roomMicService.stop();
     };
-  }, [generator, micService]);
+  }, [generator, micService, roomMicService]);
 
   useEffect(() => {
     setIsIOS(isIOSDevice());
@@ -477,6 +557,10 @@ export default function FrequencyCreator() {
         setSweepConfig(parsed.sweep);
         setBinauralConfig(parsed.binaural);
         setVoiceBioprintConfig(parsed.innovation.voiceBioprint);
+        setSympatheticConfig(parsed.innovation.sympatheticResonance);
+        if (parsed.innovation.sympatheticResonance.lastDominantFrequencies.length > 0) {
+          setRoomResponseFrequencies(parsed.innovation.sympatheticResonance.lastDominantFrequencies);
+        }
         setVoiceProfileId(parsed.innovation.voiceBioprint.profileId);
       } else {
         if (draft.selectedFrequencies) {
@@ -651,6 +735,89 @@ export default function FrequencyCreator() {
       generator.setAmbientLayer(ambientSound);
     }
   }, [ambientSound, generator, isPlaying]);
+
+  useEffect(() => {
+    if (!isPlaying || !sympatheticConfig.enabled) {
+      setIsRoomMonitoring(false);
+      setRoomScanStatus(null);
+      setRoomResponseFrequencies([]);
+      roomScanLockRef.current = false;
+      void roomMicService.stop();
+      return;
+    }
+
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const runScan = async () => {
+      if (roomScanLockRef.current) {
+        return;
+      }
+      roomScanLockRef.current = true;
+
+      try {
+        const snapshot = await roomMicService.captureSpectrum({
+          durationMs: 1200,
+          fftSize: 2048,
+          smoothingTimeConstant: 0.72
+        });
+
+        if (cancelled) {
+          return;
+        }
+
+        const result = analyzeRoomSpectrum(snapshot);
+        const responseTones = buildRoomResponseTones(result, sympatheticConfig.mode);
+
+        setRoomScanResult(result);
+        setRoomResponseFrequencies(responseTones.map((tone) => tone.frequency));
+        setSympatheticConfig((prev) => ({
+          ...prev,
+          lastScanAt: result.capturedAt,
+          lastConfidence: result.confidence,
+          lastDominantFrequencies: result.dominantFrequencies
+        }));
+
+        if (result.confidence < sympatheticConfig.confidenceThreshold) {
+          setRoomScanStatus('Room scan confidence is low. Try reducing background noise or recalibrate.');
+        } else {
+          setRoomScanStatus(null);
+        }
+      } catch (error) {
+        console.error(error);
+        const message =
+          error instanceof Error && error.name === 'NotAllowedError'
+            ? 'Microphone access denied for room tuner.'
+            : 'Room scan failed. Check microphone permission and try again.';
+        setRoomScanStatus(message);
+      } finally {
+        roomScanLockRef.current = false;
+      }
+    };
+
+    setIsRoomMonitoring(true);
+    void runScan();
+    intervalId = setInterval(() => {
+      void runScan();
+    }, Math.max(2000, Math.round(sympatheticConfig.scanIntervalSeconds * 1000)));
+
+    return () => {
+      cancelled = true;
+      setIsRoomMonitoring(false);
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+      roomScanLockRef.current = false;
+      void roomMicService.stop();
+    };
+  }, [
+    isPlaying,
+    roomMicService,
+    sympatheticConfig.enabled,
+    sympatheticConfig.scanIntervalSeconds,
+    sympatheticConfig.mode,
+    sympatheticConfig.confidenceThreshold
+  ]);
 
   useEffect(() => {
     if (!isBaseVisualizationType(visualizationType)) {
@@ -1014,13 +1181,30 @@ export default function FrequencyCreator() {
       return;
     }
 
+    const incoming = voiceBioprintConfig.recommendations.map((item) => ({
+      frequency: normalizeFrequency(item.frequency),
+      gain: clamp(0.05, item.gain, 1)
+    }));
+
     let added = 0;
-    voiceBioprintConfig.recommendations.forEach((recommendation) => {
-      const normalized = normalizeFrequency(recommendation.frequency);
-      if (!selectedFrequencies.includes(normalized)) {
-        added += 1;
-      }
-      addFrequency(recommendation.frequency, recommendation.gain);
+    setSelectedFrequencies((prev) => {
+      const next = [...prev];
+      incoming.forEach((item) => {
+        if (!next.includes(item.frequency) && next.length < maxSelectableFrequencies) {
+          next.push(item.frequency);
+          added += 1;
+        }
+      });
+      return next;
+    });
+
+    setFrequencyVolumes((prev) => {
+      const next = { ...prev };
+      incoming.forEach((item) => {
+        const key = frequencyKey(item.frequency);
+        next[key] = typeof next[key] === 'number' ? next[key] : item.gain;
+      });
+      return next;
     });
 
     if (added === 0) {
@@ -1029,6 +1213,84 @@ export default function FrequencyCreator() {
     }
 
     setStatus(`Applied ${added} voice-bioprint recommendation${added > 1 ? 's' : ''}.`);
+  };
+
+  const handleCalibrateRoom = async () => {
+    if (isCalibratingRoom) {
+      return;
+    }
+
+    setIsCalibratingRoom(true);
+    setRoomScanStatus('Calibrating room noise floor...');
+
+    try {
+      const snapshot = await roomMicService.captureSpectrum({
+        durationMs: 2500,
+        fftSize: 2048,
+        smoothingTimeConstant: 0.74
+      });
+      const result = analyzeRoomSpectrum(snapshot);
+
+      setSympatheticConfig((prev) => ({
+        ...prev,
+        calibratedNoiseFloorDb: result.noiseFloorDb,
+        lastScanAt: result.capturedAt,
+        lastConfidence: result.confidence,
+        lastDominantFrequencies: result.dominantFrequencies
+      }));
+      setRoomScanResult(result);
+      setRoomResponseFrequencies(buildRoomResponseTones(result, sympatheticConfig.mode).map((tone) => tone.frequency));
+      setRoomScanStatus(`Room calibrated at ${result.noiseFloorDb} dB noise floor.`);
+    } catch (error) {
+      console.error(error);
+      const message =
+        error instanceof Error && error.name === 'NotAllowedError'
+          ? 'Microphone access denied. Allow mic access to calibrate room tuner.'
+          : 'Room calibration failed. Please try again.';
+      setRoomScanStatus(message);
+    } finally {
+      await roomMicService.stop();
+      setIsCalibratingRoom(false);
+    }
+  };
+
+  const handleScanRoomNow = async () => {
+    if (roomScanLockRef.current || isCalibratingRoom) {
+      return;
+    }
+
+    setRoomScanStatus('Running room scan...');
+    roomScanLockRef.current = true;
+
+    try {
+      const snapshot = await roomMicService.captureSpectrum({
+        durationMs: 1200,
+        fftSize: 2048,
+        smoothingTimeConstant: 0.72
+      });
+      const result = analyzeRoomSpectrum(snapshot);
+      const tones = buildRoomResponseTones(result, sympatheticConfig.mode);
+
+      setRoomScanResult(result);
+      setRoomResponseFrequencies(tones.map((tone) => tone.frequency));
+      setSympatheticConfig((prev) => ({
+        ...prev,
+        lastScanAt: result.capturedAt,
+        lastConfidence: result.confidence,
+        lastDominantFrequencies: result.dominantFrequencies
+      }));
+      setRoomScanStatus(
+        result.confidence < sympatheticConfig.confidenceThreshold
+          ? 'Room scan confidence is low. Reduce noise or recalibrate.'
+          : 'Room scan updated.'
+      );
+    } catch (error) {
+      console.error(error);
+      setRoomScanStatus('Room scan failed. Check microphone permission.');
+    } finally {
+      roomScanLockRef.current = false;
+      await roomMicService.stop();
+    }
   };
 
   const currentLayerEntries = visualizationType === 'multi-layer' ? visualizationLayers : effectiveVisualizationLayers;
@@ -1362,12 +1624,26 @@ export default function FrequencyCreator() {
             profileId: voiceProfileId,
             recommendations: voiceBioprintConfig.recommendations.map((entry) => ({ ...entry })),
             analysisDurationMs: voiceBioprintConfig.analysisDurationMs
+          },
+          sympatheticResonance: {
+            enabled: sympatheticConfig.enabled,
+            mode: sympatheticConfig.mode,
+            scanIntervalSeconds: sympatheticConfig.scanIntervalSeconds,
+            confidenceThreshold: sympatheticConfig.confidenceThreshold,
+            calibratedNoiseFloorDb: sympatheticConfig.calibratedNoiseFloorDb,
+            lastScanAt: roomScanResult?.capturedAt ?? sympatheticConfig.lastScanAt,
+            lastConfidence: roomScanResult?.confidence ?? sympatheticConfig.lastConfidence,
+            lastDominantFrequencies:
+              roomScanResult?.dominantFrequencies ?? sympatheticConfig.lastDominantFrequencies,
+            responseFrequencies: roomResponseFrequencies
           }
         },
-        innovation_flags: [voiceBioprintConfig.enabled ? 'voice_bioprint' : null].filter(
-          (value): value is string => Boolean(value)
-        ),
-        scientific_disclaimer_ack: voiceBioprintConfig.disclaimerAccepted,
+        innovation_flags: [
+          voiceBioprintConfig.enabled ? 'voice_bioprint' : null,
+          sympatheticConfig.enabled ? 'sympathetic_resonance' : null
+        ].filter((value): value is string => Boolean(value)),
+        scientific_disclaimer_ack:
+          voiceBioprintConfig.disclaimerAccepted || Boolean(sympatheticConfig.enabled),
         voice_profile_id: voiceProfileId,
         visualization_type: visualizationType,
         visualization_config: { palette: 'ember-lagoon' },
@@ -1376,9 +1652,12 @@ export default function FrequencyCreator() {
         video_url: videoUrl,
         thumbnail_url: thumbnailUrl,
         is_public: isPublic,
-        tags: [ambientSound, binauralConfig.enabled ? 'binaural' : null, voiceBioprintConfig.enabled ? 'voice-bioprint' : null].filter(
-          (tag): tag is string => Boolean(tag) && tag !== 'none'
-        )
+        tags: [
+          ambientSound,
+          binauralConfig.enabled ? 'binaural' : null,
+          voiceBioprintConfig.enabled ? 'voice-bioprint' : null,
+          sympatheticConfig.enabled ? `room-${sympatheticConfig.mode}` : null
+        ].filter((tag): tag is string => Boolean(tag) && tag !== 'none')
       };
 
       let insertResult = await supabase.from('compositions').insert(insertPayload).select('id').single();
@@ -1388,6 +1667,8 @@ export default function FrequencyCreator() {
         (insertResult.error.message.includes('audio_config') ||
           insertResult.error.message.includes('visualization_layers') ||
           insertResult.error.message.includes('innovation_config') ||
+          insertResult.error.message.includes('innovation_flags') ||
+          insertResult.error.message.includes('scientific_disclaimer_ack') ||
           insertResult.error.message.includes('voice_profile_id'))
       ) {
         const {
@@ -1413,6 +1694,28 @@ export default function FrequencyCreator() {
       if (insertResult.data?.id) {
         setSavedCompositionId(insertResult.data.id);
         setSavedCompositionPublic(Boolean(isPublic));
+
+        if (
+          sympatheticConfig.enabled &&
+          (roomScanResult?.dominantFrequencies.length ?? sympatheticConfig.lastDominantFrequencies.length) > 0
+        ) {
+          const dominantFrequencies =
+            roomScanResult?.dominantFrequencies ?? sympatheticConfig.lastDominantFrequencies;
+          const { error: roomScanInsertError } = await supabase.from('room_scans').insert({
+            user_id: activeUserId,
+            composition_id: insertResult.data.id,
+            mode: sympatheticConfig.mode,
+            dominant_frequencies: dominantFrequencies as unknown as Json,
+            spectrum: (roomScanResult?.spectrumMap ?? null) as Json | null,
+            confidence: roomScanResult?.confidence ?? sympatheticConfig.lastConfidence,
+            noise_floor_db: roomScanResult?.noiseFloorDb ?? sympatheticConfig.calibratedNoiseFloorDb,
+            peak_db: roomScanResult?.peakDb ?? null
+          });
+
+          if (roomScanInsertError) {
+            console.warn('Room scan persistence failed.', roomScanInsertError);
+          }
+        }
 
         const tasks = ['normalize_audio'];
         if (videoUrl) {
@@ -1861,6 +2164,142 @@ export default function FrequencyCreator() {
                 onApply={handleApplyVoiceRecommendations}
                 disabled={isSaving}
               />
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="space-y-1">
+                <h3 className="text-lg font-semibold">Sympathetic Resonance Tuner (beta)</h3>
+                <p className="text-xs text-ink/60">
+                  Analyze room frequencies and blend adaptive response tones in Harmonize or Cleanse mode.
+                </p>
+              </div>
+              <HelpPopover
+                align="left"
+                label="Room tuner help"
+                text="Harmonize layers partials over your room's dominant tones. Cleanse mode is a bounded counter-tone prototype and does not guarantee noise cancellation."
+              />
+            </div>
+
+            <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              Cleanse mode is experimental. Results depend on room acoustics, speaker placement, and microphone quality.
+            </div>
+
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/85 px-3 py-2 text-sm text-ink/70">
+                <span>Enable room tuner</span>
+                <input
+                  type="checkbox"
+                  checked={sympatheticConfig.enabled}
+                  onChange={(event) =>
+                    setSympatheticConfig((prev) => ({
+                      ...prev,
+                      enabled: event.target.checked
+                    }))
+                  }
+                  className="h-4 w-4"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/85 px-3 py-2 text-sm text-ink/70">
+                <span>Mode</span>
+                <select
+                  value={sympatheticConfig.mode}
+                  onChange={(event) =>
+                    setSympatheticConfig((prev) => ({
+                      ...prev,
+                      mode: event.target.value as SympatheticResonanceMode
+                    }))
+                  }
+                  className="rounded-full border border-ink/10 bg-white px-3 py-2"
+                >
+                  <option value="harmonize">Harmonize</option>
+                  <option value="cleanse">Cleanse (experimental)</option>
+                </select>
+              </label>
+              <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/85 px-3 py-2 text-sm text-ink/70">
+                <span>Scan interval</span>
+                <input
+                  type="number"
+                  min={2}
+                  max={30}
+                  value={sympatheticConfig.scanIntervalSeconds}
+                  onChange={(event) =>
+                    setSympatheticConfig((prev) => ({
+                      ...prev,
+                      scanIntervalSeconds: clamp(2, Number(event.target.value), 30)
+                    }))
+                  }
+                  className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/85 px-3 py-2 text-sm text-ink/70">
+                <span>Confidence threshold</span>
+                <input
+                  type="number"
+                  min={0.05}
+                  max={0.95}
+                  step={0.01}
+                  value={sympatheticConfig.confidenceThreshold}
+                  onChange={(event) =>
+                    setSympatheticConfig((prev) => ({
+                      ...prev,
+                      confidenceThreshold: clamp(0.05, Number(event.target.value), 0.95)
+                    }))
+                  }
+                  className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
+                />
+              </label>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={handleCalibrateRoom} disabled={isCalibratingRoom}>
+                {isCalibratingRoom ? 'Calibrating...' : 'Calibrate room'}
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleScanRoomNow} disabled={isCalibratingRoom}>
+                Scan now
+              </Button>
+            </div>
+
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <div className="rounded-2xl border border-ink/10 bg-white/85 px-3 py-2">
+                <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Monitor</p>
+                <p className="mt-1 text-sm font-semibold text-ink/85">
+                  {sympatheticConfig.enabled && isRoomMonitoring ? 'Active' : 'Idle'}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-ink/10 bg-white/85 px-3 py-2">
+                <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Confidence</p>
+                <p className="mt-1 text-sm font-semibold text-ink/85">
+                  {roomScanResult ? `${Math.round(roomScanResult.confidence * 100)}%` : `${Math.round(sympatheticConfig.lastConfidence * 100)}%`}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-ink/10 bg-white/85 px-3 py-2">
+                <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Calibrated noise floor</p>
+                <p className="mt-1 text-sm font-semibold text-ink/85">
+                  {typeof sympatheticConfig.calibratedNoiseFloorDb === 'number'
+                    ? `${sympatheticConfig.calibratedNoiseFloorDb.toFixed(1)} dB`
+                    : 'Not calibrated'}
+                </p>
+              </div>
+            </div>
+
+            {roomScanStatus ? <p className="mt-2 text-xs text-ink/60">{roomScanStatus}</p> : null}
+            <p className="mt-2 text-xs text-ink/55">
+              Dominant room tones:{' '}
+              {roomScanResult?.dominantFrequencies.length
+                ? roomScanResult.dominantFrequencies.map((value) => `${Math.round(value)}Hz`).join(', ')
+                : sympatheticConfig.lastDominantFrequencies.map((value) => `${Math.round(value)}Hz`).join(', ') || 'None yet'}
+            </p>
+            <p className="mt-1 text-xs text-ink/55">
+              Response tones:{' '}
+              {roomResponseFrequencies.length > 0
+                ? roomResponseFrequencies.slice(0, 8).map((value) => `${Math.round(value)}Hz`).join(', ')
+                : 'None yet'}
+            </p>
+
+            <div className="mt-3">
+              <RoomFrequencyMap levels={roomScanResult?.spectrumMap ?? []} />
             </div>
           </div>
 

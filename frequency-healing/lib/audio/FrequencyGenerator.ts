@@ -36,6 +36,14 @@ export interface PlaybackAutomationConfig {
   sweep: SweepConfig;
 }
 
+export interface BreathControlFrame {
+  phase: 'inhale' | 'exhale';
+  phaseProgress: number;
+  coherenceScore: number;
+  gainScale: number;
+  rhythmBpm?: number;
+}
+
 const DEFAULT_RHYTHM_CONFIG: RhythmConfig = {
   enabled: false,
   bpm: 72,
@@ -91,6 +99,7 @@ export class FrequencyGenerator {
   private lastEffects: EffectsConfig = DEFAULT_EFFECTS;
   private lastFrequencies: FrequencyConfig[] = [];
   private masterVolume = 1;
+  private breathGainScale = 1;
   private resumeTask: Promise<void> | null = null;
   private iosHandlersAttached = false;
   private audioBridgeEnabled = false;
@@ -355,7 +364,28 @@ export class FrequencyGenerator {
   setMasterVolume(value: number) {
     this.masterVolume = value;
     if (this.master) {
-      this.master.gain.value = value;
+      this.master.gain.value = this.masterVolume * this.breathGainScale;
+    }
+  }
+
+  applyBreathControl(frame: BreathControlFrame) {
+    const nextGainScale = clamp(0.75, frame.gainScale, 1.25);
+    this.breathGainScale = nextGainScale;
+
+    if (this.master) {
+      const now = Tone.now();
+      this.master.gain.cancelScheduledValues(now);
+      this.master.gain.linearRampToValueAtTime(this.masterVolume * this.breathGainScale, now + 0.12);
+    }
+
+    if (
+      this.isPlaying &&
+      this.rhythmConfig.enabled &&
+      this.rhythmSequence &&
+      typeof frame.rhythmBpm === 'number' &&
+      Number.isFinite(frame.rhythmBpm)
+    ) {
+      Tone.Transport.bpm.rampTo(clamp(35, frame.rhythmBpm, 180), 0.4);
     }
   }
 
@@ -389,6 +419,7 @@ export class FrequencyGenerator {
     this.initialized = false;
     this.masterConnected = false;
     this.resumeTask = null;
+    this.breathGainScale = 1;
     this.voiceBaseFrequencies = [];
     this.voiceSweepTargets = [];
     this.isPlaying = false;
@@ -428,6 +459,10 @@ export class FrequencyGenerator {
     this.voiceTremolos = [];
     this.stopAmbient(preserveFrequencies);
     this.isPlaying = false;
+    this.breathGainScale = 1;
+    if (this.master) {
+      this.master.gain.value = this.masterVolume;
+    }
     this.voiceBaseFrequencies = [];
     this.voiceSweepTargets = [];
     this.resetRhythmGate();

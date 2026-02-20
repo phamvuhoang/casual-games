@@ -15,6 +15,14 @@ export interface VisualizationSessionOverlayData {
   binaural: BinauralConfig;
 }
 
+export interface BreathGuideOverlayData {
+  phase: 'inhale' | 'exhale';
+  phaseProgress: number;
+  coherenceScore: number;
+  breathBpm: number;
+  targetBpm: number;
+}
+
 function formatFrequency(value: number) {
   return `${Math.round(value * 100) / 100}Hz`;
 }
@@ -172,6 +180,55 @@ export function drawSessionOverlay(
     const y = panelY + padding + 12 + index * lineHeight;
     ctx.fillText(line, panelX + padding, y);
   });
+
+  ctx.restore();
+}
+
+export function drawBreathGuideOverlay(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  data: BreathGuideOverlayData
+) {
+  const phaseProgress = Math.max(0, Math.min(1, data.phaseProgress));
+  const coherence = Math.max(0, Math.min(1, data.coherenceScore));
+  const radiusBase = Math.max(24, Math.min(width, height) * 0.07);
+  const radiusPulse = radiusBase * (0.35 + coherence * 0.45);
+  const pulseProgress = data.phase === 'inhale' ? phaseProgress : 1 - phaseProgress;
+  const radius = radiusBase + radiusPulse * pulseProgress;
+  const x = width - radiusBase * 1.8;
+  const y = height - radiusBase * 1.8;
+
+  ctx.save();
+
+  const haloGradient = ctx.createRadialGradient(x, y, radius * 0.25, x, y, radius * 2.3);
+  haloGradient.addColorStop(0, `rgba(132, 237, 200, ${0.34 + coherence * 0.24})`);
+  haloGradient.addColorStop(1, 'rgba(132, 237, 200, 0)');
+  ctx.beginPath();
+  ctx.arc(x, y, radius * 2.3, 0, Math.PI * 2);
+  ctx.fillStyle = haloGradient;
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fillStyle = data.phase === 'inhale' ? 'rgba(150, 246, 220, 0.42)' : 'rgba(116, 198, 255, 0.34)';
+  ctx.fill();
+  ctx.strokeStyle = `rgba(255, 255, 255, ${0.42 + coherence * 0.35})`;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  ctx.font = '600 11px "IBM Plex Sans", Arial, sans-serif';
+  ctx.fillStyle = 'rgba(244, 252, 255, 0.95)';
+  ctx.textAlign = 'center';
+  ctx.fillText(`${data.phase.toUpperCase()} ${Math.round(data.breathBpm * 10) / 10} BPM`, x, y + 4);
+
+  ctx.font = '500 10px "IBM Plex Sans", Arial, sans-serif';
+  ctx.fillStyle = 'rgba(240, 248, 255, 0.82)';
+  ctx.fillText(
+    `Coherence ${Math.round(coherence * 100)}% · Target ${Math.round(data.targetBpm * 10) / 10}`,
+    x,
+    y + 20
+  );
 
   ctx.restore();
 }

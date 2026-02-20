@@ -87,6 +87,23 @@ export interface AdaptiveBinauralJourneyConfig {
   steps: AdaptiveJourneyStepConfig[];
 }
 
+export type BreathSyncMode = 'manual' | 'microphone';
+export type BreathSyncPhase = 'inhale' | 'exhale';
+
+export interface BreathSyncConfig {
+  enabled: boolean;
+  mode: BreathSyncMode;
+  targetBpm: number;
+  inhaleRatio: number;
+  sensitivity: number;
+  calibrationNoiseFloorDb: number | null;
+  lastBreathBpm: number | null;
+  coherenceScore: number;
+  phase: BreathSyncPhase;
+  phaseProgress: number;
+  lastSampledAt: string | null;
+}
+
 export interface HarmonicFieldConfig {
   enabled: boolean;
   presetId: string;
@@ -103,6 +120,7 @@ export interface InnovationConfig {
   voiceBioprint: VoiceBioprintConfig;
   sympatheticResonance: SympatheticResonanceConfig;
   adaptiveBinauralJourney: AdaptiveBinauralJourneyConfig;
+  breathSync: BreathSyncConfig;
   harmonicField: HarmonicFieldConfig;
 }
 
@@ -183,6 +201,19 @@ const DEFAULT_CONFIG: AudioConfigShape = {
         { state: 'delta', beatHz: 3.5, minutes: 3 }
       ]
     },
+    breathSync: {
+      enabled: false,
+      mode: 'manual',
+      targetBpm: 5.5,
+      inhaleRatio: 0.45,
+      sensitivity: 0.7,
+      calibrationNoiseFloorDb: null,
+      lastBreathBpm: null,
+      coherenceScore: 0,
+      phase: 'inhale',
+      phaseProgress: 0,
+      lastSampledAt: null
+    },
     harmonicField: {
       enabled: false,
       presetId: 'chakra_ladder',
@@ -257,6 +288,7 @@ export function createDefaultAudioConfig(): AudioConfigShape {
         ...DEFAULT_CONFIG.innovation.adaptiveBinauralJourney,
         steps: DEFAULT_CONFIG.innovation.adaptiveBinauralJourney.steps.map((entry) => ({ ...entry }))
       },
+      breathSync: { ...DEFAULT_CONFIG.innovation.breathSync },
       harmonicField: {
         ...DEFAULT_CONFIG.innovation.harmonicField,
         lastLayerFrequencies: [...DEFAULT_CONFIG.innovation.harmonicField.lastLayerFrequencies],
@@ -317,6 +349,7 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
   const voiceBioprint = asObject(innovation?.voiceBioprint);
   const sympatheticResonance = asObject(innovation?.sympatheticResonance);
   const adaptiveBinauralJourney = asObject(innovation?.adaptiveBinauralJourney);
+  const breathSync = asObject(innovation?.breathSync);
   const harmonicField = asObject(innovation?.harmonicField);
   const rawRecommendations = Array.isArray(voiceBioprint?.recommendations) ? voiceBioprint?.recommendations : [];
   const rawDominantFrequencies = Array.isArray(sympatheticResonance?.lastDominantFrequencies)
@@ -510,6 +543,40 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
           journeySteps.length > 0
             ? journeySteps
             : config.innovation.adaptiveBinauralJourney.steps.map((entry) => ({ ...entry }))
+      },
+      breathSync: {
+        enabled: asBoolean(breathSync?.enabled, config.innovation.breathSync.enabled),
+        mode: asString(breathSync?.mode, ['manual', 'microphone'], config.innovation.breathSync.mode),
+        targetBpm: clamp(3, asNumber(breathSync?.targetBpm, config.innovation.breathSync.targetBpm), 9),
+        inhaleRatio: clamp(
+          0.25,
+          asNumber(breathSync?.inhaleRatio, config.innovation.breathSync.inhaleRatio),
+          0.75
+        ),
+        sensitivity: clamp(0.1, asNumber(breathSync?.sensitivity, config.innovation.breathSync.sensitivity), 1),
+        calibrationNoiseFloorDb:
+          typeof breathSync?.calibrationNoiseFloorDb === 'number' && Number.isFinite(breathSync.calibrationNoiseFloorDb)
+            ? clamp(-120, breathSync.calibrationNoiseFloorDb, 0)
+            : config.innovation.breathSync.calibrationNoiseFloorDb,
+        lastBreathBpm:
+          typeof breathSync?.lastBreathBpm === 'number' && Number.isFinite(breathSync.lastBreathBpm)
+            ? clamp(2, breathSync.lastBreathBpm, 30)
+            : config.innovation.breathSync.lastBreathBpm,
+        coherenceScore: clamp(
+          0,
+          asNumber(breathSync?.coherenceScore, config.innovation.breathSync.coherenceScore),
+          1
+        ),
+        phase: asString(breathSync?.phase, ['inhale', 'exhale'], config.innovation.breathSync.phase),
+        phaseProgress: clamp(
+          0,
+          asNumber(breathSync?.phaseProgress, config.innovation.breathSync.phaseProgress),
+          1
+        ),
+        lastSampledAt:
+          typeof breathSync?.lastSampledAt === 'string'
+            ? breathSync.lastSampledAt
+            : config.innovation.breathSync.lastSampledAt
       },
       harmonicField: {
         enabled: asBoolean(harmonicField?.enabled, config.innovation.harmonicField.enabled),

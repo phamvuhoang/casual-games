@@ -10,8 +10,10 @@ import {
 } from '@/lib/visualization/config';
 import { CompositorRenderer } from '@/lib/visualization/renderers/CompositorRenderer';
 import {
+  drawBreathGuideOverlay,
   drawSessionOverlay,
   getSessionOverlayLines,
+  type BreathGuideOverlayData,
   type VisualizationSessionOverlayData
 } from '@/components/audio/visualizationSessionOverlay';
 
@@ -22,6 +24,7 @@ interface WaveformVisualizerProps {
   isActive: boolean;
   showSessionInfo?: boolean;
   sessionInfo?: VisualizationSessionOverlayData | null;
+  breathGuide?: BreathGuideOverlayData | null;
   onCanvasReady?: (canvas: HTMLCanvasElement | null) => void;
 }
 
@@ -39,6 +42,7 @@ export default function WaveformVisualizer({
   isActive,
   showSessionInfo = false,
   sessionInfo = null,
+  breathGuide = null,
   onCanvasReady
 }: WaveformVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -124,15 +128,20 @@ export default function WaveformVisualizer({
       return;
     }
 
-    if (!showSessionInfo || overlayLines.length === 0) {
+    if ((!showSessionInfo || overlayLines.length === 0) && !breathGuide) {
       engineRef.current.setOverlayRenderer(null);
       return;
     }
 
     engineRef.current.setOverlayRenderer((frame) => {
-      drawSessionOverlay(frame.ctx, frame.width, frame.height, overlayLines, frame.energy);
+      if (showSessionInfo && overlayLines.length > 0) {
+        drawSessionOverlay(frame.ctx, frame.width, frame.height, overlayLines, frame.energy);
+      }
+      if (breathGuide) {
+        drawBreathGuideOverlay(frame.ctx, frame.width, frame.height, breathGuide);
+      }
     });
-  }, [analyser, overlayLines, showSessionInfo]);
+  }, [analyser, breathGuide, overlayLines, showSessionInfo]);
 
   useEffect(() => {
     onCanvasReady?.(canvasRef.current);

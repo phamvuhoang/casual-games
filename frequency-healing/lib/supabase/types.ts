@@ -310,6 +310,54 @@ export interface Database {
         };
         Relationships: [];
       };
+      breath_sessions: {
+        Row: {
+          id: string;
+          user_id: string;
+          composition_id: string | null;
+          mode: string;
+          target_bpm: number | null;
+          average_breath_bpm: number | null;
+          coherence_score: number | null;
+          peak_coherence_score: number | null;
+          time_in_coherence_pct: number | null;
+          inhale_ratio: number | null;
+          sensitivity: number | null;
+          calibration_noise_floor_db: number | null;
+          sample_count: number | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          composition_id?: string | null;
+          mode: string;
+          target_bpm?: number | null;
+          average_breath_bpm?: number | null;
+          coherence_score?: number | null;
+          peak_coherence_score?: number | null;
+          time_in_coherence_pct?: number | null;
+          inhale_ratio?: number | null;
+          sensitivity?: number | null;
+          calibration_noise_floor_db?: number | null;
+          sample_count?: number | null;
+          created_at?: string | null;
+        };
+        Update: {
+          composition_id?: string | null;
+          mode?: string;
+          target_bpm?: number | null;
+          average_breath_bpm?: number | null;
+          coherence_score?: number | null;
+          peak_coherence_score?: number | null;
+          time_in_coherence_pct?: number | null;
+          inhale_ratio?: number | null;
+          sensitivity?: number | null;
+          calibration_noise_floor_db?: number | null;
+          sample_count?: number | null;
+        };
+        Relationships: [];
+      };
       harmonic_field_sessions: {
         Row: {
           id: string;

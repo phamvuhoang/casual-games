@@ -24,6 +24,13 @@ import {
   type JourneyIntent
 } from '@/lib/audio/AdaptiveBinauralJourney';
 import {
+  buildBreathSyncRuntimeFrame,
+  createBreathSyncSamplePoint,
+  summarizeBreathSyncSession,
+  type BreathSyncRuntimeFrame,
+  type BreathSyncSamplePoint
+} from '@/lib/audio/BreathSyncEngine';
+import {
   analyzeRoomSpectrum,
   buildRoomResponseTones,
   createRoomResponseVoices,
@@ -58,6 +65,8 @@ import {
   type AudioConfigShape,
   type AdaptiveBinauralJourneyConfig,
   type BinauralConfig,
+  type BreathSyncConfig,
+  type BreathSyncMode,
   type HarmonicFieldConfig,
   type ModulationConfig,
   type RhythmConfig,
@@ -253,6 +262,9 @@ export default function FrequencyCreator() {
   const [adaptiveJourneyConfig, setAdaptiveJourneyConfig] = useState<AdaptiveBinauralJourneyConfig>(
     defaultAudioConfig.innovation.adaptiveBinauralJourney
   );
+  const [breathSyncConfig, setBreathSyncConfig] = useState<BreathSyncConfig>(
+    defaultAudioConfig.innovation.breathSync
+  );
   const [harmonicFieldConfig, setHarmonicFieldConfig] = useState<HarmonicFieldConfig>(
     defaultAudioConfig.innovation.harmonicField
   );
@@ -282,6 +294,11 @@ export default function FrequencyCreator() {
     adaptiveOffsetHz: number;
   } | null>(null);
   const [isJourneyMicSampling, setIsJourneyMicSampling] = useState(false);
+  const [breathSyncStatus, setBreathSyncStatus] = useState<string | null>(null);
+  const [isBreathMonitoring, setIsBreathMonitoring] = useState(false);
+  const [isBreathCalibrating, setIsBreathCalibrating] = useState(false);
+  const [breathRuntime, setBreathRuntime] = useState<BreathSyncRuntimeFrame | null>(null);
+  const [breathSamples, setBreathSamples] = useState<BreathSyncSamplePoint[]>([]);
   const frequencyStackRef = useRef<HTMLDivElement | null>(null);
   const advancedSoundRef = useRef<HTMLDivElement | null>(null);
   const liveSectionRef = useRef<HTMLDivElement | null>(null);
@@ -290,6 +307,10 @@ export default function FrequencyCreator() {
   const journeyStartAtRef = useRef<number | null>(null);
   const journeyAdaptiveOffsetRef = useRef(0);
   const journeyLastBreathRef = useRef<number | null>(null);
+  const breathSyncStartAtRef = useRef<number | null>(null);
+  const breathLastBpmRef = useRef<number | null>(null);
+  const breathLastConfidenceRef = useRef(0);
+  const breathSampleGateRef = useRef<number>(0);
   const mp3LimitSeconds = MP3_ESTIMATED_MAX_SECONDS;
   const showMp3Warning = audioFormat === 'mp3' && duration > mp3LimitSeconds;
   const maxSelectableFrequencies = mixStyle === 'golden432' ? MAX_PHASE2_FREQUENCIES : MAX_PHASE2_FREQUENCIES;
@@ -298,6 +319,7 @@ export default function FrequencyCreator() {
   const micService = useMemo(() => new MicrophoneAnalysisService(), []);
   const roomMicService = useMemo(() => new MicrophoneAnalysisService(), []);
   const journeyMicService = useMemo(() => new MicrophoneAnalysisService(), []);
+  const breathMicService = useMemo(() => new MicrophoneAnalysisService(), []);
   const supabase = useMemo(() => createSupabaseClient(), []);
   const { setAnalyser: setBackgroundAnalyser } = useBackgroundAudioBridge();
   const harmonicPresets = useMemo(() => getSolfeggioHarmonicPresets(), []);
@@ -355,6 +377,14 @@ export default function FrequencyCreator() {
           currentState: journeyRuntime?.state ?? adaptiveJourneyConfig.currentState,
           currentBeatHz: journeyRuntime?.beatHz ?? adaptiveJourneyConfig.currentBeatHz
         },
+        breathSync: {
+          ...breathSyncConfig,
+          lastBreathBpm: breathRuntime?.breathBpm ?? breathLastBpmRef.current ?? breathSyncConfig.lastBreathBpm,
+          coherenceScore: breathRuntime?.coherenceScore ?? breathSyncConfig.coherenceScore,
+          phase: breathRuntime?.phase ?? breathSyncConfig.phase,
+          phaseProgress: breathRuntime?.phaseProgress ?? breathSyncConfig.phaseProgress,
+          lastSampledAt: breathSamples[0]?.capturedAt ?? breathSyncConfig.lastSampledAt
+        },
         harmonicField: {
           ...harmonicFieldConfig,
           lastLayerFrequencies: harmonicFieldConfig.enabled
@@ -376,6 +406,9 @@ export default function FrequencyCreator() {
       sympatheticConfig,
       roomScanResult,
       adaptiveJourneyConfig,
+      breathSyncConfig,
+      breathRuntime,
+      breathSamples,
       harmonicFieldConfig,
       harmonicFieldBundle,
       journeyRuntime,
@@ -405,6 +438,9 @@ export default function FrequencyCreator() {
         adaptiveBinauralJourney: {
           ...audioConfig.innovation.adaptiveBinauralJourney,
           steps: audioConfig.innovation.adaptiveBinauralJourney.steps.map((entry) => ({ ...entry }))
+        },
+        breathSync: {
+          ...audioConfig.innovation.breathSync
         },
         harmonicField: {
           ...audioConfig.innovation.harmonicField,
@@ -483,6 +519,9 @@ export default function FrequencyCreator() {
     if (adaptiveJourneyConfig.enabled) {
       activeModules.push('Adaptive Journey');
     }
+    if (breathSyncConfig.enabled) {
+      activeModules.push('Breath Sync');
+    }
     if (harmonicFieldConfig.enabled) {
       activeModules.push('Harmonic Field');
     }
@@ -500,6 +539,7 @@ export default function FrequencyCreator() {
     sympatheticConfig.enabled,
     sympatheticConfig.mode,
     adaptiveJourneyConfig.enabled,
+    breathSyncConfig.enabled,
     harmonicFieldConfig.enabled
   ]);
 
@@ -599,8 +639,9 @@ export default function FrequencyCreator() {
       void micService.stop();
       void roomMicService.stop();
       void journeyMicService.stop();
+      void breathMicService.stop();
     };
-  }, [generator, micService, roomMicService, journeyMicService]);
+  }, [breathMicService, generator, micService, roomMicService, journeyMicService]);
 
   useEffect(() => {
     setIsIOS(isIOSDevice());
@@ -690,6 +731,7 @@ export default function FrequencyCreator() {
         setVoiceBioprintConfig(parsed.innovation.voiceBioprint);
         setSympatheticConfig(parsed.innovation.sympatheticResonance);
         setAdaptiveJourneyConfig(parsed.innovation.adaptiveBinauralJourney);
+        setBreathSyncConfig(parsed.innovation.breathSync);
         setHarmonicFieldConfig(parsed.innovation.harmonicField);
         if (parsed.innovation.sympatheticResonance.lastDominantFrequencies.length > 0) {
           setRoomResponseFrequencies(parsed.innovation.sympatheticResonance.lastDominantFrequencies);
@@ -1109,6 +1151,177 @@ export default function FrequencyCreator() {
     adaptiveJourneyConfig.micAdaptationEnabled,
     isPlaying,
     journeyMicService
+  ]);
+
+  useEffect(() => {
+    if (!isPlaying || !breathSyncConfig.enabled) {
+      breathSyncStartAtRef.current = null;
+      breathSampleGateRef.current = 0;
+      breathLastConfidenceRef.current = 0;
+      breathLastBpmRef.current = null;
+      setIsBreathMonitoring(false);
+      setBreathRuntime(null);
+      generator.applyBreathControl({
+        phase: 'inhale',
+        phaseProgress: 0,
+        coherenceScore: 0,
+        gainScale: 1
+      });
+      void breathMicService.stop();
+      return;
+    }
+
+    if (!breathSyncStartAtRef.current) {
+      breathSyncStartAtRef.current = performance.now();
+    }
+
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const tick = () => {
+      if (cancelled || !breathSyncStartAtRef.current) {
+        return;
+      }
+
+      const elapsedSeconds = Math.max(0, (performance.now() - breathSyncStartAtRef.current) / 1000);
+      const liveBreathBpm =
+        breathSyncConfig.mode === 'microphone'
+          ? breathLastBpmRef.current ?? breathSyncConfig.lastBreathBpm ?? breathSyncConfig.targetBpm
+          : breathSyncConfig.targetBpm;
+      const confidence =
+        breathSyncConfig.mode === 'microphone' ? Math.max(0.1, breathLastConfidenceRef.current) : 1;
+      const frame = buildBreathSyncRuntimeFrame({
+        elapsedSeconds,
+        breathBpm: liveBreathBpm,
+        targetBpm: breathSyncConfig.targetBpm,
+        inhaleRatio: breathSyncConfig.inhaleRatio,
+        confidence,
+        sensitivity: breathSyncConfig.sensitivity
+      });
+
+      setBreathRuntime(frame);
+      generator.applyBreathControl({
+        phase: frame.phase,
+        phaseProgress: frame.phaseProgress,
+        coherenceScore: frame.coherenceScore,
+        gainScale: frame.gainScale,
+        rhythmBpm: rhythmConfig.enabled ? rhythmConfig.bpm * frame.tempoScale : undefined
+      });
+
+      const now = performance.now();
+      if (now >= breathSampleGateRef.current) {
+        breathSampleGateRef.current = now + 3400;
+        const sample = createBreathSyncSamplePoint({
+          source: breathSyncConfig.mode,
+          frame,
+          confidence
+        });
+        setBreathSamples((prev) => [sample, ...prev].slice(0, 160));
+      }
+    };
+
+    tick();
+    intervalId = setInterval(tick, 420);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [
+    breathMicService,
+    breathSyncConfig.enabled,
+    breathSyncConfig.inhaleRatio,
+    breathSyncConfig.lastBreathBpm,
+    breathSyncConfig.mode,
+    breathSyncConfig.sensitivity,
+    breathSyncConfig.targetBpm,
+    generator,
+    isPlaying,
+    rhythmConfig.bpm,
+    rhythmConfig.enabled
+  ]);
+
+  useEffect(() => {
+    if (!isPlaying || !breathSyncConfig.enabled || breathSyncConfig.mode !== 'microphone') {
+      setIsBreathMonitoring(false);
+      breathLastConfidenceRef.current = 0;
+      void breathMicService.stop();
+      return;
+    }
+
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const sampleBreath = async () => {
+      setIsBreathMonitoring(true);
+      try {
+        const pattern = await breathMicService.captureAmplitudePattern({
+          durationMs: 7000,
+          sampleIntervalMs: 90,
+          fftSize: 1024
+        });
+
+        if (cancelled) {
+          return;
+        }
+
+        const confidenceThreshold = clamp(0.12, 0.54 - breathSyncConfig.sensitivity * 0.34, 0.5);
+        if (
+          typeof pattern.estimatedBreathBpm === 'number' &&
+          Number.isFinite(pattern.estimatedBreathBpm) &&
+          pattern.confidence >= confidenceThreshold
+        ) {
+          breathLastBpmRef.current = pattern.estimatedBreathBpm;
+          breathLastConfidenceRef.current = pattern.confidence;
+          setBreathSyncConfig((prev) => ({
+            ...prev,
+            lastBreathBpm: pattern.estimatedBreathBpm,
+            lastSampledAt: new Date().toISOString()
+          }));
+          setBreathSyncStatus(
+            `Mic breath detected ${pattern.estimatedBreathBpm.toFixed(1)} bpm (confidence ${Math.round(pattern.confidence * 100)}%).`
+          );
+        } else {
+          setBreathSyncStatus('Mic breath confidence is low. Move closer to the mic or use manual pacing.');
+        }
+      } catch (error) {
+        console.warn('Breath sync mic sample failed.', error);
+        if (error instanceof Error && error.name === 'NotAllowedError') {
+          setBreathSyncConfig((prev) => ({
+            ...prev,
+            mode: 'manual'
+          }));
+          setBreathSyncStatus('Microphone denied. Switched to manual breathing pace.');
+        } else {
+          setBreathSyncStatus('Breath sampling failed. Try calibrating mic or switch to manual mode.');
+        }
+      } finally {
+        setIsBreathMonitoring(false);
+        await breathMicService.stop();
+      }
+    };
+
+    void sampleBreath();
+    intervalId = setInterval(() => {
+      void sampleBreath();
+    }, 22000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+      setIsBreathMonitoring(false);
+      void breathMicService.stop();
+    };
+  }, [
+    breathMicService,
+    breathSyncConfig.enabled,
+    breathSyncConfig.mode,
+    breathSyncConfig.sensitivity,
+    isPlaying
   ]);
 
   useEffect(() => {
@@ -1585,6 +1798,50 @@ export default function FrequencyCreator() {
     }
   };
 
+  const handleCalibrateBreathSync = async () => {
+    if (isBreathCalibrating || isBreathMonitoring) {
+      return;
+    }
+
+    setIsBreathCalibrating(true);
+    setBreathSyncStatus('Calibrating breath mic baseline...');
+
+    try {
+      const snapshot = await breathMicService.captureSpectrum({
+        durationMs: 4200,
+        fftSize: 1024,
+        smoothingTimeConstant: 0.7
+      });
+      const noiseFloor = Number(snapshot.noiseFloorDb.toFixed(2));
+      setBreathSyncConfig((prev) => ({
+        ...prev,
+        calibrationNoiseFloorDb: noiseFloor,
+        lastSampledAt: new Date().toISOString()
+      }));
+      setBreathSyncStatus(`Breath mic calibrated. Noise floor ${noiseFloor} dB.`);
+    } catch (error) {
+      console.error(error);
+      const message =
+        error instanceof Error && error.name === 'NotAllowedError'
+          ? 'Microphone denied. Use manual pacing mode or allow mic access.'
+          : 'Breath calibration failed. Check mic permission and try again.';
+      setBreathSyncStatus(message);
+    } finally {
+      await breathMicService.stop();
+      setIsBreathCalibrating(false);
+    }
+  };
+
+  const handleBreathModeChange = (mode: BreathSyncMode) => {
+    setBreathSyncConfig((prev) => ({
+      ...prev,
+      mode
+    }));
+    setBreathSyncStatus(null);
+    breathLastConfidenceRef.current = 0;
+    breathLastBpmRef.current = mode === 'manual' ? breathSyncConfig.targetBpm : null;
+  };
+
   const handleAdaptiveIntentChange = (intent: JourneyIntent) => {
     const template = getAdaptiveJourneyTemplate(intent);
     const nextDuration = adaptiveJourneyConfig.durationMinutes || template.defaultDurationMinutes;
@@ -1655,6 +1912,18 @@ export default function FrequencyCreator() {
           lastLayerFrequencies: harmonicFieldBundle.layerFrequencies,
           lastInterferenceFrequencies: harmonicFieldBundle.interferenceFrequencies
         }));
+      }
+      if (breathSyncConfig.enabled) {
+        breathSyncStartAtRef.current = performance.now();
+        breathSampleGateRef.current = 0;
+        breathLastBpmRef.current = breathSyncConfig.mode === 'manual' ? breathSyncConfig.targetBpm : null;
+        breathLastConfidenceRef.current = breathSyncConfig.mode === 'manual' ? 1 : 0;
+        setBreathSamples([]);
+        setBreathSyncStatus(
+          breathSyncConfig.mode === 'microphone'
+            ? 'Breath sync listening to microphone...'
+            : 'Breath sync running in manual pacing mode.'
+        );
       }
       generator.setMasterVolume(volume);
       generator.setRhythmPattern(rhythmConfig);
@@ -1989,6 +2258,19 @@ export default function FrequencyCreator() {
             currentBeatHz: journeyRuntime?.beatHz ?? adaptiveJourneyConfig.currentBeatHz,
             steps: adaptiveJourneyConfig.steps.map((entry) => ({ ...entry }))
           },
+          breathSync: {
+            enabled: breathSyncConfig.enabled,
+            mode: breathSyncConfig.mode,
+            targetBpm: breathSyncConfig.targetBpm,
+            inhaleRatio: breathSyncConfig.inhaleRatio,
+            sensitivity: breathSyncConfig.sensitivity,
+            calibrationNoiseFloorDb: breathSyncConfig.calibrationNoiseFloorDb,
+            lastBreathBpm: breathRuntime?.breathBpm ?? breathSyncConfig.lastBreathBpm,
+            coherenceScore: breathRuntime?.coherenceScore ?? breathSyncConfig.coherenceScore,
+            phase: breathRuntime?.phase ?? breathSyncConfig.phase,
+            phaseProgress: breathRuntime?.phaseProgress ?? breathSyncConfig.phaseProgress,
+            lastSampledAt: breathSamples[0]?.capturedAt ?? breathSyncConfig.lastSampledAt
+          },
           harmonicField: {
             enabled: harmonicFieldConfig.enabled,
             presetId: harmonicFieldConfig.presetId,
@@ -2005,11 +2287,13 @@ export default function FrequencyCreator() {
           voiceBioprintConfig.enabled ? 'voice_bioprint' : null,
           sympatheticConfig.enabled ? 'sympathetic_resonance' : null,
           adaptiveJourneyConfig.enabled ? 'adaptive_binaural_journey' : null,
+          breathSyncConfig.enabled ? 'breath_sync_protocol' : null,
           harmonicFieldConfig.enabled ? 'solfeggio_harmonic_field' : null
         ].filter((value): value is string => Boolean(value)),
         scientific_disclaimer_ack:
           voiceBioprintConfig.disclaimerAccepted ||
           Boolean(sympatheticConfig.enabled) ||
+          Boolean(breathSyncConfig.enabled) ||
           Boolean(harmonicFieldConfig.enabled),
         voice_profile_id: voiceProfileId,
         visualization_type: visualizationType,
@@ -2025,6 +2309,7 @@ export default function FrequencyCreator() {
           voiceBioprintConfig.enabled ? 'voice-bioprint' : null,
           sympatheticConfig.enabled ? `room-${sympatheticConfig.mode}` : null,
           adaptiveJourneyConfig.enabled ? `journey-${adaptiveJourneyConfig.intent}` : null,
+          breathSyncConfig.enabled ? 'breath-sync' : null,
           harmonicFieldConfig.enabled ? 'solfeggio-field' : null,
           harmonicFieldConfig.enabled ? `field-${harmonicFieldConfig.presetId}` : null
         ].filter((tag): tag is string => Boolean(tag) && tag !== 'none')
@@ -2103,6 +2388,37 @@ export default function FrequencyCreator() {
 
           if (journeyInsertError) {
             console.warn('Journey session persistence failed.', journeyInsertError);
+          }
+        }
+
+        if (breathSyncConfig.enabled) {
+          const summary = summarizeBreathSyncSession(breathSamples);
+          const { error: breathInsertError } = await supabase.from('breath_sessions').insert({
+            user_id: activeUserId,
+            composition_id: insertResult.data.id,
+            mode: breathSyncConfig.mode,
+            target_bpm: breathSyncConfig.targetBpm,
+            average_breath_bpm:
+              summary.averageBreathBpm > 0
+                ? summary.averageBreathBpm
+                : breathRuntime?.breathBpm ?? breathSyncConfig.lastBreathBpm,
+            coherence_score:
+              summary.coherenceScore > 0
+                ? summary.coherenceScore
+                : breathRuntime?.coherenceScore ?? breathSyncConfig.coherenceScore,
+            peak_coherence_score:
+              summary.peakCoherenceScore > 0
+                ? summary.peakCoherenceScore
+                : breathRuntime?.coherenceScore ?? breathSyncConfig.coherenceScore,
+            time_in_coherence_pct: summary.timeInCoherencePct,
+            inhale_ratio: breathSyncConfig.inhaleRatio,
+            sensitivity: breathSyncConfig.sensitivity,
+            calibration_noise_floor_db: breathSyncConfig.calibrationNoiseFloorDb,
+            sample_count: summary.sampleCount
+          });
+
+          if (breathInsertError) {
+            console.warn('Breath sync persistence failed.', breathInsertError);
           }
         }
 
@@ -3217,6 +3533,164 @@ export default function FrequencyCreator() {
                 <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
                   <div className="flex items-center gap-2">
                     <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">
+                      Breath-Sync protocol
+                    </h4>
+                    <HelpPopover
+                      align="left"
+                      label="Breath sync help"
+                      text="Guides breathing toward coherence around 5-6 breaths/min. Mic mode infers cadence; manual mode runs without permissions."
+                    />
+                  </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Enable breath sync</span>
+                      <input
+                        type="checkbox"
+                        checked={breathSyncConfig.enabled}
+                        onChange={(event) =>
+                          setBreathSyncConfig((prev) => ({
+                            ...prev,
+                            enabled: event.target.checked
+                          }))
+                        }
+                        className="h-4 w-4"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Mode</span>
+                      <select
+                        value={breathSyncConfig.mode}
+                        onChange={(event) => handleBreathModeChange(event.target.value as BreathSyncMode)}
+                        className="rounded-full border border-ink/10 bg-white px-3 py-2"
+                      >
+                        <option value="manual">manual pacing</option>
+                        <option value="microphone">microphone</option>
+                      </select>
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Target BPM</span>
+                      <input
+                        type="number"
+                        min={3}
+                        max={9}
+                        step={0.1}
+                        value={breathSyncConfig.targetBpm}
+                        onChange={(event) =>
+                          setBreathSyncConfig((prev) => ({
+                            ...prev,
+                            targetBpm: clamp(3, Number(event.target.value), 9)
+                          }))
+                        }
+                        className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Inhale ratio</span>
+                      <input
+                        type="range"
+                        min={0.25}
+                        max={0.75}
+                        step={0.01}
+                        value={breathSyncConfig.inhaleRatio}
+                        onChange={(event) =>
+                          setBreathSyncConfig((prev) => ({
+                            ...prev,
+                            inhaleRatio: Number(event.target.value)
+                          }))
+                        }
+                        className="w-36"
+                      />
+                      <span className="w-10 text-right text-xs">{Math.round(breathSyncConfig.inhaleRatio * 100)}%</span>
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm sm:col-span-2">
+                      <span>Sensitivity</span>
+                      <input
+                        type="range"
+                        min={0.1}
+                        max={1}
+                        step={0.05}
+                        value={breathSyncConfig.sensitivity}
+                        onChange={(event) =>
+                          setBreathSyncConfig((prev) => ({
+                            ...prev,
+                            sensitivity: Number(event.target.value)
+                          }))
+                        }
+                        className="w-40"
+                      />
+                      <span className="w-10 text-right text-xs">{Math.round(breathSyncConfig.sensitivity * 100)}%</span>
+                    </label>
+                  </div>
+                  {breathSyncConfig.mode === 'microphone' ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleCalibrateBreathSync}
+                        disabled={isBreathCalibrating || isBreathMonitoring}
+                      >
+                        {isBreathCalibrating ? 'Calibrating...' : 'Calibrate mic'}
+                      </Button>
+                      <p className="text-xs text-ink/55">
+                        {typeof breathSyncConfig.calibrationNoiseFloorDb === 'number'
+                          ? `Noise floor ${breathSyncConfig.calibrationNoiseFloorDb.toFixed(1)} dB`
+                          : 'Not calibrated yet'}
+                      </p>
+                    </div>
+                  ) : null}
+                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                    <div className="rounded-2xl border border-ink/10 bg-white px-3 py-2 text-xs text-ink/65">
+                      <p className="uppercase tracking-[0.2em] text-ink/55">Phase</p>
+                      <p className="mt-1">
+                        {breathRuntime
+                          ? `${breathRuntime.phase.toUpperCase()} ${Math.round(breathRuntime.phaseProgress * 100)}%`
+                          : 'Idle'}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-ink/10 bg-white px-3 py-2 text-xs text-ink/65">
+                      <p className="uppercase tracking-[0.2em] text-ink/55">Breath rate</p>
+                      <p className="mt-1">
+                        {breathRuntime ? `${breathRuntime.breathBpm.toFixed(1)} bpm` : 'n/a'} · target{' '}
+                        {breathSyncConfig.targetBpm.toFixed(1)}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-ink/10 bg-white px-3 py-2 text-xs text-ink/65">
+                      <p className="uppercase tracking-[0.2em] text-ink/55">Coherence</p>
+                      <p className="mt-1">
+                        {breathRuntime ? `${Math.round(breathRuntime.coherenceScore * 100)}%` : 'n/a'} ·{' '}
+                        {isBreathMonitoring ? 'mic sampling' : breathSyncConfig.mode === 'manual' ? 'manual mode' : 'idle'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-3 rounded-2xl border border-ink/10 bg-white px-3 py-3">
+                    <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-ink/55">
+                      <span>Breath guide</span>
+                      <span>{breathRuntime ? breathRuntime.phase.toUpperCase() : 'IDLE'}</span>
+                    </div>
+                    <div className="mt-2 h-3 rounded-full bg-ink/10">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          breathRuntime?.phase === 'inhale' ? 'bg-emerald-400/80' : 'bg-sky-400/80'
+                        }`}
+                        style={{ width: `${Math.round((breathRuntime?.phaseProgress ?? 0) * 100)}%` }}
+                      />
+                    </div>
+                    <p className="mt-2 text-xs text-ink/55">
+                      {breathRuntime
+                        ? `Guide: ${breathRuntime.phase === 'inhale' ? 'inhale and expand' : 'exhale and soften'}`
+                        : 'Start playback to activate breath pacing.'}
+                    </p>
+                  </div>
+                  {breathSyncStatus ? (
+                    <p className="mt-2 rounded-2xl border border-ink/10 bg-white/80 px-3 py-2 text-xs text-ink/65">
+                      {breathSyncStatus}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">
                       Solfeggio harmonic field
                     </h4>
                     <HelpPopover
@@ -3383,6 +3857,17 @@ export default function FrequencyCreator() {
               isActive={isPlaying && liveVisualizationEnabled}
               showSessionInfo={showSessionInfoOverlay}
               sessionInfo={sessionOverlayInfo}
+              breathGuide={
+                breathSyncConfig.enabled && isPlaying && breathRuntime
+                  ? {
+                      phase: breathRuntime.phase,
+                      phaseProgress: breathRuntime.phaseProgress,
+                      coherenceScore: breathRuntime.coherenceScore,
+                      breathBpm: breathRuntime.breathBpm,
+                      targetBpm: breathRuntime.targetBpm
+                    }
+                  : null
+              }
               onCanvasReady={setVisualCanvas}
             />
           )}

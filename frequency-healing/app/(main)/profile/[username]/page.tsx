@@ -13,6 +13,7 @@ type Profile = Database['public']['Tables']['profiles']['Row'];
 type Composition = Database['public']['Tables']['compositions']['Row'];
 type Collection = Database['public']['Tables']['collections']['Row'];
 type VoiceProfileRow = Database['public']['Tables']['voice_profiles']['Row'];
+type BreathSessionRow = Database['public']['Tables']['breath_sessions']['Row'];
 type HarmonicFieldSessionRow = Database['public']['Tables']['harmonic_field_sessions']['Row'];
 
 interface VoiceHistoryEntry {
@@ -42,6 +43,20 @@ interface HarmonicFieldHistoryEntry {
   motionSpeed: number;
   layerFrequencies: number[];
   interferenceFrequencies: number[];
+}
+
+interface BreathSessionHistoryEntry {
+  id: string;
+  createdAt: string;
+  mode: string;
+  targetBpm: number;
+  averageBreathBpm: number;
+  coherenceScore: number;
+  peakCoherenceScore: number;
+  timeInCoherencePct: number;
+  inhaleRatio: number;
+  sensitivity: number;
+  sampleCount: number;
 }
 
 function clamp(min: number, value: number, max: number) {
@@ -156,6 +171,22 @@ function parseHarmonicFieldHistoryEntry(row: HarmonicFieldSessionRow): HarmonicF
   };
 }
 
+function parseBreathSessionHistoryEntry(row: BreathSessionRow): BreathSessionHistoryEntry {
+  return {
+    id: row.id,
+    createdAt: row.created_at ?? new Date().toISOString(),
+    mode: row.mode || 'manual',
+    targetBpm: clamp(3, asNumber(row.target_bpm, 5.5), 9),
+    averageBreathBpm: clamp(0, asNumber(row.average_breath_bpm, 0), 30),
+    coherenceScore: clamp(0, asNumber(row.coherence_score, 0), 1),
+    peakCoherenceScore: clamp(0, asNumber(row.peak_coherence_score, 0), 1),
+    timeInCoherencePct: clamp(0, asNumber(row.time_in_coherence_pct, 0), 1),
+    inhaleRatio: clamp(0.2, asNumber(row.inhale_ratio, 0.45), 0.8),
+    sensitivity: clamp(0.1, asNumber(row.sensitivity, 0.7), 1),
+    sampleCount: Math.max(0, Math.round(asNumber(row.sample_count, 0)))
+  };
+}
+
 export default function ProfilePage() {
   const { username } = useParams<{ username: string }>();
   const supabase = createSupabaseClient();
@@ -180,6 +211,8 @@ export default function ProfilePage() {
   const [voiceHistoryStatus, setVoiceHistoryStatus] = useState<string | null>(null);
   const [compareCurrentId, setCompareCurrentId] = useState('');
   const [compareBaselineId, setCompareBaselineId] = useState('');
+  const [breathHistory, setBreathHistory] = useState<BreathSessionHistoryEntry[]>([]);
+  const [breathHistoryStatus, setBreathHistoryStatus] = useState<string | null>(null);
   const [harmonicHistory, setHarmonicHistory] = useState<HarmonicFieldHistoryEntry[]>([]);
   const [harmonicHistoryStatus, setHarmonicHistoryStatus] = useState<string | null>(null);
 
@@ -376,6 +409,45 @@ export default function ProfilePage() {
     };
   }, [isOwner, profile, supabase]);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadBreathHistory = async () => {
+      if (!profile || !isOwner) {
+        setBreathHistory([]);
+        setBreathHistoryStatus(null);
+        return;
+      }
+
+      setBreathHistoryStatus(null);
+
+      const { data, error } = await supabase
+        .from('breath_sessions')
+        .select('*')
+        .eq('user_id', profile.id)
+        .order('created_at', { ascending: false })
+        .limit(24);
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (error) {
+        setBreathHistory([]);
+        setBreathHistoryStatus(error.message);
+        return;
+      }
+
+      setBreathHistory((data ?? []).map(parseBreathSessionHistoryEntry));
+    };
+
+    loadBreathHistory();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOwner, profile, supabase]);
+
   const latestVoiceProfile = voiceHistory[0] ?? null;
   const previousVoiceProfile = voiceHistory[1] ?? null;
   const latestConfidenceDelta =
@@ -413,6 +485,20 @@ export default function ProfilePage() {
   const compareHighDelta =
     canCompare && compareCurrent && compareBaseline
       ? compareCurrent.bandEnergy.high - compareBaseline.bandEnergy.high
+      : null;
+  const latestBreathSession = breathHistory[0] ?? null;
+  const previousBreathSession = breathHistory[1] ?? null;
+  const breathCoherenceDelta =
+    latestBreathSession && previousBreathSession
+      ? latestBreathSession.coherenceScore - previousBreathSession.coherenceScore
+      : null;
+  const breathAverageCoherence =
+    breathHistory.length > 0
+      ? breathHistory.reduce((sum, session) => sum + session.coherenceScore, 0) / breathHistory.length
+      : null;
+  const breathAverageRate =
+    breathHistory.length > 0
+      ? breathHistory.reduce((sum, session) => sum + session.averageBreathBpm, 0) / breathHistory.length
       : null;
   const latestHarmonicSession = harmonicHistory[0] ?? null;
   const previousHarmonicSession = harmonicHistory[1] ?? null;
@@ -776,6 +862,94 @@ export default function ProfilePage() {
                     </p>
                     <p className="mt-1 text-xs text-ink/50">
                       Capture {Math.round(entry.captureDurationMs / 1000)}s · Analysis {entry.analysisDurationMs}ms
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </Card>
+      ) : null}
+
+      {isOwner ? (
+        <Card className="glass-panel">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Breath-Sync History</h2>
+              <p className="text-sm text-ink/60">
+                Private coherence sessions captured from manual or microphone pacing mode.
+              </p>
+            </div>
+            <span className="text-xs uppercase tracking-[0.2em] text-ink/50">
+              {breathHistory.length} sessions
+            </span>
+          </div>
+
+          {breathHistoryStatus ? (
+            <p className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-600">
+              {breathHistoryStatus}
+            </p>
+          ) : null}
+
+          {breathHistory.length === 0 ? (
+            <div className="mt-4 rounded-2xl border border-ink/10 bg-white/70 p-4 text-sm text-ink/60">
+              <p>No breath sessions yet. Enable Breath-Sync in Creator and save a session.</p>
+              <div className="mt-3">
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/create">Open Creator</Link>
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="mt-4 grid gap-3 md:grid-cols-4">
+                <div className="rounded-2xl border border-ink/10 bg-white/80 p-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Latest coherence</p>
+                  <p className="mt-1 text-sm font-semibold text-ink/85">
+                    {latestBreathSession ? formatPercent(latestBreathSession.coherenceScore) : 'N/A'}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-ink/10 bg-white/80 p-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Coherence trend</p>
+                  <p className="mt-1 text-sm font-semibold text-ink/85">
+                    {breathCoherenceDelta !== null ? formatSignedPercent(breathCoherenceDelta) : 'N/A'}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-ink/10 bg-white/80 p-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Avg breath rate</p>
+                  <p className="mt-1 text-sm font-semibold text-ink/85">
+                    {breathAverageRate !== null ? `${breathAverageRate.toFixed(1)} bpm` : 'N/A'}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-ink/10 bg-white/80 p-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Avg coherence</p>
+                  <p className="mt-1 text-sm font-semibold text-ink/85">
+                    {breathAverageCoherence !== null ? formatPercent(breathAverageCoherence) : 'N/A'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3">
+                {breathHistory.map((entry, index) => (
+                  <div key={entry.id} className="rounded-2xl border border-ink/10 bg-white/80 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-ink/85">
+                        Session #{breathHistory.length - index} · {formatDateTime(entry.createdAt)}
+                      </p>
+                      <span className="text-xs text-ink/60">
+                        {entry.mode} · coherence {formatPercent(entry.coherenceScore)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-ink/60">
+                      Rate {entry.averageBreathBpm.toFixed(1)} bpm (target {entry.targetBpm.toFixed(1)} bpm) · peak{' '}
+                      {formatPercent(entry.peakCoherenceScore)}
+                    </p>
+                    <p className="mt-1 text-xs text-ink/55">
+                      Time in coherence {formatPercent(entry.timeInCoherencePct)} · inhale ratio{' '}
+                      {Math.round(entry.inhaleRatio * 100)}%
+                    </p>
+                    <p className="mt-1 text-xs text-ink/50">
+                      Sensitivity {Math.round(entry.sensitivity * 100)}% · {entry.sampleCount} samples
                     </p>
                   </div>
                 ))}

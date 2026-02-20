@@ -13,6 +13,7 @@ type Profile = Database['public']['Tables']['profiles']['Row'];
 type Composition = Database['public']['Tables']['compositions']['Row'];
 type Collection = Database['public']['Tables']['collections']['Row'];
 type VoiceProfileRow = Database['public']['Tables']['voice_profiles']['Row'];
+type HarmonicFieldSessionRow = Database['public']['Tables']['harmonic_field_sessions']['Row'];
 
 interface VoiceHistoryEntry {
   id: string;
@@ -29,6 +30,18 @@ interface VoiceHistoryEntry {
     upperMid: number;
     high: number;
   };
+}
+
+interface HarmonicFieldHistoryEntry {
+  id: string;
+  createdAt: string;
+  presetId: string;
+  intensity: number;
+  includeInterference: boolean;
+  spatialMotionEnabled: boolean;
+  motionSpeed: number;
+  layerFrequencies: number[];
+  interferenceFrequencies: number[];
 }
 
 function clamp(min: number, value: number, max: number) {
@@ -129,6 +142,20 @@ function parseVoiceHistoryEntry(row: VoiceProfileRow): VoiceHistoryEntry {
   };
 }
 
+function parseHarmonicFieldHistoryEntry(row: HarmonicFieldSessionRow): HarmonicFieldHistoryEntry {
+  return {
+    id: row.id,
+    createdAt: row.created_at ?? new Date().toISOString(),
+    presetId: row.preset_id || 'unknown',
+    intensity: clamp(0.2, asNumber(row.intensity, 0.72), 1),
+    includeInterference: Boolean(row.include_interference),
+    spatialMotionEnabled: Boolean(row.spatial_motion_enabled),
+    motionSpeed: clamp(0.1, asNumber(row.motion_speed, 0.5), 1),
+    layerFrequencies: toNumberArray(row.layer_frequencies, 32),
+    interferenceFrequencies: toNumberArray(row.interference_frequencies, 24)
+  };
+}
+
 export default function ProfilePage() {
   const { username } = useParams<{ username: string }>();
   const supabase = createSupabaseClient();
@@ -153,6 +180,8 @@ export default function ProfilePage() {
   const [voiceHistoryStatus, setVoiceHistoryStatus] = useState<string | null>(null);
   const [compareCurrentId, setCompareCurrentId] = useState('');
   const [compareBaselineId, setCompareBaselineId] = useState('');
+  const [harmonicHistory, setHarmonicHistory] = useState<HarmonicFieldHistoryEntry[]>([]);
+  const [harmonicHistoryStatus, setHarmonicHistoryStatus] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -308,6 +337,45 @@ export default function ProfilePage() {
     };
   }, [isOwner, profile, supabase]);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadHarmonicHistory = async () => {
+      if (!profile || !isOwner) {
+        setHarmonicHistory([]);
+        setHarmonicHistoryStatus(null);
+        return;
+      }
+
+      setHarmonicHistoryStatus(null);
+
+      const { data, error } = await supabase
+        .from('harmonic_field_sessions')
+        .select('*')
+        .eq('user_id', profile.id)
+        .order('created_at', { ascending: false })
+        .limit(24);
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (error) {
+        setHarmonicHistory([]);
+        setHarmonicHistoryStatus(error.message);
+        return;
+      }
+
+      setHarmonicHistory((data ?? []).map(parseHarmonicFieldHistoryEntry));
+    };
+
+    loadHarmonicHistory();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOwner, profile, supabase]);
+
   const latestVoiceProfile = voiceHistory[0] ?? null;
   const previousVoiceProfile = voiceHistory[1] ?? null;
   const latestConfidenceDelta =
@@ -346,6 +414,30 @@ export default function ProfilePage() {
     canCompare && compareCurrent && compareBaseline
       ? compareCurrent.bandEnergy.high - compareBaseline.bandEnergy.high
       : null;
+  const latestHarmonicSession = harmonicHistory[0] ?? null;
+  const previousHarmonicSession = harmonicHistory[1] ?? null;
+  const harmonicIntensityDelta =
+    latestHarmonicSession && previousHarmonicSession
+      ? latestHarmonicSession.intensity - previousHarmonicSession.intensity
+      : null;
+  const harmonicAverageIntensity =
+    harmonicHistory.length > 0
+      ? harmonicHistory.reduce((sum, session) => sum + session.intensity, 0) / harmonicHistory.length
+      : null;
+  const harmonicPresetCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    harmonicHistory.forEach((session) => {
+      counts[session.presetId] = (counts[session.presetId] ?? 0) + 1;
+    });
+    return counts;
+  }, [harmonicHistory]);
+  const harmonicTopPreset = useMemo(() => {
+    const entries = Object.entries(harmonicPresetCounts);
+    if (entries.length === 0) {
+      return null;
+    }
+    return entries.sort((left, right) => right[1] - left[1])[0][0];
+  }, [harmonicPresetCounts]);
 
   const handleCreateCollection = async () => {
     if (!profile || !viewerId || !isOwner) {
@@ -684,6 +776,95 @@ export default function ProfilePage() {
                     </p>
                     <p className="mt-1 text-xs text-ink/50">
                       Capture {Math.round(entry.captureDurationMs / 1000)}s · Analysis {entry.analysisDurationMs}ms
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </Card>
+      ) : null}
+
+      {isOwner ? (
+        <Card className="glass-panel">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Solfeggio Harmonic Field History</h2>
+              <p className="text-sm text-ink/60">
+                Private records of your harmonic field sessions, presets, and intensity trends.
+              </p>
+            </div>
+            <span className="text-xs uppercase tracking-[0.2em] text-ink/50">
+              {harmonicHistory.length} sessions
+            </span>
+          </div>
+
+          {harmonicHistoryStatus ? (
+            <p className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-600">
+              {harmonicHistoryStatus}
+            </p>
+          ) : null}
+
+          {harmonicHistory.length === 0 ? (
+            <div className="mt-4 rounded-2xl border border-ink/10 bg-white/70 p-4 text-sm text-ink/60">
+              <p>No harmonic field sessions yet. Enable Solfeggio Harmonic Field in Creator and save a session.</p>
+              <div className="mt-3">
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/create">Open Creator</Link>
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="mt-4 grid gap-3 md:grid-cols-4">
+                <div className="rounded-2xl border border-ink/10 bg-white/80 p-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Latest preset</p>
+                  <p className="mt-1 text-sm font-semibold text-ink/85">{latestHarmonicSession?.presetId ?? 'N/A'}</p>
+                </div>
+                <div className="rounded-2xl border border-ink/10 bg-white/80 p-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Avg intensity</p>
+                  <p className="mt-1 text-sm font-semibold text-ink/85">
+                    {harmonicAverageIntensity !== null ? formatPercent(harmonicAverageIntensity) : 'N/A'}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-ink/10 bg-white/80 p-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Intensity trend</p>
+                  <p className="mt-1 text-sm font-semibold text-ink/85">
+                    {harmonicIntensityDelta !== null ? formatSignedPercent(harmonicIntensityDelta) : 'N/A'}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-ink/10 bg-white/80 p-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Most used preset</p>
+                  <p className="mt-1 text-sm font-semibold text-ink/85">{harmonicTopPreset ?? 'N/A'}</p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3">
+                {harmonicHistory.map((entry, index) => (
+                  <div key={entry.id} className="rounded-2xl border border-ink/10 bg-white/80 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-ink/85">
+                        Session #{harmonicHistory.length - index} · {formatDateTime(entry.createdAt)}
+                      </p>
+                      <span className="text-xs text-ink/60">
+                        Intensity {formatPercent(entry.intensity)} · Motion {formatPercent(entry.motionSpeed)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-ink/60">
+                      Preset {entry.presetId} · Layers {formatHz(entry.layerFrequencies)}
+                    </p>
+                    <p className="mt-1 text-xs text-ink/55">
+                      Interference:{' '}
+                      {entry.interferenceFrequencies.length > 0
+                        ? entry.interferenceFrequencies
+                            .slice(0, 8)
+                            .map((frequency) => `${frequency.toFixed(1)}Hz`)
+                            .join(', ')
+                        : 'Off'}
+                    </p>
+                    <p className="mt-1 text-xs text-ink/50">
+                      {entry.includeInterference ? 'Interference on' : 'Interference off'} ·{' '}
+                      {entry.spatialMotionEnabled ? 'Spatial motion on' : 'Spatial motion off'}
                     </p>
                   </div>
                 ))}

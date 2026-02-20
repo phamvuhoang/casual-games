@@ -8,6 +8,45 @@ export const PRESET_FREQUENCIES = [
   { id: 'awakening', name: 'Awakening', hz: 963, color: '#457b9d', intention: 'Higher consciousness' }
 ];
 
+export const SOLFEGGIO_HARMONIC_PRESETS = [
+  {
+    id: 'chakra_ladder',
+    name: 'Chakra Ladder',
+    description: 'Full Solfeggio ascent from grounding to intuition.',
+    frequencies: [396, 417, 528, 639, 741, 852]
+  },
+  {
+    id: 'heart_bridge',
+    name: 'Heart Bridge',
+    description: 'Center-weighted field for emotional balance sessions.',
+    frequencies: [417, 528, 639]
+  },
+  {
+    id: 'release_reset',
+    name: 'Release + Reset',
+    description: 'Lower-stack release field with gentle upward lift.',
+    frequencies: [396, 417, 528]
+  },
+  {
+    id: 'clarity_focus',
+    name: 'Clarity Focus',
+    description: 'Upper harmonic blend tuned for clear, active listening.',
+    frequencies: [528, 639, 741, 852]
+  },
+  {
+    id: 'spiral_overtone',
+    name: 'Spiral Overtone',
+    description: 'Layered overtone stack with broader harmonic spread.',
+    frequencies: [396, 528, 639, 852, 963]
+  },
+  {
+    id: 'earth_sky',
+    name: 'Earth + Sky',
+    description: 'Contrast between low anchor and high overtone shimmer.',
+    frequencies: [396, 528, 741, 963]
+  }
+] as const;
+
 export const WAVEFORMS = ['sine', 'triangle', 'square', 'sawtooth'] as const;
 export const VISUALIZATION_TYPES = [
   'waveform',

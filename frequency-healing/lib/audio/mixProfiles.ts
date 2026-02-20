@@ -137,9 +137,11 @@ export function frequenciesForStorage(mixStyle: MixStyle, selectedFrequencies: n
     return Array.from(new Set(selectedFrequencies.map((frequency) => roundHz(normalizeFrequency(frequency)))));
   }
 
+  const voiceFrequencies = voices.map((voice) => roundHz(normalizeFrequency(voice.frequency)));
+
   if (mixStyle === 'manual') {
-    return selectedFrequencies.map((frequency) => roundHz(normalizeFrequency(frequency)));
+    return voiceFrequencies;
   }
 
-  return voices.map((voice) => roundHz(voice.frequency));
+  return voiceFrequencies;
 }

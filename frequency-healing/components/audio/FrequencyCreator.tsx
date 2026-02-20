@@ -30,6 +30,11 @@ import {
   type RoomScanResult
 } from '@/lib/audio/SympatheticResonanceEngine';
 import {
+  buildSolfeggioHarmonicField,
+  getSolfeggioHarmonicPreset,
+  getSolfeggioHarmonicPresets
+} from '@/lib/audio/SolfeggioHarmonicFieldEngine';
+import {
   analyzeVoiceBioprint,
   createFallbackVoiceBioprintProfile,
   type VoiceBioprintProfile
@@ -53,6 +58,7 @@ import {
   type AudioConfigShape,
   type AdaptiveBinauralJourneyConfig,
   type BinauralConfig,
+  type HarmonicFieldConfig,
   type ModulationConfig,
   type RhythmConfig,
   type SympatheticResonanceConfig,
@@ -247,6 +253,9 @@ export default function FrequencyCreator() {
   const [adaptiveJourneyConfig, setAdaptiveJourneyConfig] = useState<AdaptiveBinauralJourneyConfig>(
     defaultAudioConfig.innovation.adaptiveBinauralJourney
   );
+  const [harmonicFieldConfig, setHarmonicFieldConfig] = useState<HarmonicFieldConfig>(
+    defaultAudioConfig.innovation.harmonicField
+  );
   const [voiceProfile, setVoiceProfile] = useState<VoiceBioprintProfile | null>(null);
   const [voiceProfileId, setVoiceProfileId] = useState<string | null>(null);
   const [isCapturingVoice, setIsCapturingVoice] = useState(false);
@@ -291,6 +300,32 @@ export default function FrequencyCreator() {
   const journeyMicService = useMemo(() => new MicrophoneAnalysisService(), []);
   const supabase = useMemo(() => createSupabaseClient(), []);
   const { setAnalyser: setBackgroundAnalyser } = useBackgroundAudioBridge();
+  const harmonicPresets = useMemo(() => getSolfeggioHarmonicPresets(), []);
+  const activeHarmonicPreset = useMemo(
+    () => getSolfeggioHarmonicPreset(harmonicFieldConfig.presetId),
+    [harmonicFieldConfig.presetId]
+  );
+  const harmonicFieldBundle = useMemo(
+    () =>
+      buildSolfeggioHarmonicField({
+        presetId: harmonicFieldConfig.presetId,
+        intensity: harmonicFieldConfig.intensity,
+        includeInterference: harmonicFieldConfig.includeInterference,
+        spatialMotionEnabled: harmonicFieldConfig.spatialMotionEnabled,
+        motionSpeed: harmonicFieldConfig.motionSpeed,
+        waveform,
+        masterVolume: volume
+      }),
+    [
+      harmonicFieldConfig.includeInterference,
+      harmonicFieldConfig.intensity,
+      harmonicFieldConfig.motionSpeed,
+      harmonicFieldConfig.presetId,
+      harmonicFieldConfig.spatialMotionEnabled,
+      volume,
+      waveform
+    ]
+  );
 
   const audioConfig = useMemo<AudioConfigShape>(
     () => ({
@@ -319,6 +354,15 @@ export default function FrequencyCreator() {
           progress: journeyRuntime?.progress ?? adaptiveJourneyConfig.progress,
           currentState: journeyRuntime?.state ?? adaptiveJourneyConfig.currentState,
           currentBeatHz: journeyRuntime?.beatHz ?? adaptiveJourneyConfig.currentBeatHz
+        },
+        harmonicField: {
+          ...harmonicFieldConfig,
+          lastLayerFrequencies: harmonicFieldConfig.enabled
+            ? harmonicFieldBundle.layerFrequencies
+            : harmonicFieldConfig.lastLayerFrequencies,
+          lastInterferenceFrequencies: harmonicFieldConfig.enabled
+            ? harmonicFieldBundle.interferenceFrequencies
+            : harmonicFieldConfig.lastInterferenceFrequencies
         }
       }
     }),
@@ -332,6 +376,8 @@ export default function FrequencyCreator() {
       sympatheticConfig,
       roomScanResult,
       adaptiveJourneyConfig,
+      harmonicFieldConfig,
+      harmonicFieldBundle,
       journeyRuntime,
       voiceBioprintConfig,
       voiceProfileId
@@ -359,6 +405,11 @@ export default function FrequencyCreator() {
         adaptiveBinauralJourney: {
           ...audioConfig.innovation.adaptiveBinauralJourney,
           steps: audioConfig.innovation.adaptiveBinauralJourney.steps.map((entry) => ({ ...entry }))
+        },
+        harmonicField: {
+          ...audioConfig.innovation.harmonicField,
+          lastLayerFrequencies: [...audioConfig.innovation.harmonicField.lastLayerFrequencies],
+          lastInterferenceFrequencies: [...audioConfig.innovation.harmonicField.lastInterferenceFrequencies]
         }
       }
     }),
@@ -432,6 +483,9 @@ export default function FrequencyCreator() {
     if (adaptiveJourneyConfig.enabled) {
       activeModules.push('Adaptive Journey');
     }
+    if (harmonicFieldConfig.enabled) {
+      activeModules.push('Harmonic Field');
+    }
 
     if (activeModules.length === 0) {
       return 'All advanced modules are currently off.';
@@ -445,7 +499,8 @@ export default function FrequencyCreator() {
     sweepConfig.enabled,
     sympatheticConfig.enabled,
     sympatheticConfig.mode,
-    adaptiveJourneyConfig.enabled
+    adaptiveJourneyConfig.enabled,
+    harmonicFieldConfig.enabled
   ]);
 
   const sessionOverlayInfo = useMemo<VisualizationSessionOverlayData>(
@@ -521,9 +576,21 @@ export default function FrequencyCreator() {
     ]
   );
 
+  const harmonicFieldVoices = useMemo(() => harmonicFieldBundle.voices, [harmonicFieldBundle]);
+
   const mixedVoices = useMemo(
-    () => [...baseMixedVoices, ...(sympatheticConfig.enabled ? roomResponseVoices : [])],
-    [baseMixedVoices, roomResponseVoices, sympatheticConfig.enabled]
+    () => [
+      ...baseMixedVoices,
+      ...(sympatheticConfig.enabled ? roomResponseVoices : []),
+      ...(harmonicFieldConfig.enabled ? harmonicFieldVoices : [])
+    ],
+    [
+      baseMixedVoices,
+      roomResponseVoices,
+      sympatheticConfig.enabled,
+      harmonicFieldConfig.enabled,
+      harmonicFieldVoices
+    ]
   );
 
   useEffect(() => {
@@ -623,6 +690,7 @@ export default function FrequencyCreator() {
         setVoiceBioprintConfig(parsed.innovation.voiceBioprint);
         setSympatheticConfig(parsed.innovation.sympatheticResonance);
         setAdaptiveJourneyConfig(parsed.innovation.adaptiveBinauralJourney);
+        setHarmonicFieldConfig(parsed.innovation.harmonicField);
         if (parsed.innovation.sympatheticResonance.lastDominantFrequencies.length > 0) {
           setRoomResponseFrequencies(parsed.innovation.sympatheticResonance.lastDominantFrequencies);
         }
@@ -791,7 +859,7 @@ export default function FrequencyCreator() {
     if (isPlaying && mixedVoices.length === 0) {
       generator.stop();
       setIsPlaying(false);
-      setStatus('Select at least one frequency.');
+      setStatus('Select at least one frequency or enable a harmonic field.');
     }
   }, [generator, isPlaying, mixedVoices.length]);
 
@@ -1562,7 +1630,7 @@ export default function FrequencyCreator() {
     }
 
     if (mixedVoices.length === 0) {
-      setStatus('Select at least one frequency before playback.');
+      setStatus('Select at least one frequency or enable a harmonic field before playback.');
       return;
     }
 
@@ -1578,6 +1646,15 @@ export default function FrequencyCreator() {
       });
       if (adaptiveJourneyConfig.enabled && !binauralConfig.enabled) {
         setBinauralConfig((prev) => ({ ...prev, enabled: true }));
+      }
+      if (harmonicFieldConfig.enabled) {
+        const playedAt = new Date().toISOString();
+        setHarmonicFieldConfig((prev) => ({
+          ...prev,
+          lastFieldAt: playedAt,
+          lastLayerFrequencies: harmonicFieldBundle.layerFrequencies,
+          lastInterferenceFrequencies: harmonicFieldBundle.interferenceFrequencies
+        }));
       }
       generator.setMasterVolume(volume);
       generator.setRhythmPattern(rhythmConfig);
@@ -1702,7 +1779,7 @@ export default function FrequencyCreator() {
     }
 
     if (mixedVoices.length === 0) {
-      setStatus('Select at least one frequency.');
+      setStatus('Select at least one frequency or enable a harmonic field.');
       return;
     }
 
@@ -1911,15 +1988,29 @@ export default function FrequencyCreator() {
             currentState: journeyRuntime?.state ?? adaptiveJourneyConfig.currentState,
             currentBeatHz: journeyRuntime?.beatHz ?? adaptiveJourneyConfig.currentBeatHz,
             steps: adaptiveJourneyConfig.steps.map((entry) => ({ ...entry }))
+          },
+          harmonicField: {
+            enabled: harmonicFieldConfig.enabled,
+            presetId: harmonicFieldConfig.presetId,
+            intensity: harmonicFieldConfig.intensity,
+            includeInterference: harmonicFieldConfig.includeInterference,
+            spatialMotionEnabled: harmonicFieldConfig.spatialMotionEnabled,
+            motionSpeed: harmonicFieldConfig.motionSpeed,
+            lastFieldAt: harmonicFieldConfig.lastFieldAt,
+            layerFrequencies: harmonicFieldBundle.layerFrequencies,
+            interferenceFrequencies: harmonicFieldBundle.interferenceFrequencies
           }
         },
         innovation_flags: [
           voiceBioprintConfig.enabled ? 'voice_bioprint' : null,
           sympatheticConfig.enabled ? 'sympathetic_resonance' : null,
-          adaptiveJourneyConfig.enabled ? 'adaptive_binaural_journey' : null
+          adaptiveJourneyConfig.enabled ? 'adaptive_binaural_journey' : null,
+          harmonicFieldConfig.enabled ? 'solfeggio_harmonic_field' : null
         ].filter((value): value is string => Boolean(value)),
         scientific_disclaimer_ack:
-          voiceBioprintConfig.disclaimerAccepted || Boolean(sympatheticConfig.enabled),
+          voiceBioprintConfig.disclaimerAccepted ||
+          Boolean(sympatheticConfig.enabled) ||
+          Boolean(harmonicFieldConfig.enabled),
         voice_profile_id: voiceProfileId,
         visualization_type: visualizationType,
         visualization_config: { palette: 'ember-lagoon' },
@@ -1933,7 +2024,9 @@ export default function FrequencyCreator() {
           binauralConfig.enabled ? 'binaural' : null,
           voiceBioprintConfig.enabled ? 'voice-bioprint' : null,
           sympatheticConfig.enabled ? `room-${sympatheticConfig.mode}` : null,
-          adaptiveJourneyConfig.enabled ? `journey-${adaptiveJourneyConfig.intent}` : null
+          adaptiveJourneyConfig.enabled ? `journey-${adaptiveJourneyConfig.intent}` : null,
+          harmonicFieldConfig.enabled ? 'solfeggio-field' : null,
+          harmonicFieldConfig.enabled ? `field-${harmonicFieldConfig.presetId}` : null
         ].filter((tag): tag is string => Boolean(tag) && tag !== 'none')
       };
 
@@ -2010,6 +2103,29 @@ export default function FrequencyCreator() {
 
           if (journeyInsertError) {
             console.warn('Journey session persistence failed.', journeyInsertError);
+          }
+        }
+
+        if (harmonicFieldConfig.enabled && harmonicFieldBundle.layerFrequencies.length > 0) {
+          const createdAt = harmonicFieldConfig.lastFieldAt ?? new Date().toISOString();
+          const { error: harmonicInsertError } = await supabase.from('harmonic_field_sessions').insert({
+            user_id: activeUserId,
+            composition_id: insertResult.data.id,
+            preset_id: harmonicFieldConfig.presetId,
+            layer_frequencies: harmonicFieldBundle.layerFrequencies as unknown as Json,
+            interference_frequencies:
+              (harmonicFieldConfig.includeInterference
+                ? harmonicFieldBundle.interferenceFrequencies
+                : []) as unknown as Json,
+            intensity: harmonicFieldConfig.intensity,
+            include_interference: harmonicFieldConfig.includeInterference,
+            spatial_motion_enabled: harmonicFieldConfig.spatialMotionEnabled,
+            motion_speed: harmonicFieldConfig.motionSpeed,
+            created_at: createdAt
+          });
+
+          if (harmonicInsertError) {
+            console.warn('Harmonic field persistence failed.', harmonicInsertError);
           }
         }
 
@@ -3096,6 +3212,141 @@ export default function FrequencyCreator() {
                       {journeyStatus}
                     </p>
                   ) : null}
+                </div>
+
+                <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">
+                      Solfeggio harmonic field
+                    </h4>
+                    <HelpPopover
+                      align="left"
+                      label="Harmonic field help"
+                      text="Stacks curated Solfeggio sets with optional interference layers and spatial motion. This is an experiential sound design mode, not a biomedical treatment."
+                    />
+                  </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Enable field</span>
+                      <input
+                        type="checkbox"
+                        checked={harmonicFieldConfig.enabled}
+                        onChange={(event) =>
+                          setHarmonicFieldConfig((prev) => ({
+                            ...prev,
+                            enabled: event.target.checked
+                          }))
+                        }
+                        className="h-4 w-4"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Preset</span>
+                      <select
+                        value={harmonicFieldConfig.presetId}
+                        onChange={(event) =>
+                          setHarmonicFieldConfig((prev) => ({
+                            ...prev,
+                            presetId: event.target.value
+                          }))
+                        }
+                        className="rounded-full border border-ink/10 bg-white px-3 py-2"
+                      >
+                        {harmonicPresets.map((preset) => (
+                          <option key={preset.id} value={preset.id}>
+                            {preset.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm sm:col-span-2">
+                      <span>Intensity</span>
+                      <input
+                        type="range"
+                        min={0.2}
+                        max={1}
+                        step={0.05}
+                        value={harmonicFieldConfig.intensity}
+                        onChange={(event) =>
+                          setHarmonicFieldConfig((prev) => ({
+                            ...prev,
+                            intensity: Number(event.target.value)
+                          }))
+                        }
+                        className="w-44"
+                      />
+                      <span className="w-10 text-right text-xs">{Math.round(harmonicFieldConfig.intensity * 100)}%</span>
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Interference layer</span>
+                      <input
+                        type="checkbox"
+                        checked={harmonicFieldConfig.includeInterference}
+                        onChange={(event) =>
+                          setHarmonicFieldConfig((prev) => ({
+                            ...prev,
+                            includeInterference: event.target.checked
+                          }))
+                        }
+                        className="h-4 w-4"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Spatial motion</span>
+                      <input
+                        type="checkbox"
+                        checked={harmonicFieldConfig.spatialMotionEnabled}
+                        onChange={(event) =>
+                          setHarmonicFieldConfig((prev) => ({
+                            ...prev,
+                            spatialMotionEnabled: event.target.checked
+                          }))
+                        }
+                        className="h-4 w-4"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm sm:col-span-2">
+                      <span>Motion speed</span>
+                      <input
+                        type="range"
+                        min={0.1}
+                        max={1}
+                        step={0.05}
+                        value={harmonicFieldConfig.motionSpeed}
+                        disabled={!harmonicFieldConfig.spatialMotionEnabled}
+                        onChange={(event) =>
+                          setHarmonicFieldConfig((prev) => ({
+                            ...prev,
+                            motionSpeed: Number(event.target.value)
+                          }))
+                        }
+                        className="w-44 disabled:opacity-45"
+                      />
+                      <span className="w-10 text-right text-xs">{Math.round(harmonicFieldConfig.motionSpeed * 100)}%</span>
+                    </label>
+                  </div>
+                  <p className="mt-2 text-xs text-ink/60">{activeHarmonicPreset.description}</p>
+                  <div className="mt-3 rounded-2xl border border-ink/10 bg-white px-3 py-2 text-xs text-ink/65">
+                    <p className="uppercase tracking-[0.2em] text-ink/55">Live field</p>
+                    <p className="mt-1">
+                      Layers:{' '}
+                      {harmonicFieldBundle.layerFrequencies.length > 0
+                        ? harmonicFieldBundle.layerFrequencies.map((frequency) => `${Math.round(frequency)}Hz`).join(' • ')
+                        : 'None'}
+                    </p>
+                    <p className="mt-1">
+                      Interference:{' '}
+                      {harmonicFieldBundle.interferenceFrequencies.length > 0
+                        ? harmonicFieldBundle.interferenceFrequencies
+                            .slice(0, 8)
+                            .map((frequency) => `${frequency.toFixed(1)}Hz`)
+                            .join(' • ')
+                        : 'Off'}
+                    </p>
+                  </div>
+                  <p className="mt-2 text-xs text-ink/55">
+                    Tip: Start with 50-70% intensity, then add motion if you want more stereo depth.
+                  </p>
                 </div>
               </div>
             ) : null}

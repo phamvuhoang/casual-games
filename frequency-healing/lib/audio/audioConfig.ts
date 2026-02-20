@@ -87,10 +87,23 @@ export interface AdaptiveBinauralJourneyConfig {
   steps: AdaptiveJourneyStepConfig[];
 }
 
+export interface HarmonicFieldConfig {
+  enabled: boolean;
+  presetId: string;
+  intensity: number;
+  includeInterference: boolean;
+  spatialMotionEnabled: boolean;
+  motionSpeed: number;
+  lastFieldAt: string | null;
+  lastLayerFrequencies: number[];
+  lastInterferenceFrequencies: number[];
+}
+
 export interface InnovationConfig {
   voiceBioprint: VoiceBioprintConfig;
   sympatheticResonance: SympatheticResonanceConfig;
   adaptiveBinauralJourney: AdaptiveBinauralJourneyConfig;
+  harmonicField: HarmonicFieldConfig;
 }
 
 export interface AudioConfigShape {
@@ -169,6 +182,17 @@ const DEFAULT_CONFIG: AudioConfigShape = {
         { state: 'theta', beatHz: 5.5, minutes: 5 },
         { state: 'delta', beatHz: 3.5, minutes: 3 }
       ]
+    },
+    harmonicField: {
+      enabled: false,
+      presetId: 'chakra_ladder',
+      intensity: 0.72,
+      includeInterference: true,
+      spatialMotionEnabled: false,
+      motionSpeed: 0.5,
+      lastFieldAt: null,
+      lastLayerFrequencies: [],
+      lastInterferenceFrequencies: []
     }
   }
 };
@@ -232,6 +256,11 @@ export function createDefaultAudioConfig(): AudioConfigShape {
       adaptiveBinauralJourney: {
         ...DEFAULT_CONFIG.innovation.adaptiveBinauralJourney,
         steps: DEFAULT_CONFIG.innovation.adaptiveBinauralJourney.steps.map((entry) => ({ ...entry }))
+      },
+      harmonicField: {
+        ...DEFAULT_CONFIG.innovation.harmonicField,
+        lastLayerFrequencies: [...DEFAULT_CONFIG.innovation.harmonicField.lastLayerFrequencies],
+        lastInterferenceFrequencies: [...DEFAULT_CONFIG.innovation.harmonicField.lastInterferenceFrequencies]
       }
     }
   };
@@ -288,11 +317,18 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
   const voiceBioprint = asObject(innovation?.voiceBioprint);
   const sympatheticResonance = asObject(innovation?.sympatheticResonance);
   const adaptiveBinauralJourney = asObject(innovation?.adaptiveBinauralJourney);
+  const harmonicField = asObject(innovation?.harmonicField);
   const rawRecommendations = Array.isArray(voiceBioprint?.recommendations) ? voiceBioprint?.recommendations : [];
   const rawDominantFrequencies = Array.isArray(sympatheticResonance?.lastDominantFrequencies)
     ? sympatheticResonance?.lastDominantFrequencies
     : [];
   const rawJourneySteps = Array.isArray(adaptiveBinauralJourney?.steps) ? adaptiveBinauralJourney?.steps : [];
+  const rawHarmonicLayers = Array.isArray(harmonicField?.lastLayerFrequencies)
+    ? harmonicField?.lastLayerFrequencies
+    : [];
+  const rawHarmonicInterference = Array.isArray(harmonicField?.lastInterferenceFrequencies)
+    ? harmonicField?.lastInterferenceFrequencies
+    : [];
   const recommendations = rawRecommendations
     .map((entry) => asObject(entry))
     .filter((entry): entry is Record<string, unknown> => Boolean(entry))
@@ -316,6 +352,14 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
       minutes: clamp(1, asNumber(entry.minutes, 4), 40)
     }))
     .slice(0, 8);
+  const lastLayerFrequencies = rawHarmonicLayers
+    .map((entry) => (typeof entry === 'number' && Number.isFinite(entry) ? normalizeFrequency(entry) : null))
+    .filter((value): value is number => value !== null)
+    .slice(0, 24);
+  const lastInterferenceFrequencies = rawHarmonicInterference
+    .map((entry) => (typeof entry === 'number' && Number.isFinite(entry) ? clamp(0.1, entry, 400) : null))
+    .filter((value): value is number => value !== null)
+    .slice(0, 24);
 
   return {
     version: 2,
@@ -466,6 +510,33 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
           journeySteps.length > 0
             ? journeySteps
             : config.innovation.adaptiveBinauralJourney.steps.map((entry) => ({ ...entry }))
+      },
+      harmonicField: {
+        enabled: asBoolean(harmonicField?.enabled, config.innovation.harmonicField.enabled),
+        presetId:
+          typeof harmonicField?.presetId === 'string' && harmonicField.presetId.trim().length > 0
+            ? harmonicField.presetId
+            : config.innovation.harmonicField.presetId,
+        intensity: clamp(0.2, asNumber(harmonicField?.intensity, config.innovation.harmonicField.intensity), 1),
+        includeInterference: asBoolean(
+          harmonicField?.includeInterference,
+          config.innovation.harmonicField.includeInterference
+        ),
+        spatialMotionEnabled: asBoolean(
+          harmonicField?.spatialMotionEnabled,
+          config.innovation.harmonicField.spatialMotionEnabled
+        ),
+        motionSpeed: clamp(
+          0.1,
+          asNumber(harmonicField?.motionSpeed, config.innovation.harmonicField.motionSpeed),
+          1
+        ),
+        lastFieldAt:
+          typeof harmonicField?.lastFieldAt === 'string'
+            ? harmonicField.lastFieldAt
+            : config.innovation.harmonicField.lastFieldAt,
+        lastLayerFrequencies,
+        lastInterferenceFrequencies
       }
     }
   };

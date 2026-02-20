@@ -310,6 +310,45 @@ export interface Database {
         };
         Relationships: [];
       };
+      harmonic_field_sessions: {
+        Row: {
+          id: string;
+          user_id: string;
+          composition_id: string | null;
+          preset_id: string;
+          layer_frequencies: Json;
+          interference_frequencies: Json | null;
+          intensity: number | null;
+          include_interference: boolean | null;
+          spatial_motion_enabled: boolean | null;
+          motion_speed: number | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          composition_id?: string | null;
+          preset_id: string;
+          layer_frequencies: Json;
+          interference_frequencies?: Json | null;
+          intensity?: number | null;
+          include_interference?: boolean | null;
+          spatial_motion_enabled?: boolean | null;
+          motion_speed?: number | null;
+          created_at?: string | null;
+        };
+        Update: {
+          composition_id?: string | null;
+          preset_id?: string;
+          layer_frequencies?: Json;
+          interference_frequencies?: Json | null;
+          intensity?: number | null;
+          include_interference?: boolean | null;
+          spatial_motion_enabled?: boolean | null;
+          motion_speed?: number | null;
+        };
+        Relationships: [];
+      };
     };
     Views: {};
     Functions: {

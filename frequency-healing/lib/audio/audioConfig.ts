@@ -65,9 +65,32 @@ export interface SympatheticResonanceConfig {
   lastDominantFrequencies: number[];
 }
 
+export type AdaptiveJourneyIntent = 'sleep' | 'focus' | 'meditation' | 'creative';
+export type AdaptiveJourneyBrainState = 'delta' | 'theta' | 'alpha' | 'beta' | 'gamma';
+
+export interface AdaptiveJourneyStepConfig {
+  state: AdaptiveJourneyBrainState;
+  beatHz: number;
+  minutes: number;
+}
+
+export interface AdaptiveBinauralJourneyConfig {
+  enabled: boolean;
+  intent: AdaptiveJourneyIntent;
+  durationMinutes: number;
+  micAdaptationEnabled: boolean;
+  lastBreathBpm: number | null;
+  lastAdaptiveOffsetHz: number;
+  progress: number;
+  currentState: AdaptiveJourneyBrainState;
+  currentBeatHz: number;
+  steps: AdaptiveJourneyStepConfig[];
+}
+
 export interface InnovationConfig {
   voiceBioprint: VoiceBioprintConfig;
   sympatheticResonance: SympatheticResonanceConfig;
+  adaptiveBinauralJourney: AdaptiveBinauralJourneyConfig;
 }
 
 export interface AudioConfigShape {
@@ -129,6 +152,23 @@ const DEFAULT_CONFIG: AudioConfigShape = {
       lastScanAt: null,
       lastConfidence: 0,
       lastDominantFrequencies: []
+    },
+    adaptiveBinauralJourney: {
+      enabled: false,
+      intent: 'meditation',
+      durationMinutes: 24,
+      micAdaptationEnabled: false,
+      lastBreathBpm: null,
+      lastAdaptiveOffsetHz: 0,
+      progress: 0,
+      currentState: 'alpha',
+      currentBeatHz: 8,
+      steps: [
+        { state: 'alpha', beatHz: 10, minutes: 6 },
+        { state: 'theta', beatHz: 7, minutes: 10 },
+        { state: 'theta', beatHz: 5.5, minutes: 5 },
+        { state: 'delta', beatHz: 3.5, minutes: 3 }
+      ]
     }
   }
 };
@@ -188,6 +228,10 @@ export function createDefaultAudioConfig(): AudioConfigShape {
       sympatheticResonance: {
         ...DEFAULT_CONFIG.innovation.sympatheticResonance,
         lastDominantFrequencies: [...DEFAULT_CONFIG.innovation.sympatheticResonance.lastDominantFrequencies]
+      },
+      adaptiveBinauralJourney: {
+        ...DEFAULT_CONFIG.innovation.adaptiveBinauralJourney,
+        steps: DEFAULT_CONFIG.innovation.adaptiveBinauralJourney.steps.map((entry) => ({ ...entry }))
       }
     }
   };
@@ -243,10 +287,12 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
   const innovation = asObject(object.innovation);
   const voiceBioprint = asObject(innovation?.voiceBioprint);
   const sympatheticResonance = asObject(innovation?.sympatheticResonance);
+  const adaptiveBinauralJourney = asObject(innovation?.adaptiveBinauralJourney);
   const rawRecommendations = Array.isArray(voiceBioprint?.recommendations) ? voiceBioprint?.recommendations : [];
   const rawDominantFrequencies = Array.isArray(sympatheticResonance?.lastDominantFrequencies)
     ? sympatheticResonance?.lastDominantFrequencies
     : [];
+  const rawJourneySteps = Array.isArray(adaptiveBinauralJourney?.steps) ? adaptiveBinauralJourney?.steps : [];
   const recommendations = rawRecommendations
     .map((entry) => asObject(entry))
     .filter((entry): entry is Record<string, unknown> => Boolean(entry))
@@ -260,6 +306,15 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
   const lastDominantFrequencies = rawDominantFrequencies
     .map((entry) => (typeof entry === 'number' && Number.isFinite(entry) ? normalizeFrequency(entry) : null))
     .filter((value): value is number => value !== null)
+    .slice(0, 8);
+  const journeySteps = rawJourneySteps
+    .map((entry) => asObject(entry))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+    .map((entry) => ({
+      state: asString(entry.state, ['delta', 'theta', 'alpha', 'beta', 'gamma'], 'alpha'),
+      beatHz: clamp(0.5, asNumber(entry.beatHz, 8), 40),
+      minutes: clamp(1, asNumber(entry.minutes, 4), 40)
+    }))
     .slice(0, 8);
 
   return {
@@ -356,6 +411,61 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
           1
         ),
         lastDominantFrequencies
+      },
+      adaptiveBinauralJourney: {
+        enabled: asBoolean(
+          adaptiveBinauralJourney?.enabled,
+          config.innovation.adaptiveBinauralJourney.enabled
+        ),
+        intent: asString(
+          adaptiveBinauralJourney?.intent,
+          ['sleep', 'focus', 'meditation', 'creative'],
+          config.innovation.adaptiveBinauralJourney.intent
+        ),
+        durationMinutes: clamp(
+          8,
+          asNumber(
+            adaptiveBinauralJourney?.durationMinutes,
+            config.innovation.adaptiveBinauralJourney.durationMinutes
+          ),
+          60
+        ),
+        micAdaptationEnabled: asBoolean(
+          adaptiveBinauralJourney?.micAdaptationEnabled,
+          config.innovation.adaptiveBinauralJourney.micAdaptationEnabled
+        ),
+        lastBreathBpm:
+          typeof adaptiveBinauralJourney?.lastBreathBpm === 'number' &&
+          Number.isFinite(adaptiveBinauralJourney.lastBreathBpm)
+            ? clamp(2, adaptiveBinauralJourney.lastBreathBpm, 30)
+            : config.innovation.adaptiveBinauralJourney.lastBreathBpm,
+        lastAdaptiveOffsetHz: clamp(
+          -4,
+          asNumber(
+            adaptiveBinauralJourney?.lastAdaptiveOffsetHz,
+            config.innovation.adaptiveBinauralJourney.lastAdaptiveOffsetHz
+          ),
+          4
+        ),
+        progress: clamp(
+          0,
+          asNumber(adaptiveBinauralJourney?.progress, config.innovation.adaptiveBinauralJourney.progress),
+          1
+        ),
+        currentState: asString(
+          adaptiveBinauralJourney?.currentState,
+          ['delta', 'theta', 'alpha', 'beta', 'gamma'],
+          config.innovation.adaptiveBinauralJourney.currentState
+        ),
+        currentBeatHz: clamp(
+          0.5,
+          asNumber(adaptiveBinauralJourney?.currentBeatHz, config.innovation.adaptiveBinauralJourney.currentBeatHz),
+          40
+        ),
+        steps:
+          journeySteps.length > 0
+            ? journeySteps
+            : config.innovation.adaptiveBinauralJourney.steps.map((entry) => ({ ...entry }))
       }
     }
   };

@@ -268,6 +268,48 @@ export interface Database {
         };
         Relationships: [];
       };
+      journey_sessions: {
+        Row: {
+          id: string;
+          user_id: string;
+          composition_id: string | null;
+          intent: string;
+          current_state: string | null;
+          progress: number | null;
+          last_beat_hz: number | null;
+          last_breath_bpm: number | null;
+          adaptive_offset_hz: number | null;
+          duration_minutes: number | null;
+          mic_adaptation_enabled: boolean | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          composition_id?: string | null;
+          intent: string;
+          current_state?: string | null;
+          progress?: number | null;
+          last_beat_hz?: number | null;
+          last_breath_bpm?: number | null;
+          adaptive_offset_hz?: number | null;
+          duration_minutes?: number | null;
+          mic_adaptation_enabled?: boolean | null;
+          created_at?: string | null;
+        };
+        Update: {
+          composition_id?: string | null;
+          intent?: string;
+          current_state?: string | null;
+          progress?: number | null;
+          last_beat_hz?: number | null;
+          last_breath_bpm?: number | null;
+          adaptive_offset_hz?: number | null;
+          duration_minutes?: number | null;
+          mic_adaptation_enabled?: boolean | null;
+        };
+        Relationships: [];
+      };
     };
     Views: {};
     Functions: {

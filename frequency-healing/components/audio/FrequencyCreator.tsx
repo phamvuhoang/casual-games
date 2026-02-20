@@ -14,6 +14,16 @@ import { useBackgroundAudioBridge } from '@/components/background/BackgroundAudi
 import { FrequencyGenerator } from '@/lib/audio/FrequencyGenerator';
 import { MicrophoneAnalysisService } from '@/lib/audio/MicrophoneAnalysisService';
 import {
+  createAdaptiveJourneySteps,
+  getAdaptiveJourneyTemplate,
+  getAdaptiveJourneyTemplates,
+  resolveJourneyRuntimePoint,
+  stateVisualModifiers,
+  suggestAdaptiveOffsetByBreath,
+  type BrainState,
+  type JourneyIntent
+} from '@/lib/audio/AdaptiveBinauralJourney';
+import {
   analyzeRoomSpectrum,
   buildRoomResponseTones,
   createRoomResponseVoices,
@@ -41,6 +51,7 @@ import {
   normalizeRhythmSteps,
   parseAudioConfig,
   type AudioConfigShape,
+  type AdaptiveBinauralJourneyConfig,
   type BinauralConfig,
   type ModulationConfig,
   type RhythmConfig,
@@ -233,6 +244,9 @@ export default function FrequencyCreator() {
   const [sympatheticConfig, setSympatheticConfig] = useState<SympatheticResonanceConfig>(
     defaultAudioConfig.innovation.sympatheticResonance
   );
+  const [adaptiveJourneyConfig, setAdaptiveJourneyConfig] = useState<AdaptiveBinauralJourneyConfig>(
+    defaultAudioConfig.innovation.adaptiveBinauralJourney
+  );
   const [voiceProfile, setVoiceProfile] = useState<VoiceBioprintProfile | null>(null);
   const [voiceProfileId, setVoiceProfileId] = useState<string | null>(null);
   const [isCapturingVoice, setIsCapturingVoice] = useState(false);
@@ -247,11 +261,26 @@ export default function FrequencyCreator() {
   const [roomScanStatus, setRoomScanStatus] = useState<string | null>(null);
   const [isCalibratingRoom, setIsCalibratingRoom] = useState(false);
   const [isRoomMonitoring, setIsRoomMonitoring] = useState(false);
+  const [journeyStatus, setJourneyStatus] = useState<string | null>(null);
+  const [journeyHeadphonesConfirmed, setJourneyHeadphonesConfirmed] = useState(false);
+  const [journeyRuntime, setJourneyRuntime] = useState<{
+    state: BrainState;
+    beatHz: number;
+    progress: number;
+    elapsedSeconds: number;
+    durationSeconds: number;
+    breathBpm: number | null;
+    adaptiveOffsetHz: number;
+  } | null>(null);
+  const [isJourneyMicSampling, setIsJourneyMicSampling] = useState(false);
   const frequencyStackRef = useRef<HTMLDivElement | null>(null);
   const advancedSoundRef = useRef<HTMLDivElement | null>(null);
   const liveSectionRef = useRef<HTMLDivElement | null>(null);
   const mobileLiveCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const roomScanLockRef = useRef(false);
+  const journeyStartAtRef = useRef<number | null>(null);
+  const journeyAdaptiveOffsetRef = useRef(0);
+  const journeyLastBreathRef = useRef<number | null>(null);
   const mp3LimitSeconds = MP3_ESTIMATED_MAX_SECONDS;
   const showMp3Warning = audioFormat === 'mp3' && duration > mp3LimitSeconds;
   const maxSelectableFrequencies = mixStyle === 'golden432' ? MAX_PHASE2_FREQUENCIES : MAX_PHASE2_FREQUENCIES;
@@ -259,6 +288,7 @@ export default function FrequencyCreator() {
   const generator = useMemo(() => new FrequencyGenerator(), []);
   const micService = useMemo(() => new MicrophoneAnalysisService(), []);
   const roomMicService = useMemo(() => new MicrophoneAnalysisService(), []);
+  const journeyMicService = useMemo(() => new MicrophoneAnalysisService(), []);
   const supabase = useMemo(() => createSupabaseClient(), []);
   const { setAnalyser: setBackgroundAnalyser } = useBackgroundAudioBridge();
 
@@ -281,6 +311,14 @@ export default function FrequencyCreator() {
           lastDominantFrequencies: roomScanResult?.dominantFrequencies ?? sympatheticConfig.lastDominantFrequencies,
           lastConfidence: roomScanResult?.confidence ?? sympatheticConfig.lastConfidence,
           lastScanAt: roomScanResult?.capturedAt ?? sympatheticConfig.lastScanAt
+        },
+        adaptiveBinauralJourney: {
+          ...adaptiveJourneyConfig,
+          lastBreathBpm: journeyLastBreathRef.current ?? adaptiveJourneyConfig.lastBreathBpm,
+          lastAdaptiveOffsetHz: journeyAdaptiveOffsetRef.current,
+          progress: journeyRuntime?.progress ?? adaptiveJourneyConfig.progress,
+          currentState: journeyRuntime?.state ?? adaptiveJourneyConfig.currentState,
+          currentBeatHz: journeyRuntime?.beatHz ?? adaptiveJourneyConfig.currentBeatHz
         }
       }
     }),
@@ -293,6 +331,8 @@ export default function FrequencyCreator() {
       sweepConfig,
       sympatheticConfig,
       roomScanResult,
+      adaptiveJourneyConfig,
+      journeyRuntime,
       voiceBioprintConfig,
       voiceProfileId
     ]
@@ -315,6 +355,10 @@ export default function FrequencyCreator() {
         sympatheticResonance: {
           ...audioConfig.innovation.sympatheticResonance,
           lastDominantFrequencies: [...audioConfig.innovation.sympatheticResonance.lastDominantFrequencies]
+        },
+        adaptiveBinauralJourney: {
+          ...audioConfig.innovation.adaptiveBinauralJourney,
+          steps: audioConfig.innovation.adaptiveBinauralJourney.steps.map((entry) => ({ ...entry }))
         }
       }
     }),
@@ -326,17 +370,27 @@ export default function FrequencyCreator() {
     customFrequencyInput.trim().length > 0 && Number.isFinite(customFrequencyValue) && isValidFrequency(customFrequencyValue);
 
   const effectiveVisualizationLayers = useMemo(() => {
+    let baseLayers: VisualizationLayerConfig[] = [];
     if (visualizationType === 'multi-layer') {
-      return visualizationLayers.length > 0 ? visualizationLayers : createDefaultVisualizationLayers();
+      baseLayers = visualizationLayers.length > 0 ? visualizationLayers : createDefaultVisualizationLayers();
+    } else if (visualizationType === 'orbital') {
+      baseLayers = [];
+    } else {
+      const layer = visualizationLayers.find((entry) => entry.type === visualizationType);
+      baseLayers = layer ? [layer] : createLayersForType(visualizationType);
     }
 
-    if (visualizationType === 'orbital') {
-      return [];
+    if (!adaptiveJourneyConfig.enabled || !isPlaying || !journeyRuntime || baseLayers.length === 0) {
+      return baseLayers;
     }
 
-    const layer = visualizationLayers.find((entry) => entry.type === visualizationType);
-    return layer ? [layer] : createLayersForType(visualizationType);
-  }, [visualizationLayers, visualizationType]);
+    const modifier = stateVisualModifiers(journeyRuntime.state);
+    return baseLayers.map((layer) => ({
+      ...layer,
+      intensity: clamp(0.1, layer.intensity * modifier.intensity, 1.5),
+      speed: clamp(0.1, layer.speed * modifier.speed, 2.5)
+    }));
+  }, [adaptiveJourneyConfig.enabled, isPlaying, journeyRuntime, visualizationLayers, visualizationType]);
 
   const selectedFrequencySummary = useMemo(() => {
     if (selectedFrequencies.length === 0) {
@@ -355,6 +409,11 @@ export default function FrequencyCreator() {
     }
     return `<iframe src="${savedCompositionUrl}?embed=1" width="640" height="360" allow="autoplay" loading="lazy"></iframe>`;
   }, [savedCompositionUrl]);
+  const journeyTemplates = useMemo(() => getAdaptiveJourneyTemplates(), []);
+  const activeJourneyTemplate = useMemo(
+    () => getAdaptiveJourneyTemplate(adaptiveJourneyConfig.intent),
+    [adaptiveJourneyConfig.intent]
+  );
 
   const advancedSoundSummary = useMemo(() => {
     const activeModules: string[] = [];
@@ -370,6 +429,9 @@ export default function FrequencyCreator() {
     if (sympatheticConfig.enabled) {
       activeModules.push(`Room-${sympatheticConfig.mode === 'cleanse' ? 'Cleanse' : 'Harmonize'}`);
     }
+    if (adaptiveJourneyConfig.enabled) {
+      activeModules.push('Adaptive Journey');
+    }
 
     if (activeModules.length === 0) {
       return 'All advanced modules are currently off.';
@@ -382,7 +444,8 @@ export default function FrequencyCreator() {
     rhythmConfig.enabled,
     sweepConfig.enabled,
     sympatheticConfig.enabled,
-    sympatheticConfig.mode
+    sympatheticConfig.mode,
+    adaptiveJourneyConfig.enabled
   ]);
 
   const sessionOverlayInfo = useMemo<VisualizationSessionOverlayData>(
@@ -468,8 +531,9 @@ export default function FrequencyCreator() {
       generator.dispose();
       void micService.stop();
       void roomMicService.stop();
+      void journeyMicService.stop();
     };
-  }, [generator, micService, roomMicService]);
+  }, [generator, micService, roomMicService, journeyMicService]);
 
   useEffect(() => {
     setIsIOS(isIOSDevice());
@@ -558,6 +622,7 @@ export default function FrequencyCreator() {
         setBinauralConfig(parsed.binaural);
         setVoiceBioprintConfig(parsed.innovation.voiceBioprint);
         setSympatheticConfig(parsed.innovation.sympatheticResonance);
+        setAdaptiveJourneyConfig(parsed.innovation.adaptiveBinauralJourney);
         if (parsed.innovation.sympatheticResonance.lastDominantFrequencies.length > 0) {
           setRoomResponseFrequencies(parsed.innovation.sympatheticResonance.lastDominantFrequencies);
         }
@@ -817,6 +882,165 @@ export default function FrequencyCreator() {
     sympatheticConfig.scanIntervalSeconds,
     sympatheticConfig.mode,
     sympatheticConfig.confidenceThreshold
+  ]);
+
+  useEffect(() => {
+    if (!isPlaying || !adaptiveJourneyConfig.enabled) {
+      journeyStartAtRef.current = null;
+      journeyAdaptiveOffsetRef.current = 0;
+      setJourneyRuntime(null);
+      setJourneyStatus(null);
+      return;
+    }
+
+    const steps =
+      adaptiveJourneyConfig.steps.length > 0
+        ? adaptiveJourneyConfig.steps
+        : createAdaptiveJourneySteps(adaptiveJourneyConfig.intent as JourneyIntent, adaptiveJourneyConfig.durationMinutes);
+
+    setBinauralConfig((prev) => (prev.enabled ? prev : { ...prev, enabled: true }));
+
+    journeyStartAtRef.current = performance.now();
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    let cancelled = false;
+
+    const tick = () => {
+      if (cancelled || !journeyStartAtRef.current) {
+        return;
+      }
+
+      const elapsedSeconds = Math.max(0, (performance.now() - journeyStartAtRef.current) / 1000);
+      const runtimePoint = resolveJourneyRuntimePoint({
+        steps,
+        elapsedSeconds,
+        adaptiveBeatOffset: journeyAdaptiveOffsetRef.current
+      });
+
+      setJourneyRuntime({
+        state: runtimePoint.state,
+        beatHz: runtimePoint.beatHz,
+        progress: runtimePoint.overallProgress,
+        elapsedSeconds: runtimePoint.elapsedSeconds,
+        durationSeconds: runtimePoint.durationSeconds,
+        breathBpm: journeyLastBreathRef.current,
+        adaptiveOffsetHz: journeyAdaptiveOffsetRef.current
+      });
+
+      setAdaptiveJourneyConfig((prev) => ({
+        ...prev,
+        progress: runtimePoint.overallProgress,
+        currentState: runtimePoint.state,
+        currentBeatHz: runtimePoint.beatHz
+      }));
+
+      setBinauralConfig((prev) => {
+        if (prev.enabled && Math.abs(prev.beatHz - runtimePoint.beatHz) <= 0.15) {
+          return prev;
+        }
+        return {
+          ...prev,
+          enabled: true,
+          beatHz: Number(runtimePoint.beatHz.toFixed(2))
+        };
+      });
+
+      if (runtimePoint.overallProgress >= 1) {
+        setJourneyStatus('Adaptive journey complete.');
+      } else {
+        setJourneyStatus(
+          `${runtimePoint.state.toUpperCase()} · ${Math.round(runtimePoint.beatHz * 10) / 10}Hz beat · ${Math.round(
+            runtimePoint.overallProgress * 100
+          )}%`
+        );
+      }
+    };
+
+    tick();
+    intervalId = setInterval(tick, 3000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [
+    adaptiveJourneyConfig.enabled,
+    adaptiveJourneyConfig.durationMinutes,
+    adaptiveJourneyConfig.intent,
+    adaptiveJourneyConfig.steps,
+    isPlaying
+  ]);
+
+  useEffect(() => {
+    if (!isPlaying || !adaptiveJourneyConfig.enabled || !adaptiveJourneyConfig.micAdaptationEnabled) {
+      setIsJourneyMicSampling(false);
+      journeyAdaptiveOffsetRef.current = 0;
+      journeyLastBreathRef.current = null;
+      void journeyMicService.stop();
+      return;
+    }
+
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const sampleBreath = async () => {
+      setIsJourneyMicSampling(true);
+      try {
+        const amplitude = await journeyMicService.captureAmplitudePattern({
+          durationMs: 6500,
+          sampleIntervalMs: 100,
+          fftSize: 1024
+        });
+
+        if (cancelled) {
+          return;
+        }
+
+        if (
+          typeof amplitude.estimatedBreathBpm === 'number' &&
+          Number.isFinite(amplitude.estimatedBreathBpm) &&
+          amplitude.confidence >= 0.2
+        ) {
+          journeyLastBreathRef.current = amplitude.estimatedBreathBpm;
+          journeyAdaptiveOffsetRef.current = suggestAdaptiveOffsetByBreath({
+            breathBpm: amplitude.estimatedBreathBpm,
+            intent: adaptiveJourneyConfig.intent as JourneyIntent
+          });
+
+          setAdaptiveJourneyConfig((prev) => ({
+            ...prev,
+            lastBreathBpm: amplitude.estimatedBreathBpm,
+            lastAdaptiveOffsetHz: journeyAdaptiveOffsetRef.current
+          }));
+        }
+      } catch (error) {
+        console.warn('Journey mic adaptation sample failed.', error);
+      } finally {
+        setIsJourneyMicSampling(false);
+        await journeyMicService.stop();
+      }
+    };
+
+    void sampleBreath();
+    intervalId = setInterval(() => {
+      void sampleBreath();
+    }, 36000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+      setIsJourneyMicSampling(false);
+      void journeyMicService.stop();
+    };
+  }, [
+    adaptiveJourneyConfig.enabled,
+    adaptiveJourneyConfig.intent,
+    adaptiveJourneyConfig.micAdaptationEnabled,
+    isPlaying,
+    journeyMicService
   ]);
 
   useEffect(() => {
@@ -1293,6 +1517,37 @@ export default function FrequencyCreator() {
     }
   };
 
+  const handleAdaptiveIntentChange = (intent: JourneyIntent) => {
+    const template = getAdaptiveJourneyTemplate(intent);
+    const nextDuration = adaptiveJourneyConfig.durationMinutes || template.defaultDurationMinutes;
+    setAdaptiveJourneyConfig((prev) => ({
+      ...prev,
+      intent,
+      steps: createAdaptiveJourneySteps(intent, nextDuration),
+      progress: 0,
+      currentState: template.steps[0]?.state ?? 'alpha',
+      currentBeatHz: template.steps[0]?.beatHz ?? 8
+    }));
+    setJourneyRuntime(null);
+    journeyStartAtRef.current = null;
+    journeyAdaptiveOffsetRef.current = 0;
+    journeyLastBreathRef.current = null;
+    setJourneyStatus(null);
+  };
+
+  const handleAdaptiveDurationChange = (durationMinutes: number) => {
+    const nextDuration = clamp(8, durationMinutes, 60);
+    setAdaptiveJourneyConfig((prev) => ({
+      ...prev,
+      durationMinutes: nextDuration,
+      steps: createAdaptiveJourneySteps(prev.intent as JourneyIntent, nextDuration),
+      progress: 0
+    }));
+    setJourneyRuntime(null);
+    journeyStartAtRef.current = null;
+    setJourneyStatus(null);
+  };
+
   const currentLayerEntries = visualizationType === 'multi-layer' ? visualizationLayers : effectiveVisualizationLayers;
 
   const handlePlay = async () => {
@@ -1311,11 +1566,19 @@ export default function FrequencyCreator() {
       return;
     }
 
+    if (adaptiveJourneyConfig.enabled && !journeyHeadphonesConfirmed) {
+      setStatus('Adaptive binaural journeys work best with headphones. Confirm headphones to continue.');
+      return;
+    }
+
     try {
       const shouldEnableBridge = isIOS || isIOSDevice() || isAndroidDevice();
       await generator.initialize(DEFAULT_EFFECTS, {
         enableAudioBridge: shouldEnableBridge
       });
+      if (adaptiveJourneyConfig.enabled && !binauralConfig.enabled) {
+        setBinauralConfig((prev) => ({ ...prev, enabled: true }));
+      }
       generator.setMasterVolume(volume);
       generator.setRhythmPattern(rhythmConfig);
       generator.setAutomation({ modulation: modulationConfig, sweep: sweepConfig });
@@ -1636,11 +1899,24 @@ export default function FrequencyCreator() {
             lastDominantFrequencies:
               roomScanResult?.dominantFrequencies ?? sympatheticConfig.lastDominantFrequencies,
             responseFrequencies: roomResponseFrequencies
+          },
+          adaptiveBinauralJourney: {
+            enabled: adaptiveJourneyConfig.enabled,
+            intent: adaptiveJourneyConfig.intent,
+            durationMinutes: adaptiveJourneyConfig.durationMinutes,
+            micAdaptationEnabled: adaptiveJourneyConfig.micAdaptationEnabled,
+            lastBreathBpm: journeyLastBreathRef.current ?? adaptiveJourneyConfig.lastBreathBpm,
+            lastAdaptiveOffsetHz: journeyAdaptiveOffsetRef.current,
+            progress: journeyRuntime?.progress ?? adaptiveJourneyConfig.progress,
+            currentState: journeyRuntime?.state ?? adaptiveJourneyConfig.currentState,
+            currentBeatHz: journeyRuntime?.beatHz ?? adaptiveJourneyConfig.currentBeatHz,
+            steps: adaptiveJourneyConfig.steps.map((entry) => ({ ...entry }))
           }
         },
         innovation_flags: [
           voiceBioprintConfig.enabled ? 'voice_bioprint' : null,
-          sympatheticConfig.enabled ? 'sympathetic_resonance' : null
+          sympatheticConfig.enabled ? 'sympathetic_resonance' : null,
+          adaptiveJourneyConfig.enabled ? 'adaptive_binaural_journey' : null
         ].filter((value): value is string => Boolean(value)),
         scientific_disclaimer_ack:
           voiceBioprintConfig.disclaimerAccepted || Boolean(sympatheticConfig.enabled),
@@ -1656,7 +1932,8 @@ export default function FrequencyCreator() {
           ambientSound,
           binauralConfig.enabled ? 'binaural' : null,
           voiceBioprintConfig.enabled ? 'voice-bioprint' : null,
-          sympatheticConfig.enabled ? `room-${sympatheticConfig.mode}` : null
+          sympatheticConfig.enabled ? `room-${sympatheticConfig.mode}` : null,
+          adaptiveJourneyConfig.enabled ? `journey-${adaptiveJourneyConfig.intent}` : null
         ].filter((tag): tag is string => Boolean(tag) && tag !== 'none')
       };
 
@@ -1714,6 +1991,25 @@ export default function FrequencyCreator() {
 
           if (roomScanInsertError) {
             console.warn('Room scan persistence failed.', roomScanInsertError);
+          }
+        }
+
+        if (adaptiveJourneyConfig.enabled) {
+          const { error: journeyInsertError } = await supabase.from('journey_sessions').insert({
+            user_id: activeUserId,
+            composition_id: insertResult.data.id,
+            intent: adaptiveJourneyConfig.intent,
+            current_state: journeyRuntime?.state ?? adaptiveJourneyConfig.currentState,
+            progress: journeyRuntime?.progress ?? adaptiveJourneyConfig.progress,
+            last_beat_hz: journeyRuntime?.beatHz ?? adaptiveJourneyConfig.currentBeatHz,
+            last_breath_bpm: journeyLastBreathRef.current ?? adaptiveJourneyConfig.lastBreathBpm,
+            adaptive_offset_hz: journeyAdaptiveOffsetRef.current,
+            duration_minutes: adaptiveJourneyConfig.durationMinutes,
+            mic_adaptation_enabled: adaptiveJourneyConfig.micAdaptationEnabled
+          });
+
+          if (journeyInsertError) {
+            console.warn('Journey session persistence failed.', journeyInsertError);
           }
         }
 
@@ -1803,6 +2099,11 @@ export default function FrequencyCreator() {
             {binauralConfig.enabled ? (
               <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
                 Binaural mode is optimized for headphones and gentle listening environments.
+              </div>
+            ) : null}
+            {adaptiveJourneyConfig.enabled && !journeyHeadphonesConfirmed ? (
+              <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                Confirm headphones in Adaptive Journey settings before starting playback.
               </div>
             ) : null}
             <div className="mt-4 grid gap-3 text-sm">
@@ -2387,7 +2688,7 @@ export default function FrequencyCreator() {
               <div>
                 <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">Advanced sound tools</h4>
                 <p className="mt-1 text-xs text-ink/65">
-                  Rhythm pattern, modulation + sweep, and binaural mode.
+                  Rhythm pattern, modulation + sweep, binaural mode, and adaptive journeys.
                 </p>
               </div>
               <span className="rounded-full border border-ink/15 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-ink/70">
@@ -2684,6 +2985,117 @@ export default function FrequencyCreator() {
                       <span className="w-10 text-right text-xs">{Math.round(binauralConfig.panSpread * 100)}%</span>
                     </label>
                   </div>
+                </div>
+
+                <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">
+                      Adaptive binaural journey
+                    </h4>
+                    <HelpPopover
+                      align="left"
+                      label="Adaptive journey help"
+                      text="Guides beat offsets through brain-state phases over time. Optional mic adaptation can nudge beat targets using rough breathing cadence estimates."
+                    />
+                  </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Enable journey</span>
+                      <input
+                        type="checkbox"
+                        checked={adaptiveJourneyConfig.enabled}
+                        onChange={(event) =>
+                          setAdaptiveJourneyConfig((prev) => ({
+                            ...prev,
+                            enabled: event.target.checked,
+                            progress: event.target.checked ? prev.progress : 0
+                          }))
+                        }
+                        className="h-4 w-4"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Journey intent</span>
+                      <select
+                        value={adaptiveJourneyConfig.intent}
+                        onChange={(event) => handleAdaptiveIntentChange(event.target.value as JourneyIntent)}
+                        className="rounded-full border border-ink/10 bg-white px-3 py-2"
+                      >
+                        {journeyTemplates.map((template) => (
+                          <option key={template.intent} value={template.intent}>
+                            {template.title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Duration (min)</span>
+                      <input
+                        type="number"
+                        min={8}
+                        max={60}
+                        value={adaptiveJourneyConfig.durationMinutes}
+                        onChange={(event) => handleAdaptiveDurationChange(Number(event.target.value))}
+                        className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Mic adaptation</span>
+                      <input
+                        type="checkbox"
+                        checked={adaptiveJourneyConfig.micAdaptationEnabled}
+                        onChange={(event) =>
+                          setAdaptiveJourneyConfig((prev) => ({
+                            ...prev,
+                            micAdaptationEnabled: event.target.checked
+                          }))
+                        }
+                        className="h-4 w-4"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm sm:col-span-2">
+                      <span>Headphones confirmed</span>
+                      <input
+                        type="checkbox"
+                        checked={journeyHeadphonesConfirmed}
+                        onChange={(event) => setJourneyHeadphonesConfirmed(event.target.checked)}
+                        className="h-4 w-4"
+                      />
+                    </label>
+                  </div>
+                  <p className="mt-2 text-xs text-ink/60">{activeJourneyTemplate.description}</p>
+                  <p className="mt-1 text-xs text-ink/55">
+                    States: {adaptiveJourneyConfig.steps.map((step) => `${step.state.toUpperCase()} ${step.beatHz}Hz`).join(' → ')}
+                  </p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-ink/10 bg-white px-3 py-2 text-xs text-ink/65">
+                      <p className="uppercase tracking-[0.2em] text-ink/55">Runtime</p>
+                      <p className="mt-1">
+                        {journeyRuntime
+                          ? `${journeyRuntime.state.toUpperCase()} · ${journeyRuntime.beatHz.toFixed(2)}Hz · ${Math.round(
+                              journeyRuntime.progress * 100
+                            )}%`
+                          : 'Journey idle'}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-ink/10 bg-white px-3 py-2 text-xs text-ink/65">
+                      <p className="uppercase tracking-[0.2em] text-ink/55">Mic adaptation</p>
+                      <p className="mt-1">
+                        {adaptiveJourneyConfig.micAdaptationEnabled
+                          ? isJourneyMicSampling
+                            ? 'Sampling...'
+                            : `Breath ${journeyRuntime?.breathBpm ? `${journeyRuntime.breathBpm.toFixed(1)} bpm` : 'n/a'} · offset ${
+                                journeyRuntime?.adaptiveOffsetHz.toFixed(2) ?? '0.00'
+                              }Hz`
+                          : 'Off'}
+                      </p>
+                    </div>
+                  </div>
+                  {journeyStatus ? (
+                    <p className="mt-2 rounded-2xl border border-ink/10 bg-white/80 px-3 py-2 text-xs text-ink/65">
+                      {journeyStatus}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             ) : null}

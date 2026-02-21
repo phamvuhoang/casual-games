@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="512" height="512"><svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="512" height="512"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Logo Mark Gradient -->
+    <linearGradient id="brandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8B78D7"></stop>
+      <stop offset="50%" stop-color="#6B99CD"></stop>
+      <stop offset="100%" stop-color="#72AFB4"></stop>
+    </linearGradient>
+  </defs>
+
+  <!-- Outer Frequency Ring -->
+  <circle cx="256" cy="256" r="140" fill="none" stroke="url(#brandGrad)" stroke-width="28"></circle>
+
+  <!-- Inner Flowing Sine Wave (Frequency/Harmony) -->
+  <path d="M 116 256 C 156 116, 216 116, 256 256 C 296 396, 356 396, 396 256" fill="none" stroke="url(#brandGrad)" stroke-width="28" stroke-linecap="round"></path>
+
+  <!-- Warm Accent Healing Nodes (Yin/Yang Balance) -->
+  <circle cx="196" cy="296" r="16" fill="#C79B73"></circle>
+  <circle cx="316" cy="216" r="16" fill="#C79B73"></circle>
+</svg></svg><style>@media (prefers-color-scheme: light) { :root { filter: none; } }
+@media (prefers-color-scheme: dark) { :root { filter: none; } }
+</style></svg>

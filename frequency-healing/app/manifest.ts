@@ -1,5 +1,5 @@
 import type { MetadataRoute } from 'next';
-import { SITE_NAME, absoluteUrl } from '@/lib/utils/seo';
+import { SITE_NAME } from '@/lib/utils/seo';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
@@ -15,9 +15,27 @@ export default function manifest(): MetadataRoute.Manifest {
     lang: 'en-US',
     icons: [
       {
-        src: absoluteUrl('/images/og-default.svg'),
+        src: '/icons/icon-192.png',
+        sizes: '192x192',
+        type: 'image/png',
+        purpose: 'any'
+      },
+      {
+        src: '/icons/icon-512.png',
         sizes: '512x512',
-        type: 'image/svg+xml',
+        type: 'image/png',
+        purpose: 'any'
+      },
+      {
+        src: '/icons/icon-maskable-512.png',
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'maskable'
+      },
+      {
+        src: '/apple-icon.png',
+        sizes: '180x180',
+        type: 'image/png',
         purpose: 'any'
       }
     ]

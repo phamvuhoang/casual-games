@@ -6,18 +6,17 @@ export default function robots(): MetadataRoute.Robots {
     rules: [
       {
         userAgent: '*',
-        allow: ['/', '/discover', '/composition/', '/profile/', '/ja', '/ja/discover', '/ja/composition/', '/ja/profile/'],
+        allow: ['/', '/*/create', '/*/discover', '/*/composition/', '/*/profile/'],
         disallow: [
           '/api/',
           '/auth/',
           '/callback',
           '/login',
           '/signup',
-          '/create',
-          '/ja/callback',
-          '/ja/login',
-          '/ja/signup',
-          '/ja/create'
+          '/*/auth/',
+          '/*/callback',
+          '/*/login',
+          '/*/signup'
         ]
       }
     ],

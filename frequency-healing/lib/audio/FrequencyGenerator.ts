@@ -66,6 +66,10 @@ const DEFAULT_AUTOMATION_CONFIG: PlaybackAutomationConfig = {
   }
 };
 
+type AmbientDisposable = {
+  dispose: () => unknown;
+};
+
 export class FrequencyGenerator {
   private synths: Tone.Synth[] = [];
   private voicePanners: Tone.Panner[] = [];
@@ -88,11 +92,10 @@ export class FrequencyGenerator {
   private delay: Tone.FeedbackDelay | null = null;
   private analyser: AnalyserNode | null = null;
   private ambientType: AmbientType = 'none';
-  private ambientNoise: Tone.Noise | null = null;
-  private ambientFilter: Tone.Filter | null = null;
   private ambientGain: Tone.Gain | null = null;
   private ambientLoop: Tone.Loop | null = null;
-  private ambientSynth: Tone.MetalSynth | null = null;
+  private ambientNoises: Tone.Noise[] = [];
+  private ambientDisposables: AmbientDisposable[] = [];
   private silentAudio: HTMLAudioElement | null = null;
   private hasUnlocked = false;
   private initialized = false;
@@ -315,50 +318,339 @@ export class FrequencyGenerator {
     }
 
     const destination = this.reverb ?? this.master;
+    const ambientBus = this.trackAmbientDisposable(new Tone.Gain(1));
+    ambientBus.connect(destination);
+    this.ambientGain = ambientBus;
 
-    if (type === 'bells') {
-      const synth = new Tone.MetalSynth({
-        envelope: { attack: 0.01, decay: 1.6, release: 2.2 },
-        harmonicity: 4.5,
-        modulationIndex: 28,
-        resonance: 6000,
-        octaves: 1.5
-      });
-      synth.frequency.value = 280;
-      const gain = new Tone.Gain(0.12);
-      synth.connect(gain);
-      gain.connect(destination);
-
-      const notes = [440, 523.25, 659.25, 783.99, 987.77];
-      const loop = new Tone.Loop((time) => {
-        const note = notes[Math.floor(Math.random() * notes.length)];
-        synth.triggerAttackRelease(note, '2n', time, 0.6);
-      }, '2n');
-
-      this.ensureTransportStarted();
-      loop.start(0);
-
-      this.ambientSynth = synth;
-      this.ambientGain = gain;
-      this.ambientLoop = loop;
+    if (type === 'rain') {
+      this.buildRainAmbient(ambientBus);
       return;
     }
 
-    const noiseType = type === 'forest' ? 'brown' : 'pink';
-    const filterFrequency = type === 'ocean' ? 320 : type === 'forest' ? 520 : 800;
-    const gainLevel = type === 'ocean' ? 0.18 : type === 'forest' ? 0.14 : 0.22;
+    if (type === 'ocean') {
+      this.buildOceanAmbient(ambientBus);
+      return;
+    }
 
-    const noise = new Tone.Noise(noiseType).start();
-    const filter = new Tone.Filter({ type: 'lowpass', frequency: filterFrequency, Q: 1 });
-    const gain = new Tone.Gain(gainLevel);
+    if (type === 'forest') {
+      this.buildForestAmbient(ambientBus);
+      return;
+    }
 
-    noise.connect(filter);
-    filter.connect(gain);
-    gain.connect(destination);
+    this.buildBellsAmbient(ambientBus);
+  }
 
-    this.ambientNoise = noise;
-    this.ambientFilter = filter;
-    this.ambientGain = gain;
+  private trackAmbientDisposable<T extends AmbientDisposable>(resource: T): T {
+    this.ambientDisposables.push(resource);
+    return resource;
+  }
+
+  private trackAmbientNoise(noise: Tone.Noise) {
+    this.ambientNoises.push(noise);
+    this.trackAmbientDisposable(noise);
+    return noise;
+  }
+
+  private buildRainAmbient(destination: Tone.ToneAudioNode) {
+    const rainBed = this.trackAmbientNoise(
+      new Tone.Noise({ type: 'pink', playbackRate: 1.15, fadeIn: 1.2, fadeOut: 1.1 })
+    );
+    const rainBodyFilter = this.trackAmbientDisposable(
+      new Tone.Filter({ type: 'bandpass', frequency: 1700, Q: 0.65, rolloff: -24 })
+    );
+    const rainMotion = this.trackAmbientDisposable(
+      new Tone.AutoFilter({
+        frequency: 0.08,
+        depth: 0.5,
+        type: 'sine',
+        baseFrequency: 1200,
+        octaves: 1.1,
+        filter: { type: 'bandpass', Q: 0.8, rolloff: -24 }
+      })
+    ).start();
+    rainMotion.wet.value = 0.45;
+    const rainBedGain = this.trackAmbientDisposable(new Tone.Gain(0.11));
+    rainBed.chain(rainBodyFilter, rainMotion, rainBedGain, destination);
+    rainBed.start();
+
+    const drizzle = this.trackAmbientNoise(
+      new Tone.Noise({ type: 'white', playbackRate: 2.25, fadeIn: 0.8, fadeOut: 0.8 })
+    );
+    const drizzleFilter = this.trackAmbientDisposable(
+      new Tone.Filter({ type: 'highpass', frequency: 4200, Q: 0.45, rolloff: -24 })
+    );
+    const drizzlePan = this.trackAmbientDisposable(
+      new Tone.AutoPanner({ frequency: 0.045, depth: 0.35, type: 'sine' })
+    ).start();
+    drizzlePan.wet.value = 0.35;
+    const drizzleGain = this.trackAmbientDisposable(new Tone.Gain(0.03));
+    drizzle.chain(drizzleFilter, drizzlePan, drizzleGain, destination);
+    drizzle.start();
+
+    const droplets = this.trackAmbientDisposable(
+      new Tone.NoiseSynth({
+        noise: { type: 'white', playbackRate: 1.9 },
+        envelope: { attack: 0.001, decay: 0.06, sustain: 0, release: 0.08 }
+      })
+    );
+    const dropletFilter = this.trackAmbientDisposable(
+      new Tone.Filter({ type: 'bandpass', frequency: 3200, Q: 3.1, rolloff: -24 })
+    );
+    const dropletGain = this.trackAmbientDisposable(new Tone.Gain(0.065));
+    droplets.chain(dropletFilter, dropletGain, destination);
+
+    const rainLoop = new Tone.Loop((time) => {
+      const primaryDuration = 0.008 + Math.random() * 0.026;
+      dropletFilter.frequency.setValueAtTime(2200 + Math.random() * 2600, time);
+      droplets.triggerAttackRelease(primaryDuration, time, 0.22 + Math.random() * 0.35);
+
+      if (Math.random() < 0.38) {
+        const splashDelay = 0.015 + Math.random() * 0.05;
+        droplets.triggerAttackRelease(
+          0.01 + Math.random() * 0.03,
+          time + splashDelay,
+          0.14 + Math.random() * 0.24
+        );
+      }
+
+      if (Math.random() < 0.22) {
+        rainBed.playbackRate = 1 + Math.random() * 0.35;
+      }
+    }, '16n');
+    rainLoop.humanize = 0.02;
+    rainLoop.probability = 0.92;
+    this.ensureTransportStarted();
+    rainLoop.start(0);
+    this.ambientLoop = rainLoop;
+  }
+
+  private buildOceanAmbient(destination: Tone.ToneAudioNode) {
+    const swell = this.trackAmbientNoise(
+      new Tone.Noise({ type: 'brown', playbackRate: 0.82, fadeIn: 1.5, fadeOut: 1.4 })
+    );
+    const swellFilter = this.trackAmbientDisposable(
+      new Tone.Filter({ type: 'lowpass', frequency: 420, Q: 0.7, rolloff: -48 })
+    );
+    const swellMotion = this.trackAmbientDisposable(
+      new Tone.AutoFilter({
+        frequency: 0.035,
+        depth: 0.9,
+        type: 'sine',
+        baseFrequency: 160,
+        octaves: 2.4,
+        filter: { type: 'lowpass', Q: 0.8, rolloff: -24 }
+      })
+    ).start();
+    swellMotion.wet.value = 0.55;
+    const swellGain = this.trackAmbientDisposable(new Tone.Gain(0.16));
+    swell.chain(swellFilter, swellMotion, swellGain, destination);
+    swell.start();
+
+    const ebbFlow = this.trackAmbientDisposable(
+      new Tone.LFO({ frequency: 0.022, min: 0.12, max: 0.2, type: 'sine' })
+    ).start();
+    ebbFlow.connect(swellGain.gain);
+
+    const foam = this.trackAmbientNoise(
+      new Tone.Noise({ type: 'pink', playbackRate: 1.6, fadeIn: 1.0, fadeOut: 1.0 })
+    );
+    const foamFilter = this.trackAmbientDisposable(
+      new Tone.Filter({ type: 'bandpass', frequency: 900, Q: 0.9, rolloff: -24 })
+    );
+    const foamPan = this.trackAmbientDisposable(
+      new Tone.AutoPanner({ frequency: 0.018, depth: 0.25, type: 'sine' })
+    ).start();
+    foamPan.wet.value = 0.4;
+    const foamGain = this.trackAmbientDisposable(new Tone.Gain(0.055));
+    foam.chain(foamFilter, foamPan, foamGain, destination);
+    foam.start();
+
+    const waveWash = this.trackAmbientDisposable(
+      new Tone.NoiseSynth({
+        noise: { type: 'pink', playbackRate: 1.1 },
+        envelope: { attack: 0.04, decay: 0.9, sustain: 0, release: 0.7 }
+      })
+    );
+    const waveFilter = this.trackAmbientDisposable(
+      new Tone.Filter({ type: 'bandpass', frequency: 560, Q: 1.1, rolloff: -24 })
+    );
+    const waveGain = this.trackAmbientDisposable(new Tone.Gain(0.085));
+    waveWash.chain(waveFilter, waveGain, destination);
+
+    const waveLoop = new Tone.Loop((time) => {
+      waveFilter.frequency.setValueAtTime(360 + Math.random() * 520, time);
+      waveWash.triggerAttackRelease(0.24 + Math.random() * 0.4, time, 0.2 + Math.random() * 0.25);
+
+      if (Math.random() < 0.3) {
+        const reboundDelay = 0.14 + Math.random() * 0.2;
+        waveWash.triggerAttackRelease(
+          0.12 + Math.random() * 0.22,
+          time + reboundDelay,
+          0.12 + Math.random() * 0.18
+        );
+      }
+
+      foam.playbackRate = 1.3 + Math.random() * 0.45;
+    }, '2n');
+    waveLoop.humanize = 0.08;
+    waveLoop.probability = 0.86;
+    this.ensureTransportStarted();
+    waveLoop.start(0);
+    this.ambientLoop = waveLoop;
+  }
+
+  private buildForestAmbient(destination: Tone.ToneAudioNode) {
+    const wind = this.trackAmbientNoise(
+      new Tone.Noise({ type: 'brown', playbackRate: 0.95, fadeIn: 1.2, fadeOut: 1.2 })
+    );
+    const windHighpass = this.trackAmbientDisposable(
+      new Tone.Filter({ type: 'highpass', frequency: 120, Q: 0.2, rolloff: -24 })
+    );
+    const windLowpass = this.trackAmbientDisposable(
+      new Tone.Filter({ type: 'lowpass', frequency: 1450, Q: 0.65, rolloff: -24 })
+    );
+    const windGain = this.trackAmbientDisposable(new Tone.Gain(0.1));
+    wind.chain(windHighpass, windLowpass, windGain, destination);
+    wind.start();
+
+    const windMotion = this.trackAmbientDisposable(
+      new Tone.LFO({ frequency: 0.028, min: 900, max: 1800, type: 'sine' })
+    ).start();
+    windMotion.connect(windLowpass.frequency);
+
+    const leaves = this.trackAmbientNoise(
+      new Tone.Noise({ type: 'pink', playbackRate: 1.45, fadeIn: 0.9, fadeOut: 0.9 })
+    );
+    const leavesFilter = this.trackAmbientDisposable(
+      new Tone.Filter({ type: 'bandpass', frequency: 2400, Q: 1.1, rolloff: -24 })
+    );
+    const leavesMotion = this.trackAmbientDisposable(
+      new Tone.AutoFilter({
+        frequency: 0.12,
+        depth: 0.55,
+        type: 'triangle',
+        baseFrequency: 1500,
+        octaves: 1.5,
+        filter: { type: 'bandpass', Q: 1.2, rolloff: -24 }
+      })
+    ).start();
+    leavesMotion.wet.value = 0.5;
+    const leavesPan = this.trackAmbientDisposable(
+      new Tone.AutoPanner({ frequency: 0.026, depth: 0.22, type: 'sine' })
+    ).start();
+    leavesPan.wet.value = 0.35;
+    const leavesGain = this.trackAmbientDisposable(new Tone.Gain(0.05));
+    leaves.chain(leavesFilter, leavesMotion, leavesPan, leavesGain, destination);
+    leaves.start();
+
+    const chirpSynth = this.trackAmbientDisposable(
+      new Tone.FMSynth({
+        harmonicity: 2.7,
+        modulationIndex: 7,
+        oscillator: { type: 'triangle' },
+        modulation: { type: 'sine' },
+        envelope: { attack: 0.008, decay: 0.16, sustain: 0, release: 0.22 },
+        modulationEnvelope: { attack: 0.01, decay: 0.08, sustain: 0, release: 0.12 }
+      })
+    );
+    const chirpFilter = this.trackAmbientDisposable(
+      new Tone.Filter({ type: 'bandpass', frequency: 1850, Q: 4, rolloff: -24 })
+    );
+    const chirpGain = this.trackAmbientDisposable(new Tone.Gain(0.045));
+    chirpSynth.chain(chirpFilter, chirpGain, destination);
+
+    const chirpNotes = [1046.5, 1174.66, 1318.51, 1567.98, 1760];
+    const forestLoop = new Tone.Loop((time) => {
+      if (Math.random() < 0.72) {
+        const note = chirpNotes[Math.floor(Math.random() * chirpNotes.length)];
+        chirpFilter.frequency.setValueAtTime(1500 + Math.random() * 900, time);
+        chirpSynth.triggerAttackRelease(note, 0.08 + Math.random() * 0.08, time, 0.16 + Math.random() * 0.2);
+
+        if (Math.random() < 0.35) {
+          const replyDelay = 0.08 + Math.random() * 0.11;
+          const step = Math.random() < 0.5 ? 1.12246 : 0.94387;
+          chirpSynth.triggerAttackRelease(
+            note * step,
+            0.06 + Math.random() * 0.06,
+            time + replyDelay,
+            0.12 + Math.random() * 0.16
+          );
+        }
+      }
+
+      if (Math.random() < 0.25) {
+        leaves.playbackRate = 1.25 + Math.random() * 0.5;
+      }
+    }, '1m');
+    forestLoop.humanize = 0.12;
+    forestLoop.probability = 0.88;
+    this.ensureTransportStarted();
+    forestLoop.start(0);
+    this.ambientLoop = forestLoop;
+  }
+
+  private buildBellsAmbient(destination: Tone.ToneAudioNode) {
+    const strike = this.trackAmbientDisposable(
+      new Tone.MetalSynth({
+        envelope: { attack: 0.001, decay: 2.4, release: 3.2 },
+        harmonicity: 5.8,
+        modulationIndex: 45,
+        resonance: 3200,
+        octaves: 2.8
+      })
+    );
+    const resonance = this.trackAmbientDisposable(
+      new Tone.FMSynth({
+        harmonicity: 1.45,
+        modulationIndex: 14,
+        oscillator: { type: 'sine' },
+        modulation: { type: 'triangle' },
+        envelope: { attack: 0.01, decay: 1.6, sustain: 0.25, release: 4.4 },
+        modulationEnvelope: { attack: 0.01, decay: 1.1, sustain: 0, release: 2.2 }
+      })
+    );
+    const bellHighpass = this.trackAmbientDisposable(
+      new Tone.Filter({ type: 'highpass', frequency: 280, Q: 0.5, rolloff: -24 })
+    );
+    const bellLowpass = this.trackAmbientDisposable(
+      new Tone.Filter({ type: 'lowpass', frequency: 5400, Q: 0.7, rolloff: -24 })
+    );
+    const bellBus = this.trackAmbientDisposable(new Tone.Gain(1));
+    const bellPan = this.trackAmbientDisposable(
+      new Tone.AutoPanner({ frequency: 0.012, depth: 0.28, type: 'sine' })
+    ).start();
+    bellPan.wet.value = 0.45;
+    const bellGain = this.trackAmbientDisposable(new Tone.Gain(0.11));
+    strike.connect(bellBus);
+    resonance.connect(bellBus);
+    bellBus.chain(bellHighpass, bellLowpass, bellPan, bellGain, destination);
+
+    const bellNotes = [329.63, 392, 493.88, 523.25, 659.25, 783.99];
+    const bellLoop = new Tone.Loop((time) => {
+      const base = bellNotes[Math.floor(Math.random() * bellNotes.length)];
+      const velocity = 0.28 + Math.random() * 0.24;
+      const strikeFrequency = base * (0.96 + Math.random() * 0.08);
+      bellLowpass.frequency.setValueAtTime(4200 + Math.random() * 1600, time);
+
+      strike.triggerAttackRelease(strikeFrequency, 1.6 + Math.random() * 1.2, time, velocity);
+      resonance.triggerAttackRelease(base, 2.2 + Math.random() * 1.4, time + 0.01, velocity * 0.8);
+
+      if (Math.random() < 0.4) {
+        const answerDelay = 0.35 + Math.random() * 0.55;
+        const answerNote = bellNotes[Math.floor(Math.random() * bellNotes.length)];
+        resonance.triggerAttackRelease(
+          answerNote,
+          1.8 + Math.random() * 1.2,
+          time + answerDelay,
+          0.16 + Math.random() * 0.2
+        );
+      }
+    }, '2m');
+    bellLoop.humanize = 0.08;
+    bellLoop.probability = 0.92;
+    this.ensureTransportStarted();
+    bellLoop.start(0);
+    this.ambientLoop = bellLoop;
   }
 
   setMasterVolume(value: number) {
@@ -428,16 +720,12 @@ export class FrequencyGenerator {
   private stopAmbient(preserveType = false) {
     this.ambientLoop?.stop();
     this.ambientLoop?.dispose();
-    this.ambientSynth?.dispose();
-    this.ambientNoise?.stop();
-    this.ambientNoise?.dispose();
-    this.ambientFilter?.dispose();
-    this.ambientGain?.dispose();
+    this.ambientNoises.forEach((noise) => noise.stop());
+    this.ambientDisposables.forEach((resource) => resource.dispose());
 
     this.ambientLoop = null;
-    this.ambientSynth = null;
-    this.ambientNoise = null;
-    this.ambientFilter = null;
+    this.ambientNoises = [];
+    this.ambientDisposables = [];
     this.ambientGain = null;
     if (!preserveType) {
       this.ambientType = 'none';

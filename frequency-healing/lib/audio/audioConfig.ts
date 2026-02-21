@@ -40,6 +40,7 @@ export interface VoiceBioprintRecommendationConfig {
   gain: number;
   score: number;
   reason: string;
+  reasonKey?: string;
 }
 
 export interface VoiceBioprintConfig {
@@ -151,6 +152,25 @@ export interface AudioConfigShape {
 }
 
 const DEFAULT_STEPS = [true, false, true, false, true, false, true, false, true, false, true, false, true, false, true, false];
+const VOICE_BIOPRINT_REASON_TO_KEY: Record<string, string> = {
+  'Adds low-end grounding texture': 'addsLowEndGroundingTexture',
+  'Supports low-mid stability band': 'supportsLowMidStabilityBand',
+  'Reinforces lower vocal fundamentals': 'reinforcesLowerVocalFundamentals',
+  'Fills lower-mid transition band': 'fillsLowerMidTransitionBand',
+  'Balances center vocal harmonics': 'balancesCenterVocalHarmonics',
+  'Strengthens mid clarity region': 'strengthensMidClarityRegion',
+  'Boosts upper-mid presence region': 'boostsUpperMidPresenceRegion',
+  'Adds articulation-focused upper mids': 'addsArticulationFocusedUpperMids',
+  'Adds higher overtone brightness': 'addsHigherOvertoneBrightness',
+  'Supports upper overtone air band': 'supportsUpperOvertoneAirBand',
+  'Balanced fallback for center harmonics': 'balancedFallbackCenterHarmonics',
+  'Balanced fallback for vocal clarity': 'balancedFallbackVocalClarity',
+  'Balanced fallback for upper-mid support': 'balancedFallbackUpperMidSupport',
+  'Starter profile center balance': 'starterProfileCenterBalance',
+  'Starter profile clarity support': 'starterProfileClaritySupport',
+  'Starter profile upper-mid support': 'starterProfileUpperMidSupport',
+  'Personalized recommendation': 'personalizedRecommendation'
+};
 
 const DEFAULT_CONFIG: AudioConfigShape = {
   version: 2,
@@ -276,6 +296,10 @@ function asString<T extends string>(value: unknown, allowed: readonly T[], fallb
     return fallback;
   }
   return allowed.includes(value as T) ? (value as T) : fallback;
+}
+
+function inferVoiceBioprintReasonKey(reason: string) {
+  return VOICE_BIOPRINT_REASON_TO_KEY[reason] ?? null;
 }
 
 export function clamp(min: number, value: number, max: number) {
@@ -405,12 +429,17 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
   const recommendations = rawRecommendations
     .map((entry) => asObject(entry))
     .filter((entry): entry is Record<string, unknown> => Boolean(entry))
-    .map((entry) => ({
-      frequency: normalizeFrequency(asNumber(entry.frequency, 432)),
-      gain: clamp(0.05, asNumber(entry.gain, 0.55), 1),
-      score: clamp(0, asNumber(entry.score, 0), 1),
-      reason: typeof entry.reason === 'string' ? entry.reason : 'Personalized recommendation'
-    }))
+    .map((entry) => {
+      const reason = typeof entry.reason === 'string' ? entry.reason : 'Personalized recommendation';
+      const explicitReasonKey = typeof entry.reasonKey === 'string' ? entry.reasonKey : null;
+      return {
+        frequency: normalizeFrequency(asNumber(entry.frequency, 432)),
+        gain: clamp(0.05, asNumber(entry.gain, 0.55), 1),
+        score: clamp(0, asNumber(entry.score, 0), 1),
+        reason,
+        reasonKey: explicitReasonKey ?? inferVoiceBioprintReasonKey(reason) ?? undefined
+      };
+    })
     .slice(0, 6);
   const lastDominantFrequencies = rawDominantFrequencies
     .map((entry) => (typeof entry === 'number' && Number.isFinite(entry) ? normalizeFrequency(entry) : null))

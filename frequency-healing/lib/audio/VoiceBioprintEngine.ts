@@ -5,6 +5,7 @@ export interface VoiceBioprintRecommendation {
   gain: number;
   score: number;
   reason: string;
+  reasonKey?: string;
 }
 
 export interface VoiceBioprintProfile {
@@ -28,21 +29,21 @@ export interface VoiceBioprintProfile {
 
 interface FrequencyTarget {
   frequency: number;
-  label: string;
+  reasonKey: string;
   reason: string;
 }
 
 const TARGETS: FrequencyTarget[] = [
-  { frequency: 174, label: 'grounding', reason: 'Adds low-end grounding texture' },
-  { frequency: 285, label: 'stability', reason: 'Supports low-mid stability band' },
-  { frequency: 396, label: 'root', reason: 'Reinforces lower vocal fundamentals' },
-  { frequency: 417, label: 'flow', reason: 'Fills lower-mid transition band' },
-  { frequency: 432, label: 'balance', reason: 'Balances center vocal harmonics' },
-  { frequency: 528, label: 'clarity', reason: 'Strengthens mid clarity region' },
-  { frequency: 639, label: 'presence', reason: 'Boosts upper-mid presence region' },
-  { frequency: 741, label: 'focus', reason: 'Adds articulation-focused upper mids' },
-  { frequency: 852, label: 'brightness', reason: 'Adds higher overtone brightness' },
-  { frequency: 963, label: 'air', reason: 'Supports upper overtone air band' }
+  { frequency: 174, reasonKey: 'addsLowEndGroundingTexture', reason: 'Adds low-end grounding texture' },
+  { frequency: 285, reasonKey: 'supportsLowMidStabilityBand', reason: 'Supports low-mid stability band' },
+  { frequency: 396, reasonKey: 'reinforcesLowerVocalFundamentals', reason: 'Reinforces lower vocal fundamentals' },
+  { frequency: 417, reasonKey: 'fillsLowerMidTransitionBand', reason: 'Fills lower-mid transition band' },
+  { frequency: 432, reasonKey: 'balancesCenterVocalHarmonics', reason: 'Balances center vocal harmonics' },
+  { frequency: 528, reasonKey: 'strengthensMidClarityRegion', reason: 'Strengthens mid clarity region' },
+  { frequency: 639, reasonKey: 'boostsUpperMidPresenceRegion', reason: 'Boosts upper-mid presence region' },
+  { frequency: 741, reasonKey: 'addsArticulationFocusedUpperMids', reason: 'Adds articulation-focused upper mids' },
+  { frequency: 852, reasonKey: 'addsHigherOvertoneBrightness', reason: 'Adds higher overtone brightness' },
+  { frequency: 963, reasonKey: 'supportsUpperOvertoneAirBand', reason: 'Supports upper overtone air band' }
 ];
 
 function clamp(min: number, value: number, max: number) {
@@ -181,6 +182,7 @@ function recommendFrequencies(snapshot: SpectrumSnapshot) {
         frequency: target.frequency,
         gain: Number(gain.toFixed(2)),
         score: Number(score.toFixed(2)),
+        reasonKey: target.reasonKey,
         reason: target.reason
       } satisfies VoiceBioprintRecommendation;
     })
@@ -189,9 +191,27 @@ function recommendFrequencies(snapshot: SpectrumSnapshot) {
 
   if (ranked.every((item) => item.score <= 0.12)) {
     return [
-      { frequency: 432, gain: 0.62, score: 0.4, reason: 'Balanced fallback for center harmonics' },
-      { frequency: 528, gain: 0.58, score: 0.38, reason: 'Balanced fallback for vocal clarity' },
-      { frequency: 639, gain: 0.5, score: 0.32, reason: 'Balanced fallback for upper-mid support' }
+      {
+        frequency: 432,
+        gain: 0.62,
+        score: 0.4,
+        reasonKey: 'balancedFallbackCenterHarmonics',
+        reason: 'Balanced fallback for center harmonics'
+      },
+      {
+        frequency: 528,
+        gain: 0.58,
+        score: 0.38,
+        reasonKey: 'balancedFallbackVocalClarity',
+        reason: 'Balanced fallback for vocal clarity'
+      },
+      {
+        frequency: 639,
+        gain: 0.5,
+        score: 0.32,
+        reasonKey: 'balancedFallbackUpperMidSupport',
+        reason: 'Balanced fallback for upper-mid support'
+      }
     ] satisfies VoiceBioprintRecommendation[];
   }
 
@@ -253,10 +273,27 @@ export function createFallbackVoiceBioprintProfile() {
     captureDurationMs: 0,
     analysisDurationMs: 0,
     recommendations: [
-      { frequency: 432, gain: 0.6, score: 0.4, reason: 'Starter profile center balance' },
-      { frequency: 528, gain: 0.56, score: 0.35, reason: 'Starter profile clarity support' },
-      { frequency: 639, gain: 0.48, score: 0.3, reason: 'Starter profile upper-mid support' }
+      {
+        frequency: 432,
+        gain: 0.6,
+        score: 0.4,
+        reasonKey: 'starterProfileCenterBalance',
+        reason: 'Starter profile center balance'
+      },
+      {
+        frequency: 528,
+        gain: 0.56,
+        score: 0.35,
+        reasonKey: 'starterProfileClaritySupport',
+        reason: 'Starter profile clarity support'
+      },
+      {
+        frequency: 639,
+        gain: 0.48,
+        score: 0.3,
+        reasonKey: 'starterProfileUpperMidSupport',
+        reason: 'Starter profile upper-mid support'
+      }
     ]
   } satisfies VoiceBioprintProfile;
 }
-

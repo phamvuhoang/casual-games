@@ -1,18 +1,21 @@
 'use client';
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname } from '@/i18n/navigation';
 import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import Button from '@/components/ui/Button';
+import LanguageSwitcher from '@/components/layout/LanguageSwitcher';
+import { Link } from '@/i18n/navigation';
 import { createSupabaseClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils/helpers';
 
 const links = [
-  { label: 'Create', href: '/create' },
-  { label: 'Discover', href: '/discover' }
-];
+  { key: 'create', href: '/create' },
+  { key: 'discover', href: '/discover' }
+] as const;
 
 export default function Header() {
+  const t = useTranslations('common.header');
   const pathname = usePathname();
   const [email, setEmail] = useState<string | null>(null);
   const [profilePath, setProfilePath] = useState<string | null>(null);
@@ -100,8 +103,8 @@ export default function Header() {
             FH
           </div>
           <div className="leading-none">
-            <p className="text-[10px] uppercase tracking-[0.28em] text-ink/60">Frequency</p>
-            <p className="text-lg font-semibold">Healing Studio</p>
+            <p className="text-[10px] uppercase tracking-[0.28em] text-ink/60">{t('brandTop')}</p>
+            <p className="text-lg font-semibold">{t('brandBottom')}</p>
           </div>
         </Link>
         <nav className="hidden items-center gap-2 text-sm font-medium text-ink/70 md:flex">
@@ -114,42 +117,44 @@ export default function Header() {
                 pathname === link.href ? 'bg-white text-ink shadow-sm' : 'text-ink/70 hover:bg-white/70 hover:text-ink'
               )}
             >
-              {link.label}
+              {t(link.key)}
             </Link>
           ))}
         </nav>
         <div className="flex items-center gap-3">
+          <LanguageSwitcher variant="desktop" className="hidden md:flex" />
           <button
             onClick={() => setMenuOpen((prev) => !prev)}
             className="rounded-full border border-ink/20 bg-white/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-ink/70 md:hidden"
             aria-expanded={menuOpen}
-            aria-label="Toggle navigation"
+            aria-label={t('toggleNavigation')}
           >
-            Menu
+            {t('menu')}
           </button>
           {email ? (
             <div className="hidden rounded-full border border-ink/12 bg-white/82 px-4 py-2 text-xs text-ink/70 md:block">
-              {email}
+              {t('authEmail', { email })}
             </div>
           ) : null}
           {email && profilePath ? (
-            <Button asChild variant="outline" size="sm">
-              <Link href={profilePath}>Profile</Link>
+            <Button asChild variant="outline" size="sm" className="hidden md:inline-flex">
+              <Link href={profilePath}>{t('profile')}</Link>
             </Button>
           ) : null}
           {email ? (
-            <Button variant="outline" size="sm" onClick={handleSignOut}>
-              Sign out
+            <Button variant="outline" size="sm" onClick={handleSignOut} className="hidden md:inline-flex">
+              {t('signOut')}
             </Button>
           ) : (
-            <Button asChild size="sm">
-              <Link href="/login">Sign in</Link>
+            <Button asChild size="sm" className="hidden md:inline-flex">
+              <Link href="/login">{t('signIn')}</Link>
             </Button>
           )}
         </div>
       </div>
       {menuOpen ? (
         <div className="mx-auto mt-2 w-full max-w-[1220px] rounded-3xl border border-white/35 bg-white/88 p-3 shadow-[0_14px_34px_rgba(24,28,44,0.14)] backdrop-blur md:hidden">
+          <LanguageSwitcher variant="mobile" className="mb-3" />
           <div className="flex w-full flex-col gap-3 text-sm text-ink/70">
             {links.map((link) => (
               <Link
@@ -159,7 +164,7 @@ export default function Header() {
                   pathname === link.href ? 'bg-white text-ink shadow-sm' : 'bg-white/70 hover:text-ink'
                 }`}
               >
-                {link.label}
+                {t(link.key)}
               </Link>
             ))}
             {email && profilePath ? (
@@ -169,9 +174,18 @@ export default function Header() {
                   pathname?.startsWith('/profile') ? 'bg-white text-ink' : 'bg-white/70 hover:text-ink'
                 }`}
               >
-                Profile
+                {t('profile')}
               </Link>
             ) : null}
+            {email ? (
+              <Button variant="outline" size="sm" onClick={handleSignOut} className="w-full">
+                {t('signOut')}
+              </Button>
+            ) : (
+              <Button asChild size="sm" className="w-full">
+                <Link href="/login">{t('signIn')}</Link>
+              </Button>
+            )}
           </div>
         </div>
       ) : null}

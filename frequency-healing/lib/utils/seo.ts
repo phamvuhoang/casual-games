@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { LOCALE_TO_HREFLANG, LOCALE_TO_OG, routing, type AppLocale } from '@/i18n/routing';
 
 export const SITE_NAME = 'Frequency Healing Studio';
 export const DEFAULT_DESCRIPTION =
@@ -44,6 +45,27 @@ export const DEFAULT_KEYWORDS = [
   '888 hz',
   '963 hz',
   '40 hz focus'
+] as const;
+export const DEFAULT_KEYWORDS_JA = [
+  'ヒーリング周波数',
+  '周波数ヒーリング',
+  'サウンドヒーリング',
+  '瞑想周波数',
+  'バイノーラルビート',
+  '音響療法',
+  'ウェルネスオーディオ',
+  'ソルフェジオ周波数',
+  '睡眠音楽',
+  '集中音楽',
+  'ストレス緩和',
+  'マインドフルネス音声',
+  'オーディオビジュアライゼーション',
+  '432hz',
+  '528hz',
+  '639hz',
+  '741hz',
+  '852hz',
+  '963hz'
 ] as const;
 
 const FALLBACK_SITE_URL = 'http://localhost:3000';
@@ -100,6 +122,39 @@ function firstPresentValue(...values: Array<string | undefined>) {
   return undefined;
 }
 
+export function normalizeLocale(locale?: string): AppLocale {
+  if (locale && routing.locales.includes(locale as AppLocale)) {
+    return locale as AppLocale;
+  }
+  return routing.defaultLocale;
+}
+
+export function localizePath(path: string, locale?: string) {
+  const normalizedPath = normalizePath(path);
+  const normalizedLocale = normalizeLocale(locale);
+
+  if (normalizedLocale === routing.defaultLocale) {
+    return normalizedPath;
+  }
+
+  if (normalizedPath === '/') {
+    return `/${normalizedLocale}`;
+  }
+
+  return `/${normalizedLocale}${normalizedPath}`;
+}
+
+export function buildLanguageAlternates(path: string) {
+  const languages = Object.fromEntries(
+    routing.locales.map((locale) => [LOCALE_TO_HREFLANG[locale], canonicalUrl(path, locale)])
+  );
+
+  return {
+    ...languages,
+    'x-default': canonicalUrl(path, routing.defaultLocale)
+  };
+}
+
 export function getSiteUrl() {
   return SITE_URL || FALLBACK_SITE_URL;
 }
@@ -119,8 +174,8 @@ export function absoluteUrl(path: string) {
   return `${base}${normalizedPath}`;
 }
 
-export function canonicalUrl(path: string) {
-  return absoluteUrl(path);
+export function canonicalUrl(path: string, locale?: string) {
+  return absoluteUrl(localizePath(path, locale));
 }
 
 export function resolveSeoImage(url?: string | null) {
@@ -214,6 +269,7 @@ type BuildPageMetadataOptions = {
   title?: string;
   description?: string;
   path: string;
+  locale?: string;
   image?: string | null;
   twitterImage?: string | null;
   imageAlt?: string;
@@ -223,15 +279,20 @@ type BuildPageMetadataOptions = {
 };
 
 export function buildPageMetadata(options: BuildPageMetadataOptions): Metadata {
+  const locale = normalizeLocale(options.locale);
   const title = options.title?.trim() || SITE_NAME;
   const description = options.description?.trim() || DEFAULT_DESCRIPTION;
-  const canonical = canonicalUrl(options.path);
+  const canonical = canonicalUrl(options.path, locale);
   const image = resolveSeoImage(options.image);
   const twitterImage = resolveSeoImage(options.twitterImage ?? options.image);
   const imageAlt = options.imageAlt || `${title} cover image`;
   const robots = buildRobots(Boolean(options.noIndex));
   const fullTitle = buildDocumentTitle(title === SITE_NAME ? '' : title);
-  const keywords = uniqueKeywords([...DEFAULT_KEYWORDS], options.keywords);
+  const localeKeywords = locale === 'ja' ? [...DEFAULT_KEYWORDS_JA] : [...DEFAULT_KEYWORDS];
+  const keywords = uniqueKeywords(localeKeywords, options.keywords);
+  const alternateLocales = routing.locales
+    .filter((entry) => entry !== locale)
+    .map((entry) => LOCALE_TO_OG[entry]);
 
   return {
     title,
@@ -245,10 +306,7 @@ export function buildPageMetadata(options: BuildPageMetadataOptions): Metadata {
     },
     alternates: {
       canonical,
-      languages: {
-        'en-US': canonical,
-        'x-default': canonical
-      }
+      languages: buildLanguageAlternates(options.path)
     },
     robots,
     openGraph: {
@@ -256,7 +314,8 @@ export function buildPageMetadata(options: BuildPageMetadataOptions): Metadata {
       description,
       url: canonical,
       siteName: SITE_NAME,
-      locale: 'en_US',
+      locale: LOCALE_TO_OG[locale],
+      alternateLocale: alternateLocales,
       type: options.type ?? 'website',
       images: [
         {
@@ -286,27 +345,30 @@ export function jsonLdStringify(payload: unknown) {
   return JSON.stringify(payload).replace(/</g, '\\u003c');
 }
 
-export function buildSiteJsonLd() {
+export function buildSiteJsonLd(options?: { locale?: string; description?: string }) {
+  const locale = normalizeLocale(options?.locale);
   return {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
     name: SITE_NAME,
-    description: DEFAULT_DESCRIPTION,
-    url: absoluteUrl('/'),
+    description: options?.description || DEFAULT_DESCRIPTION,
+    inLanguage: LOCALE_TO_HREFLANG[locale],
+    url: absoluteUrl(localizePath('/', locale)),
     potentialAction: {
       '@type': 'SearchAction',
-      target: `${absoluteUrl('/discover')}?tag={search_term_string}`,
+      target: `${absoluteUrl(localizePath('/discover', locale))}?tag={search_term_string}`,
       'query-input': 'required name=search_term_string'
     }
   } as const;
 }
 
-export function buildOrganizationJsonLd() {
+export function buildOrganizationJsonLd(options?: { locale?: string }) {
+  const locale = normalizeLocale(options?.locale);
   return {
     '@context': 'https://schema.org',
     '@type': 'Organization',
     name: SITE_NAME,
-    url: absoluteUrl('/'),
+    url: absoluteUrl(localizePath('/', locale)),
     logo: resolveSeoImage(DEFAULT_OG_IMAGE)
   } as const;
 }

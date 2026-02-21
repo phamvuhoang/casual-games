@@ -1,23 +1,41 @@
 import type { MetadataRoute } from 'next';
+import { LOCALE_TO_HREFLANG, routing } from '@/i18n/routing';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { absoluteUrl } from '@/lib/utils/seo';
+import { absoluteUrl, localizePath } from '@/lib/utils/seo';
+
+function languageAlternates(path: string) {
+  return Object.fromEntries(
+    routing.locales.map((locale) => [LOCALE_TO_HREFLANG[locale], absoluteUrl(localizePath(path, locale))])
+  );
+}
+
+function buildLocalizedEntry(
+  path: string,
+  options: Pick<MetadataRoute.Sitemap[number], 'lastModified' | 'changeFrequency' | 'priority'>
+): MetadataRoute.Sitemap[number] {
+  return {
+    url: absoluteUrl(localizePath(path, routing.defaultLocale)),
+    ...options,
+    alternates: {
+      languages: languageAlternates(path)
+    }
+  };
+}
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
 
   const staticRoutes: MetadataRoute.Sitemap = [
-    {
-      url: absoluteUrl('/'),
+    buildLocalizedEntry('/', {
       lastModified: now,
       changeFrequency: 'weekly',
       priority: 1
-    },
-    {
-      url: absoluteUrl('/discover'),
+    }),
+    buildLocalizedEntry('/discover', {
       lastModified: now,
       changeFrequency: 'daily',
       priority: 0.9
-    }
+    })
   ];
 
   try {
@@ -37,21 +55,23 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         .limit(5000)
     ]);
 
-    const compositionRoutes: MetadataRoute.Sitemap = (compositions ?? []).map((composition) => ({
-      url: absoluteUrl(`/composition/${composition.id}`),
-      lastModified: composition.updated_at ?? composition.created_at ?? now,
-      changeFrequency: 'weekly',
-      priority: 0.8
-    }));
+    const compositionRoutes: MetadataRoute.Sitemap = (compositions ?? []).map((composition) =>
+      buildLocalizedEntry(`/composition/${composition.id}`, {
+        lastModified: composition.updated_at ?? composition.created_at ?? now,
+        changeFrequency: 'weekly',
+        priority: 0.8
+      })
+    );
 
     const profileRoutes: MetadataRoute.Sitemap = (profiles ?? [])
       .filter((profile) => Boolean(profile.username))
-      .map((profile) => ({
-        url: absoluteUrl(`/profile/${profile.username}`),
-        lastModified: profile.updated_at ?? profile.created_at ?? now,
-        changeFrequency: 'weekly',
-        priority: 0.7
-      }));
+      .map((profile) =>
+        buildLocalizedEntry(`/profile/${profile.username}`, {
+          lastModified: profile.updated_at ?? profile.created_at ?? now,
+          changeFrequency: 'weekly',
+          priority: 0.7
+        })
+      );
 
     return [...staticRoutes, ...compositionRoutes, ...profileRoutes];
   } catch (_error) {

@@ -6,8 +6,19 @@ export default function robots(): MetadataRoute.Robots {
     rules: [
       {
         userAgent: '*',
-        allow: ['/', '/discover', '/composition/', '/profile/'],
-        disallow: ['/api/', '/auth/', '/callback', '/login', '/signup', '/create']
+        allow: ['/', '/discover', '/composition/', '/profile/', '/ja', '/ja/discover', '/ja/composition/', '/ja/profile/'],
+        disallow: [
+          '/api/',
+          '/auth/',
+          '/callback',
+          '/login',
+          '/signup',
+          '/create',
+          '/ja/callback',
+          '/ja/login',
+          '/ja/signup',
+          '/ja/create'
+        ]
       }
     ],
     sitemap: absoluteUrl('/sitemap.xml'),

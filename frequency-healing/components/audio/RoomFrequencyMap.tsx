@@ -1,21 +1,25 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+
 interface RoomFrequencyMapProps {
   levels: number[];
 }
 
 export default function RoomFrequencyMap({ levels }: RoomFrequencyMapProps) {
+  const tFrequencyCreator = useTranslations('create.frequencyCreator');
+
   if (levels.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-ink/15 bg-white/70 p-3 text-xs text-ink/60">
-        Run room scan to generate a live frequency map.
+        {tFrequencyCreator('ui.roomScanPrompt')}
       </div>
     );
   }
 
   return (
     <div className="rounded-2xl border border-ink/10 bg-white/80 p-3">
-      <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Room frequency map</p>
+      <p className="text-xs uppercase tracking-[0.2em] text-ink/55">{tFrequencyCreator('ui.roomFrequencyMap')}</p>
       <div className="mt-2 flex h-16 items-end gap-[3px] rounded-xl bg-gradient-to-r from-slate-50 via-white to-slate-50 px-2 py-1">
         {levels.map((value, index) => (
           <div
@@ -28,4 +32,3 @@ export default function RoomFrequencyMap({ levels }: RoomFrequencyMapProps) {
     </div>
   );
 }
-

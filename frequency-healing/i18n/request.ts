@@ -9,7 +9,9 @@ export default getRequestConfig(async ({requestLocale}) => {
   const messages =
     locale === 'ja'
       ? (await import('@/messages/ja.json')).default
-      : (await import('@/messages/en.json')).default;
+      : locale === 'vi'
+        ? (await import('@/messages/vi.json')).default
+        : (await import('@/messages/en.json')).default;
 
   return {
     locale,

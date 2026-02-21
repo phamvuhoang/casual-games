@@ -13,7 +13,7 @@ export interface IntentionImprintResult {
 }
 
 type ThemeTone = 'supportive' | 'grounding' | 'transformative';
-export type IntentionLocale = 'en' | 'ja';
+export type IntentionLocale = 'en' | 'ja' | 'vi';
 
 interface ThemeMapping {
   id: string;
@@ -53,14 +53,16 @@ const THEME_DEFINITIONS: ThemeDefinition[] = [
   {
     id: 'healing',
     tone: 'supportive',
-    labels: { en: 'healing', ja: 'ヒーリング' },
+    labels: { en: 'healing', ja: 'ヒーリング', vi: 'chữa lành' },
     keywords: {
       en: ['heal', 'healing', 'restore', 'recovery', 'repair', 'regenerate', 'wellness', 'healthy'],
-      ja: ['癒し', '回復', '修復', '再生', '健康', '整える']
+      ja: ['癒し', '回復', '修復', '再生', '健康', '整える'],
+      vi: ['chữa lành', 'hồi phục', 'phục hồi', 'tái tạo', 'lành lại', 'sức khỏe', 'cân bằng', 'wellness']
     },
     phrases: {
       en: ['self healing', 'inner healing', 'physical healing'],
-      ja: ['自己治癒', '内なる癒し', '身体の癒し']
+      ja: ['自己治癒', '内なる癒し', '身体の癒し'],
+      vi: ['chữa lành bản thân', 'chữa lành nội tâm', 'chữa lành cơ thể']
     },
     frequencies: [528, 432, 639],
     modulationRateHz: 0.18,
@@ -69,14 +71,16 @@ const THEME_DEFINITIONS: ThemeDefinition[] = [
   {
     id: 'love',
     tone: 'supportive',
-    labels: { en: 'love', ja: '愛' },
+    labels: { en: 'love', ja: '愛', vi: 'tình yêu' },
     keywords: {
       en: ['love', 'loving', 'heart', 'affection', 'care', 'connection', 'belonging'],
-      ja: ['愛', '愛情', '心', 'ハート', 'つながり', '思いやり']
+      ja: ['愛', '愛情', '心', 'ハート', 'つながり', '思いやり'],
+      vi: ['tình yêu', 'yêu thương', 'trái tim', 'kết nối', 'quan tâm', 'gắn kết', 'dịu dàng']
     },
     phrases: {
       en: ['unconditional love', 'self love', 'heart opening'],
-      ja: ['無条件の愛', '自己愛', '心を開く']
+      ja: ['無条件の愛', '自己愛', '心を開く'],
+      vi: ['tình yêu vô điều kiện', 'yêu thương bản thân', 'mở lòng']
     },
     frequencies: [639, 528, 741],
     modulationRateHz: 0.21,
@@ -85,14 +89,16 @@ const THEME_DEFINITIONS: ThemeDefinition[] = [
   {
     id: 'compassion',
     tone: 'supportive',
-    labels: { en: 'compassion', ja: '慈しみ' },
+    labels: { en: 'compassion', ja: '慈しみ', vi: 'từ bi' },
     keywords: {
       en: ['compassion', 'kindness', 'gentle', 'empathy', 'warmth', 'grace'],
-      ja: ['慈しみ', '優しさ', '共感', 'ぬくもり', '思いやり', '寛容']
+      ja: ['慈しみ', '優しさ', '共感', 'ぬくもり', '思いやり', '寛容'],
+      vi: ['từ bi', 'bao dung', 'nhân ái', 'thấu cảm', 'ấm áp', 'dịu dàng', 'độ lượng']
     },
     phrases: {
       en: ['be kind', 'soft heart', 'gentle strength'],
-      ja: ['優しくある', '柔らかな心', '穏やかな強さ']
+      ja: ['優しくある', '柔らかな心', '穏やかな強さ'],
+      vi: ['sống tử tế', 'trái tim mềm mại', 'sức mạnh dịu dàng']
     },
     frequencies: [639, 432, 528],
     modulationRateHz: 0.2,
@@ -101,14 +107,16 @@ const THEME_DEFINITIONS: ThemeDefinition[] = [
   {
     id: 'grounding',
     tone: 'grounding',
-    labels: { en: 'grounding', ja: 'グラウンディング' },
+    labels: { en: 'grounding', ja: 'グラウンディング', vi: 'tiếp đất' },
     keywords: {
       en: ['ground', 'grounded', 'grounding', 'stable', 'safety', 'secure', 'root', 'earth', 'balance'],
-      ja: ['グラウンディング', '安定', '安心', '土台', '根', '地', 'バランス']
+      ja: ['グラウンディング', '安定', '安心', '土台', '根', '地', 'バランス'],
+      vi: ['tiếp đất', 'vững vàng', 'ổn định', 'an toàn', 'neo lại', 'cân bằng', 'kết nối đất']
     },
     phrases: {
       en: ['mother earth', 'earth energy', 'feel safe'],
-      ja: ['大地とつながる', '地のエネルギー', '安心を感じる']
+      ja: ['大地とつながる', '地のエネルギー', '安心を感じる'],
+      vi: ['kết nối với mặt đất', 'năng lượng đất mẹ', 'cảm thấy an toàn']
     },
     frequencies: [396, 432, 417],
     modulationRateHz: 0.14,
@@ -117,14 +125,16 @@ const THEME_DEFINITIONS: ThemeDefinition[] = [
   {
     id: 'calm',
     tone: 'grounding',
-    labels: { en: 'calm', ja: '静けさ' },
+    labels: { en: 'calm', ja: '静けさ', vi: 'an tĩnh' },
     keywords: {
       en: ['calm', 'peace', 'still', 'quiet', 'settle', 'soothe', 'relax', 'ease'],
-      ja: ['落ち着き', '平和', '静か', '鎮まる', '和らぐ', 'リラックス']
+      ja: ['落ち着き', '平和', '静か', '鎮まる', '和らぐ', 'リラックス'],
+      vi: ['bình yên', 'an tĩnh', 'thư giãn', 'dịu lại', 'lắng xuống', 'êm dịu', 'thả lỏng']
     },
     phrases: {
       en: ['inner peace', 'nervous system calm', 'rest and reset'],
-      ja: ['内なる平和', '神経系を落ち着かせる', '休息とリセット']
+      ja: ['内なる平和', '神経系を落ち着かせる', '休息とリセット'],
+      vi: ['bình an nội tâm', 'làm dịu hệ thần kinh', 'nghỉ ngơi và tái tạo']
     },
     frequencies: [432, 528, 639],
     modulationRateHz: 0.13,
@@ -133,14 +143,16 @@ const THEME_DEFINITIONS: ThemeDefinition[] = [
   {
     id: 'grief',
     tone: 'transformative',
-    labels: { en: 'grief support', ja: '悲嘆サポート' },
+    labels: { en: 'grief support', ja: '悲嘆サポート', vi: 'xoa dịu mất mát' },
     keywords: {
       en: ['sad', 'sadness', 'grief', 'grieving', 'sorrow', 'heartbreak', 'lonely', 'hurt'],
-      ja: ['悲しみ', '悲嘆', '喪失', '心の痛み', '孤独', '傷つき']
+      ja: ['悲しみ', '悲嘆', '喪失', '心の痛み', '孤独', '傷つき'],
+      vi: ['buồn', 'nỗi buồn', 'mất mát', 'đau lòng', 'cô đơn', 'tổn thương', 'than khóc']
     },
     phrases: {
       en: ['release sadness', 'process grief', 'healing sorrow'],
-      ja: ['悲しみを解放', '悲嘆を癒す', '喪失を受け止める']
+      ja: ['悲しみを解放', '悲嘆を癒す', '喪失を受け止める'],
+      vi: ['giải phóng nỗi buồn', 'ôm ấp mất mát', 'chữa lành đau thương']
     },
     frequencies: [396, 417, 528],
     modulationRateHz: 0.2,
@@ -149,14 +161,16 @@ const THEME_DEFINITIONS: ThemeDefinition[] = [
   {
     id: 'anger',
     tone: 'transformative',
-    labels: { en: 'anger release', ja: '怒りの解放' },
+    labels: { en: 'anger release', ja: '怒りの解放', vi: 'giải phóng giận dữ' },
     keywords: {
       en: ['anger', 'angry', 'rage', 'resentment', 'irritation', 'furious', 'mad', 'frustration'],
-      ja: ['怒り', '憤り', '苛立ち', '不満', '激怒', 'フラストレーション']
+      ja: ['怒り', '憤り', '苛立ち', '不満', '激怒', 'フラストレーション'],
+      vi: ['giận', 'giận dữ', 'phẫn nộ', 'bực bội', 'ức chế', 'cáu gắt', 'nóng nảy']
     },
     phrases: {
       en: ['release anger', 'transmute anger', 'let go of rage'],
-      ja: ['怒りを解放', '怒りを変容', '憤りを手放す']
+      ja: ['怒りを解放', '怒りを変容', '憤りを手放す'],
+      vi: ['xả giận an toàn', 'chuyển hóa giận dữ', 'buông cơn giận']
     },
     frequencies: [741, 396, 417],
     modulationRateHz: 0.27,
@@ -165,14 +179,16 @@ const THEME_DEFINITIONS: ThemeDefinition[] = [
   {
     id: 'fear',
     tone: 'transformative',
-    labels: { en: 'fear to safety', ja: '恐れから安心へ' },
+    labels: { en: 'fear to safety', ja: '恐れから安心へ', vi: 'từ sợ hãi đến an toàn' },
     keywords: {
       en: ['fear', 'anxiety', 'worry', 'panic', 'unsafe', 'stress', 'tense', 'afraid'],
-      ja: ['恐れ', '不安', '心配', 'パニック', 'ストレス', '緊張', '怖い']
+      ja: ['恐れ', '不安', '心配', 'パニック', 'ストレス', '緊張', '怖い'],
+      vi: ['sợ hãi', 'lo âu', 'lo lắng', 'hoảng sợ', 'căng thẳng', 'bất an', 'sợ']
     },
     phrases: {
       en: ['feel safe now', 'release fear', 'calm anxiety'],
-      ja: ['今ここで安心', '恐れを解放', '不安を鎮める']
+      ja: ['今ここで安心', '恐れを解放', '不安を鎮める'],
+      vi: ['cảm thấy an toàn ngay lúc này', 'giải phóng sợ hãi', 'xoa dịu lo âu']
     },
     frequencies: [396, 432, 528],
     modulationRateHz: 0.17,
@@ -181,14 +197,16 @@ const THEME_DEFINITIONS: ThemeDefinition[] = [
   {
     id: 'attachment',
     tone: 'transformative',
-    labels: { en: 'attachment release', ja: '執着の解放' },
+    labels: { en: 'attachment release', ja: '執着の解放', vi: 'buông chấp trước' },
     keywords: {
       en: ['greed', 'greedy', 'craving', 'attachment', 'cling', 'clinging', 'possessive', 'envy'],
-      ja: ['執着', '渇望', '貪り', '手放せない', '嫉妬', '固執']
+      ja: ['執着', '渇望', '貪り', '手放せない', '嫉妬', '固執'],
+      vi: ['chấp trước', 'tham', 'tham lam', 'thèm muốn', 'bám víu', 'ganh tị', 'chiếm hữu']
     },
     phrases: {
       en: ['release attachment', 'let go of greed', 'free from craving'],
-      ja: ['執着を解放', '欲を手放す', '渇望から自由になる']
+      ja: ['執着を解放', '欲を手放す', '渇望から自由になる'],
+      vi: ['buông chấp trước', 'thả sự tham cầu', 'tự do khỏi khao khát']
     },
     frequencies: [417, 396, 741],
     modulationRateHz: 0.24,
@@ -197,14 +215,16 @@ const THEME_DEFINITIONS: ThemeDefinition[] = [
   {
     id: 'confusion',
     tone: 'transformative',
-    labels: { en: 'clarity from confusion', ja: '混乱から明晰へ' },
+    labels: { en: 'clarity from confusion', ja: '混乱から明晰へ', vi: 'từ rối loạn đến sáng rõ' },
     keywords: {
       en: ['delusion', 'deluded', 'confusion', 'confused', 'uncertain', 'foggy', 'illusion', 'doubt'],
-      ja: ['混乱', '迷い', '不確か', 'もやもや', '錯覚', '疑い', '曖昧']
+      ja: ['混乱', '迷い', '不確か', 'もやもや', '錯覚', '疑い', '曖昧'],
+      vi: ['rối loạn', 'mơ hồ', 'hoang mang', 'nghi ngờ', 'phân vân', 'ảo tưởng', 'khó hiểu']
     },
     phrases: {
       en: ['clear confusion', 'clarify mind', 'cut through illusion'],
-      ja: ['混乱を晴らす', '心を明晰にする', '幻想を見抜く']
+      ja: ['混乱を晴らす', '心を明晰にする', '幻想を見抜く'],
+      vi: ['làm rõ sự rối loạn', 'soi sáng tâm trí', 'xuyên qua ảo tưởng']
     },
     frequencies: [852, 741, 528],
     modulationRateHz: 0.29,
@@ -213,14 +233,16 @@ const THEME_DEFINITIONS: ThemeDefinition[] = [
   {
     id: 'clarity',
     tone: 'supportive',
-    labels: { en: 'clarity', ja: '明晰' },
+    labels: { en: 'clarity', ja: '明晰', vi: 'sáng rõ' },
     keywords: {
       en: ['clarity', 'focus', 'clear', 'purpose', 'discipline', 'attention', 'study'],
-      ja: ['明晰', '集中', '明確', '目的', '規律', '注意', '学習']
+      ja: ['明晰', '集中', '明確', '目的', '規律', '注意', '学習'],
+      vi: ['sáng rõ', 'tập trung', 'rõ ràng', 'mục tiêu', 'kỷ luật', 'chú ý', 'học tập']
     },
     phrases: {
       en: ['sharp focus', 'clear direction', 'mental clarity'],
-      ja: ['鋭い集中', '明確な方向', '精神の明晰さ']
+      ja: ['鋭い集中', '明確な方向', '精神の明晰さ'],
+      vi: ['tập trung sắc nét', 'định hướng rõ ràng', 'đầu óc minh mẫn']
     },
     frequencies: [741, 852, 528],
     modulationRateHz: 0.33,
@@ -229,14 +251,16 @@ const THEME_DEFINITIONS: ThemeDefinition[] = [
   {
     id: 'intuition',
     tone: 'supportive',
-    labels: { en: 'intuition', ja: '直感' },
+    labels: { en: 'intuition', ja: '直感', vi: 'trực giác' },
     keywords: {
       en: ['intuition', 'insight', 'wisdom', 'awareness', 'vision', 'guidance', 'spirit'],
-      ja: ['直感', '洞察', '智慧', '気づき', '導き', 'スピリット']
+      ja: ['直感', '洞察', '智慧', '気づき', '導き', 'スピリット'],
+      vi: ['trực giác', 'thấu hiểu', 'minh triết', 'nhận biết', 'dẫn đường', 'linh cảm', 'tầm nhìn']
     },
     phrases: {
       en: ['inner guidance', 'trust intuition', 'higher perspective'],
-      ja: ['内なる導き', '直感を信頼', '高い視点']
+      ja: ['内なる導き', '直感を信頼', '高い視点'],
+      vi: ['dẫn đường nội tâm', 'tin vào trực giác', 'góc nhìn cao hơn']
     },
     frequencies: [852, 963, 741],
     modulationRateHz: 0.23,
@@ -245,14 +269,16 @@ const THEME_DEFINITIONS: ThemeDefinition[] = [
   {
     id: 'forgiveness',
     tone: 'supportive',
-    labels: { en: 'forgiveness', ja: '赦し' },
+    labels: { en: 'forgiveness', ja: '赦し', vi: 'tha thứ' },
     keywords: {
       en: ['forgive', 'forgiveness', 'release', 'accept', 'mercy', 'reconcile'],
-      ja: ['赦し', '受容', '和解', '手放し', '慈悲']
+      ja: ['赦し', '受容', '和解', '手放し', '慈悲'],
+      vi: ['tha thứ', 'buông bỏ', 'chấp nhận', 'hòa giải', 'khoan dung', 'từ tâm']
     },
     phrases: {
       en: ['forgive myself', 'forgive others', 'release resentment'],
-      ja: ['自分を赦す', '他者を赦す', 'わだかまりを手放す']
+      ja: ['自分を赦す', '他者を赦す', 'わだかまりを手放す'],
+      vi: ['tha thứ cho bản thân', 'tha thứ cho người khác', 'buông oán giận']
     },
     frequencies: [417, 639, 528],
     modulationRateHz: 0.22,
@@ -261,14 +287,16 @@ const THEME_DEFINITIONS: ThemeDefinition[] = [
   {
     id: 'abundance',
     tone: 'supportive',
-    labels: { en: 'abundance', ja: '豊かさ' },
+    labels: { en: 'abundance', ja: '豊かさ', vi: 'thịnh vượng' },
     keywords: {
       en: ['abundance', 'prosperity', 'wealth', 'success', 'growth', 'opportunity', 'flourish'],
-      ja: ['豊かさ', '繁栄', '成功', '成長', '機会', '実り']
+      ja: ['豊かさ', '繁栄', '成功', '成長', '機会', '実り'],
+      vi: ['thịnh vượng', 'dồi dào', 'thành công', 'phát triển', 'cơ hội', 'đơm hoa kết trái', 'sung túc']
     },
     phrases: {
       en: ['abundant life', 'receive abundance', 'expand prosperity'],
-      ja: ['豊かな人生', '豊かさを受け取る', '繁栄を広げる']
+      ja: ['豊かな人生', '豊かさを受け取る', '繁栄を広げる'],
+      vi: ['cuộc sống dồi dào', 'đón nhận thịnh vượng', 'mở rộng sung túc']
     },
     frequencies: [417, 528, 963],
     modulationRateHz: 0.27,
@@ -341,8 +369,40 @@ const STOP_WORDS = new Set([
   'under'
 ]);
 
+const STOP_WORDS_VI = new Set([
+  'và',
+  'là',
+  'của',
+  'cho',
+  'trong',
+  'trên',
+  'với',
+  'từ',
+  'đến',
+  'ở',
+  'một',
+  'những',
+  'các',
+  'tôi',
+  'bạn',
+  'chúng',
+  'ta',
+  'này',
+  'đó',
+  'thì',
+  'đang',
+  'được',
+  'không',
+  'rất',
+  'quá',
+  'cũng',
+  'như',
+  'khi',
+  'để'
+]);
+
 function resolveLocale(locale?: IntentionLocale): IntentionLocale {
-  return locale === 'ja' ? 'ja' : 'en';
+  return locale === 'ja' || locale === 'vi' ? locale : 'en';
 }
 
 function getThemeMappings(locale: IntentionLocale): ThemeMapping[] {
@@ -368,6 +428,14 @@ function normalizeText(input: string, locale: IntentionLocale) {
   if (locale === 'ja') {
     return trimmed
       .replace(/[。、「」『』（）()［］【】？！!?.,]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  if (locale === 'vi') {
+    return trimmed
+      .normalize('NFC')
+      .replace(/[^\p{L}\p{N}\s'-]/gu, ' ')
       .replace(/\s+/g, ' ')
       .trim();
   }
@@ -458,6 +526,33 @@ function tokenizeJapanese(input: string, mappings: ThemeMapping[]) {
   return { normalized, tokens };
 }
 
+function tokenizeVietnamese(input: string, mappings: ThemeMapping[]) {
+  const normalized = normalizeText(input, 'vi');
+  if (!normalized) {
+    return { normalized, tokens: [] as TokenizedWord[] };
+  }
+
+  const tokenSet = new Set<string>();
+
+  normalized
+    .split(' ')
+    .map((raw) => raw.trim())
+    .filter((raw) => raw.length >= 2 && !STOP_WORDS_VI.has(raw))
+    .forEach((raw) => tokenSet.add(raw));
+
+  mappings.forEach((mapping) => {
+    mapping.keywords.forEach((keyword) => {
+      const normalizedKeyword = normalizeText(keyword, 'vi');
+      if (normalizedKeyword && normalized.includes(normalizedKeyword)) {
+        tokenSet.add(normalizedKeyword);
+      }
+    });
+  });
+
+  const tokens = Array.from(tokenSet).map((raw) => ({ raw, stem: raw }));
+  return { normalized, tokens };
+}
+
 function dedupeStrings(values: string[]) {
   const seen = new Set<string>();
   const output: string[] = [];
@@ -484,7 +579,7 @@ function hasPhrase(input: string, phrase: string, locale: IntentionLocale) {
     return false;
   }
 
-  if (locale === 'ja') {
+  if (locale === 'ja' || locale === 'vi') {
     return input.includes(trimmed);
   }
 
@@ -519,6 +614,13 @@ function collectThemeHits(
       if (locale === 'ja') {
         mapping.keywords.forEach((keyword) => {
           const normalizedKeyword = normalizeText(keyword, 'ja');
+          if (normalizedKeyword && normalizedText.includes(normalizedKeyword)) {
+            tokenHitSet.add(normalizedKeyword);
+          }
+        });
+      } else if (locale === 'vi') {
+        mapping.keywords.forEach((keyword) => {
+          const normalizedKeyword = normalizeText(keyword, 'vi');
           if (normalizedKeyword && normalizedText.includes(normalizedKeyword)) {
             tokenHitSet.add(normalizedKeyword);
           }
@@ -608,35 +710,51 @@ function weightedAverage(selectedThemes: ThemeHit[], key: 'modulationRateHz' | '
 
 function buildReflectionSummary(locale: IntentionLocale, selectedThemes: ThemeHit[]) {
   if (selectedThemes.length === 0) {
-    return locale === 'ja'
-      ? '強いテーマ一致がありません。中立的な調和ブレンドを使用します。'
-      : 'No strong theme match. Using a neutral harmonizing blend.';
+    if (locale === 'ja') {
+      return '強いテーマ一致がありません。中立的な調和ブレンドを使用します。';
+    }
+    if (locale === 'vi') {
+      return 'Chưa có chủ đề khớp mạnh. Hệ thống dùng phối cộng hưởng trung tính.';
+    }
+    return 'No strong theme match. Using a neutral harmonizing blend.';
   }
 
   const themeLabels = selectedThemes.map((entry) => entry.mapping.label).join(', ');
 
   if (selectedThemes.some((entry) => entry.mapping.tone === 'transformative')) {
-    return locale === 'ja'
-      ? `マッピングテーマ: ${themeLabels}。解放志向のサポートトーンを含みます。`
-      : `Mapped themes: ${themeLabels}. Includes release-oriented support tones.`;
+    if (locale === 'ja') {
+      return `マッピングテーマ: ${themeLabels}。解放志向のサポートトーンを含みます。`;
+    }
+    if (locale === 'vi') {
+      return `Chủ đề đã ánh xạ: ${themeLabels}. Bao gồm các tông hỗ trợ giải phóng.`;
+    }
+    return `Mapped themes: ${themeLabels}. Includes release-oriented support tones.`;
   }
 
   if (selectedThemes.some((entry) => entry.mapping.tone === 'grounding')) {
-    return locale === 'ja'
-      ? `マッピングテーマ: ${themeLabels}。グラウンディングと安定化を重視します。`
-      : `Mapped themes: ${themeLabels}. Emphasizes grounding and stabilization.`;
+    if (locale === 'ja') {
+      return `マッピングテーマ: ${themeLabels}。グラウンディングと安定化を重視します。`;
+    }
+    if (locale === 'vi') {
+      return `Chủ đề đã ánh xạ: ${themeLabels}. Nhấn mạnh tiếp đất và ổn định hệ thần kinh.`;
+    }
+    return `Mapped themes: ${themeLabels}. Emphasizes grounding and stabilization.`;
   }
 
-  return locale === 'ja'
-    ? `マッピングテーマ: ${themeLabels}。サポーティブな共鳴を重視します。`
-    : `Mapped themes: ${themeLabels}. Emphasizes supportive resonance.`;
+  if (locale === 'ja') {
+    return `マッピングテーマ: ${themeLabels}。サポーティブな共鳴を重視します。`;
+  }
+  if (locale === 'vi') {
+    return `Chủ đề đã ánh xạ: ${themeLabels}. Nhấn mạnh cộng hưởng nâng đỡ.`;
+  }
+  return `Mapped themes: ${themeLabels}. Emphasizes supportive resonance.`;
 }
 
 export function analyzeQuantumIntention(text: string, options?: { locale?: IntentionLocale }): IntentionImprintResult {
   const locale = resolveLocale(options?.locale);
   const mappings = getThemeMappings(locale);
   const { normalized, tokens } =
-    locale === 'ja' ? tokenizeJapanese(text, mappings) : tokenizeEnglish(text);
+    locale === 'ja' ? tokenizeJapanese(text, mappings) : locale === 'vi' ? tokenizeVietnamese(text, mappings) : tokenizeEnglish(text);
   const hits = collectThemeHits(tokens, normalized, mappings, locale);
   const selectedThemes = selectThemes(hits);
 
@@ -705,7 +823,8 @@ export function buildIntentionShareText(options: {
   locale?: IntentionLocale;
 }) {
   const locale = resolveLocale(options.locale);
-  const title = options.intentionText.trim() || (locale === 'ja' ? '私の意図' : 'My intention');
+  const title =
+    options.intentionText.trim() || (locale === 'ja' ? '私の意図' : locale === 'vi' ? 'Ý định của tôi' : 'My intention');
   const keywords = dedupeStrings(options.keywords).slice(0, 4);
   const mappedFrequencies = Array.from(
     new Set(options.mappedFrequencies.map((frequency) => normalizeFrequency(frequency)))
@@ -713,18 +832,21 @@ export function buildIntentionShareText(options: {
   const parts = [title];
 
   if (keywords.length > 0) {
-    parts.push(`${locale === 'ja' ? 'キーワード' : 'Keywords'}: ${keywords.join(', ')}.`);
+    const keywordsLabel = locale === 'ja' ? 'キーワード' : locale === 'vi' ? 'Từ khóa' : 'Keywords';
+    parts.push(`${keywordsLabel}: ${keywords.join(', ')}.`);
   }
 
   if (mappedFrequencies.length > 0) {
+    const fieldLabel = locale === 'ja' ? 'フィールド' : locale === 'vi' ? 'Trường âm' : 'Field';
     parts.push(
-      `${locale === 'ja' ? 'フィールド' : 'Field'}: ${mappedFrequencies
+      `${fieldLabel}: ${mappedFrequencies
         .map((frequency) => `${Math.round(frequency)}Hz`)
         .join(' • ')}.`
     );
   }
 
-  parts.push(`${locale === 'ja' ? 'シード' : 'Seed'} ${options.certificateSeed || 'INT-UNKNOWN'}`);
+  const seedLabel = locale === 'ja' ? 'シード' : locale === 'vi' ? 'Hạt giống' : 'Seed';
+  parts.push(`${seedLabel} ${options.certificateSeed || 'INT-UNKNOWN'}`);
 
   return parts.join(' | ');
 }

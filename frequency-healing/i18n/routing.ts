@@ -1,7 +1,7 @@
 import {defineRouting} from 'next-intl/routing';
 
 export const routing = defineRouting({
-  locales: ['en', 'ja'],
+  locales: ['en', 'ja', 'vi'],
   defaultLocale: 'en',
   localePrefix: 'as-needed',
   localeDetection: true,
@@ -16,15 +16,18 @@ export type AppLocale = (typeof routing.locales)[number];
 
 export const LOCALE_LABELS: Record<AppLocale, string> = {
   en: 'English',
-  ja: '日本語'
+  ja: '日本語',
+  vi: 'Tiếng Việt'
 };
 
 export const LOCALE_TO_OG: Record<AppLocale, string> = {
   en: 'en_US',
-  ja: 'ja_JP'
+  ja: 'ja_JP',
+  vi: 'vi_VN'
 };
 
 export const LOCALE_TO_HREFLANG: Record<AppLocale, string> = {
   en: 'en-US',
-  ja: 'ja-JP'
+  ja: 'ja-JP',
+  vi: 'vi-VN'
 };

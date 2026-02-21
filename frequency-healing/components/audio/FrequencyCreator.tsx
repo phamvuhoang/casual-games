@@ -32,7 +32,8 @@ import {
 } from '@/lib/audio/BreathSyncEngine';
 import {
   analyzeQuantumIntention,
-  buildIntentionShareText
+  buildIntentionShareText,
+  type IntentionLocale
 } from '@/lib/audio/QuantumIntentionEngine';
 import {
   analyzeRoomSpectrum,
@@ -259,6 +260,7 @@ function isBaseVisualizationType(type: VisualizerType): type is BaseVisualizatio
 
 export default function FrequencyCreator() {
   const locale = useLocale();
+  const intentionLocale: IntentionLocale = locale === 'ja' || locale === 'vi' ? locale : 'en';
   const tCreate = useTranslations('create');
   const tFrequencyCreator = useTranslations('create.frequencyCreator');
   const tFrequencyCreatorStatus = useTranslations('create.frequencyCreator.status');
@@ -869,7 +871,7 @@ export default function FrequencyCreator() {
         keywords: intentionConfig.extractedKeywords,
         mappedFrequencies: intentionConfig.mappedFrequencies,
         certificateSeed: intentionConfig.certificateSeed ?? 'INT-UNKNOWN',
-        locale: locale === 'ja' ? 'ja' : 'en'
+        locale: intentionLocale
       })
     );
   }, [
@@ -877,7 +879,7 @@ export default function FrequencyCreator() {
     intentionConfig.extractedKeywords,
     intentionConfig.intentionText,
     intentionConfig.mappedFrequencies,
-    locale
+    intentionLocale
   ]);
 
   useEffect(() => {
@@ -974,7 +976,7 @@ export default function FrequencyCreator() {
               keywords: parsed.innovation.intentionImprint.extractedKeywords,
               mappedFrequencies: parsed.innovation.intentionImprint.mappedFrequencies,
               certificateSeed: parsed.innovation.intentionImprint.certificateSeed ?? 'INT-UNKNOWN',
-              locale: locale === 'ja' ? 'ja' : 'en'
+              locale: intentionLocale
             })
           );
         }
@@ -2018,7 +2020,7 @@ export default function FrequencyCreator() {
     }
 
     const result = analyzeQuantumIntention(trimmed, {
-      locale: locale === 'ja' ? 'ja' : 'en'
+      locale: intentionLocale
     });
     const generatedAt = new Date().toISOString();
 
@@ -2039,7 +2041,7 @@ export default function FrequencyCreator() {
         keywords: result.keywords,
         mappedFrequencies: result.mappedFrequencies,
         certificateSeed: result.certificateSeed,
-        locale: locale === 'ja' ? 'ja' : 'en'
+        locale: intentionLocale
       })
     );
     setIntentionStatus(

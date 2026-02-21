@@ -67,6 +67,32 @@ export const DEFAULT_KEYWORDS_JA = [
   '852hz',
   '963hz'
 ] as const;
+export const DEFAULT_KEYWORDS_VI = [
+  'tần số chữa lành',
+  'nhạc chữa lành',
+  'thiền định âm thanh',
+  'nhạc thiền',
+  'binaural beats',
+  'trị liệu âm thanh',
+  'âm thanh wellbeing',
+  'solfeggio frequencies',
+  'nhạc ngủ sâu',
+  'nhạc tập trung',
+  'giảm căng thẳng',
+  'điều hòa hệ thần kinh',
+  'coherent breathing',
+  'breath-sync',
+  'adaptive binaural journey',
+  'quantum intention imprint',
+  'voice bioprint',
+  'visual âm thanh phản ứng',
+  '432hz',
+  '528hz',
+  '639hz',
+  '741hz',
+  '852hz',
+  '963hz'
+] as const;
 
 const FALLBACK_SITE_URL = 'http://localhost:3000';
 const rawSiteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? '';
@@ -288,7 +314,8 @@ export function buildPageMetadata(options: BuildPageMetadataOptions): Metadata {
   const imageAlt = options.imageAlt || `${title} cover image`;
   const robots = buildRobots(Boolean(options.noIndex));
   const fullTitle = buildDocumentTitle(title === SITE_NAME ? '' : title);
-  const localeKeywords = locale === 'ja' ? [...DEFAULT_KEYWORDS_JA] : [...DEFAULT_KEYWORDS];
+  const localeKeywords =
+    locale === 'ja' ? [...DEFAULT_KEYWORDS_JA] : locale === 'vi' ? [...DEFAULT_KEYWORDS_VI] : [...DEFAULT_KEYWORDS];
   const keywords = uniqueKeywords(localeKeywords, options.keywords);
   const alternateLocales = routing.locales
     .filter((entry) => entry !== locale)

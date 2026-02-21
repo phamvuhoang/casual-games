@@ -364,6 +364,8 @@
         "seed": "Seed",
         "selectedFrequencies": "Selected frequencies",
         "selectedFrequenciesDescription": "Add arbitrary frequencies ({min}-{max}Hz), then use harmonics, modulation, and rhythm shaping.",
+        "enableAdvancedFrequencyRange": "Enable advanced frequency range",
+        "advancedFrequencyRangeHint": "(sample-rate aware, up to {max}Hz)",
         "sensitivity": "Sensitivity",
         "sessionSaved": "Session saved.",
         "share": "Share",

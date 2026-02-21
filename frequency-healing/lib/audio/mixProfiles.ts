@@ -2,6 +2,7 @@ import type { WaveformType, FrequencyConfig } from '@/lib/audio/FrequencyGenerat
 import {
   clamp as clampValue,
   frequencyKey,
+  MIN_CUSTOM_FREQUENCY_HZ,
   normalizeFrequency,
   type BinauralConfig
 } from '@/lib/audio/audioConfig';
@@ -55,16 +56,21 @@ export function buildFrequencyMix(options: {
   volume: number;
   frequencyVolumes?: Record<string, number>;
   binaural?: BinauralConfig;
+  maxFrequencyHz?: number;
 }): FrequencyConfig[] {
-  const { mixStyle, selectedFrequencies, waveform, volume, frequencyVolumes = {}, binaural } = options;
+  const { mixStyle, selectedFrequencies, waveform, volume, frequencyVolumes = {}, binaural, maxFrequencyHz } = options;
+  const frequencyMaxHz =
+    typeof maxFrequencyHz === 'number' && Number.isFinite(maxFrequencyHz)
+      ? Math.max(MIN_CUSTOM_FREQUENCY_HZ, maxFrequencyHz)
+      : undefined;
 
-  const baseFrequencies = selectedFrequencies.map((value) => normalizeFrequency(value));
+  const baseFrequencies = selectedFrequencies.map((value) => normalizeFrequency(value, frequencyMaxHz));
   if (baseFrequencies.length === 0) {
     return [];
   }
 
   const getVoiceGain = (frequency: number) => {
-    const key = frequencyKey(frequency);
+    const key = frequencyKey(frequency, frequencyMaxHz);
     const explicit = frequencyVolumes[key];
     if (typeof explicit === 'number' && Number.isFinite(explicit)) {
       return clampValue(0.01, explicit, 1);
@@ -132,12 +138,24 @@ export function buildFrequencyMix(options: {
   });
 }
 
-export function frequenciesForStorage(mixStyle: MixStyle, selectedFrequencies: number[], voices: FrequencyConfig[]) {
+export function frequenciesForStorage(
+  mixStyle: MixStyle,
+  selectedFrequencies: number[],
+  voices: FrequencyConfig[],
+  maxFrequencyHz?: number
+) {
+  const frequencyMaxHz =
+    typeof maxFrequencyHz === 'number' && Number.isFinite(maxFrequencyHz)
+      ? Math.max(MIN_CUSTOM_FREQUENCY_HZ, maxFrequencyHz)
+      : undefined;
+
   if (selectedFrequencies.length > 0) {
-    return Array.from(new Set(selectedFrequencies.map((frequency) => roundHz(normalizeFrequency(frequency)))));
+    return Array.from(
+      new Set(selectedFrequencies.map((frequency) => roundHz(normalizeFrequency(frequency, frequencyMaxHz))))
+    );
   }
 
-  const voiceFrequencies = voices.map((voice) => roundHz(normalizeFrequency(voice.frequency)));
+  const voiceFrequencies = voices.map((voice) => roundHz(normalizeFrequency(voice.frequency, frequencyMaxHz)));
 
   if (mixStyle === 'manual') {
     return voiceFrequencies;

@@ -364,6 +364,8 @@
         "seed": "Hạt giống",
         "selectedFrequencies": "Tần số đã chọn",
         "selectedFrequenciesDescription": "Thêm các tần số bất kỳ ({min}-{max}Hz), sau đó dùng harmonic, modulation và tạo hình nhịp.",
+        "enableAdvancedFrequencyRange": "Bật dải tần nâng cao",
+        "advancedFrequencyRangeHint": "(theo sample rate, tối đa {max}Hz)",
         "sensitivity": "Độ nhạy",
         "sessionSaved": "Đã lưu phiên.",
         "share": "Chia sẻ",

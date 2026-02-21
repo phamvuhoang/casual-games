@@ -63,6 +63,7 @@ import { createDestinationAudioCapture, exportAudio } from '@/lib/audio/AudioExp
 import { DEFAULT_EFFECTS } from '@/lib/audio/effects';
 import {
   clamp,
+  DEFAULT_SAMPLE_RATE_HZ,
   createDefaultAudioConfig,
   frequencyKey,
   MAX_CUSTOM_FREQUENCY_HZ,
@@ -70,6 +71,7 @@ import {
   normalizeFrequency,
   normalizeRhythmSteps,
   parseAudioConfig,
+  resolveAdvancedFrequencyMaxHz,
   type AudioConfigShape,
   type AdaptiveBinauralJourneyConfig,
   type BinauralConfig,
@@ -215,6 +217,7 @@ async function captureThumbnail(canvas: HTMLCanvasElement) {
 type DraftState = {
   selectedFrequencies: number[];
   frequencyVolumes: Record<string, number>;
+  advancedFrequencyMode: boolean;
   mixStyle: MixStyle;
   waveform: (typeof WAVEFORMS)[number];
   volume: number;
@@ -252,16 +255,16 @@ function parsePostAuthFocus(value: string | null): PostAuthFocus | null {
   return (POST_AUTH_FOCUS_VALUES as readonly string[]).includes(value) ? (value as PostAuthFocus) : null;
 }
 
-function isValidFrequency(value: number) {
-  return Number.isFinite(value) && value >= MIN_CUSTOM_FREQUENCY_HZ && value <= MAX_CUSTOM_FREQUENCY_HZ;
+function isValidFrequency(value: number, maxHz = MAX_CUSTOM_FREQUENCY_HZ) {
+  return Number.isFinite(value) && value >= MIN_CUSTOM_FREQUENCY_HZ && value <= maxHz;
 }
 
-function dedupeFrequencies(values: number[]) {
+function dedupeFrequencies(values: number[], maxHz = MAX_CUSTOM_FREQUENCY_HZ) {
   const set = new Set<number>();
   const output: number[] = [];
 
   for (const value of values) {
-    const normalized = normalizeFrequency(value);
+    const normalized = normalizeFrequency(value, maxHz);
     if (!set.has(normalized)) {
       set.add(normalized);
       output.push(normalized);
@@ -306,6 +309,8 @@ export default function FrequencyCreator() {
   const [selectedFrequencies, setSelectedFrequencies] = useState<number[]>([]);
   const [frequencyVolumes, setFrequencyVolumes] = useState<Record<string, number>>({});
   const [customFrequencyInput, setCustomFrequencyInput] = useState('');
+  const [advancedFrequencyMode, setAdvancedFrequencyMode] = useState(false);
+  const [audioSampleRate, setAudioSampleRate] = useState(DEFAULT_SAMPLE_RATE_HZ);
   const [mixStyle, setMixStyle] = useState<MixStyle>('golden432');
   const [isPlaying, setIsPlaying] = useState(false);
   const [waveform, setWaveform] = useState<(typeof WAVEFORMS)[number]>('sine');
@@ -461,6 +466,20 @@ export default function FrequencyCreator() {
       waveform
     ]
   );
+  const advancedFrequencyMaxHz = useMemo(
+    () => resolveAdvancedFrequencyMaxHz(audioSampleRate),
+    [audioSampleRate]
+  );
+  const activeFrequencyMaxHz = advancedFrequencyMode ? advancedFrequencyMaxHz : MAX_CUSTOM_FREQUENCY_HZ;
+  const roundedActiveFrequencyMaxHz = Math.round(activeFrequencyMaxHz);
+  const normalizeUserFrequency = useCallback(
+    (value: number) => normalizeFrequency(value, activeFrequencyMaxHz),
+    [activeFrequencyMaxHz]
+  );
+  const frequencyKeyForCurrentRange = useCallback(
+    (value: number) => frequencyKey(value, activeFrequencyMaxHz),
+    [activeFrequencyMaxHz]
+  );
 
   const audioConfig = useMemo<AudioConfigShape>(
     () => ({
@@ -576,7 +595,9 @@ export default function FrequencyCreator() {
 
   const customFrequencyValue = Number(customFrequencyInput);
   const customFrequencyValid =
-    customFrequencyInput.trim().length > 0 && Number.isFinite(customFrequencyValue) && isValidFrequency(customFrequencyValue);
+    customFrequencyInput.trim().length > 0 &&
+    Number.isFinite(customFrequencyValue) &&
+    isValidFrequency(customFrequencyValue, activeFrequencyMaxHz);
 
   const effectiveVisualizationLayers = useMemo(() => {
     let baseLayers: VisualizationLayerConfig[] = [];
@@ -764,12 +785,43 @@ export default function FrequencyCreator() {
     tFrequencyCreator
   ]);
 
+  useEffect(() => {
+    const sampleRate = generator.getSampleRate();
+    if (typeof sampleRate === 'number' && Number.isFinite(sampleRate) && sampleRate > 0) {
+      setAudioSampleRate(sampleRate);
+    }
+  }, [generator]);
+
+  useEffect(() => {
+    if (!advancedFrequencyMode) {
+      return;
+    }
+
+    setSelectedFrequencies((prev) => dedupeFrequencies(prev, advancedFrequencyMaxHz));
+    setSweepConfig((prev) => ({
+      ...prev,
+      targetHz: normalizeFrequency(prev.targetHz, advancedFrequencyMaxHz)
+    }));
+    setCustomFrequencyInput((prev) => {
+      if (prev.trim().length === 0) {
+        return prev;
+      }
+
+      const parsed = Number(prev);
+      if (!Number.isFinite(parsed)) {
+        return prev;
+      }
+
+      return String(normalizeFrequency(parsed, advancedFrequencyMaxHz));
+    });
+  }, [advancedFrequencyMaxHz, advancedFrequencyMode]);
+
   const sessionOverlayInfo = useMemo<VisualizationSessionOverlayData>(
     () => ({
       title,
       frequencies: selectedFrequencies.map((frequency) => ({
         frequency,
-        gain: frequencyVolumes[frequencyKey(frequency)] ?? 1
+        gain: frequencyVolumes[frequencyKeyForCurrentRange(frequency)] ?? 1
       })),
       mixStyle,
       waveform,
@@ -780,7 +832,9 @@ export default function FrequencyCreator() {
     }),
     [
       binauralConfig,
+      activeFrequencyMaxHz,
       frequencyVolumes,
+      frequencyKeyForCurrentRange,
       mixStyle,
       modulationConfig,
       rhythmConfig,
@@ -799,9 +853,10 @@ export default function FrequencyCreator() {
         waveform,
         volume,
         frequencyVolumes,
-        binaural: binauralConfig
+        binaural: binauralConfig,
+        maxFrequencyHz: activeFrequencyMaxHz
       }),
-    [mixStyle, selectedFrequencies, waveform, volume, frequencyVolumes, binauralConfig]
+    [mixStyle, selectedFrequencies, waveform, volume, frequencyVolumes, binauralConfig, activeFrequencyMaxHz]
   );
 
   const roomResponseVoices = useMemo(
@@ -844,9 +899,9 @@ export default function FrequencyCreator() {
       return [];
     }
 
-    const selectedSet = new Set(selectedFrequencies.map((frequency) => normalizeFrequency(frequency)));
+    const selectedSet = new Set(selectedFrequencies.map((frequency) => normalizeUserFrequency(frequency)));
     return intentionConfig.mappedFrequencies
-      .map((frequency) => normalizeFrequency(frequency))
+      .map((frequency) => normalizeUserFrequency(frequency))
       .filter((frequency) => !selectedSet.has(frequency))
       .slice(0, 4)
       .map((frequency, index) => ({
@@ -865,6 +920,7 @@ export default function FrequencyCreator() {
     intentionConfig.mappingConfidence,
     intentionConfig.modulationRateHz,
     intentionConfig.ritualIntensity,
+    normalizeUserFrequency,
     selectedFrequencies,
     volume
   ]);
@@ -1117,9 +1173,23 @@ export default function FrequencyCreator() {
 
     try {
       const draft = JSON.parse(raw) as Partial<DraftState>;
+      const draftAdvancedFrequencyMode = typeof draft.advancedFrequencyMode === 'boolean'
+        ? draft.advancedFrequencyMode
+        : false;
+      const draftSampleRate = generator.getSampleRate();
+      if (typeof draftSampleRate === 'number' && Number.isFinite(draftSampleRate) && draftSampleRate > 0) {
+        setAudioSampleRate(draftSampleRate);
+      }
+      const draftFrequencyMaxHz = draftAdvancedFrequencyMode
+        ? resolveAdvancedFrequencyMaxHz(draftSampleRate ?? audioSampleRate)
+        : MAX_CUSTOM_FREQUENCY_HZ;
+      setAdvancedFrequencyMode(draftAdvancedFrequencyMode);
+
       if (draft.audioConfig) {
-        const parsed = parseAudioConfig(draft.audioConfig);
-        setSelectedFrequencies(dedupeFrequencies(parsed.selectedFrequencies));
+        const parsed = parseAudioConfig(draft.audioConfig, {
+          maxFrequencyHz: draftFrequencyMaxHz
+        });
+        setSelectedFrequencies(dedupeFrequencies(parsed.selectedFrequencies, draftFrequencyMaxHz));
         setFrequencyVolumes(parsed.frequencyVolumes);
         setRhythmConfig(parsed.rhythm);
         setModulationConfig(parsed.modulation);
@@ -1148,7 +1218,7 @@ export default function FrequencyCreator() {
         setVoiceProfileId(parsed.innovation.voiceBioprint.profileId);
       } else {
         if (draft.selectedFrequencies) {
-          setSelectedFrequencies(dedupeFrequencies(draft.selectedFrequencies));
+          setSelectedFrequencies(dedupeFrequencies(draft.selectedFrequencies, draftFrequencyMaxHz));
         }
         if (draft.frequencyVolumes) {
           setFrequencyVolumes(draft.frequencyVolumes);
@@ -1207,6 +1277,7 @@ export default function FrequencyCreator() {
     const draft: DraftState = {
       selectedFrequencies,
       frequencyVolumes,
+      advancedFrequencyMode,
       mixStyle,
       waveform,
       volume,
@@ -1226,6 +1297,7 @@ export default function FrequencyCreator() {
     window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
   }, [
     ambientSound,
+    advancedFrequencyMode,
     audioConfigJson,
     audioFormat,
     description,
@@ -1247,9 +1319,10 @@ export default function FrequencyCreator() {
     setFrequencyVolumes((prev) => {
       const next = { ...prev };
       let changed = false;
+      const selectedKeys = new Set(selectedFrequencies.map((frequency) => frequencyKeyForCurrentRange(frequency)));
 
       selectedFrequencies.forEach((frequency) => {
-        const key = frequencyKey(frequency);
+        const key = frequencyKeyForCurrentRange(frequency);
         if (typeof next[key] !== 'number') {
           next[key] = 1;
           changed = true;
@@ -1257,8 +1330,24 @@ export default function FrequencyCreator() {
       });
 
       for (const key of Object.keys(next)) {
-        const value = Number(key);
-        if (Number.isFinite(value) && !selectedFrequencies.includes(normalizeFrequency(value))) {
+        const numeric = Number(key);
+        if (!Number.isFinite(numeric)) {
+          delete next[key];
+          changed = true;
+          continue;
+        }
+
+        const normalizedKey = frequencyKeyForCurrentRange(numeric);
+        if (!selectedKeys.has(normalizedKey)) {
+          delete next[key];
+          changed = true;
+          continue;
+        }
+
+        if (key !== normalizedKey) {
+          if (typeof next[normalizedKey] !== 'number') {
+            next[normalizedKey] = next[key];
+          }
           delete next[key];
           changed = true;
         }
@@ -1266,7 +1355,7 @@ export default function FrequencyCreator() {
 
       return changed ? next : prev;
     });
-  }, [selectedFrequencies]);
+  }, [frequencyKeyForCurrentRange, selectedFrequencies]);
 
   useEffect(() => {
     if (isPlaying) {
@@ -1800,7 +1889,7 @@ export default function FrequencyCreator() {
   }, [isCompactViewport, isPlaying, liveVisualizationEnabled, showMobileLiveDock, visualCanvas]);
 
   const addFrequency = (hz: number, defaultGain = 1) => {
-    const normalized = normalizeFrequency(hz);
+    const normalized = normalizeUserFrequency(hz);
     let inserted = false;
 
     setSelectedFrequencies((prev) => {
@@ -1825,19 +1914,19 @@ export default function FrequencyCreator() {
 
     setFrequencyVolumes((prev) => ({
       ...prev,
-      [frequencyKey(normalized)]: clamp(0.05, defaultGain, 1)
+      [frequencyKeyForCurrentRange(normalized)]: clamp(0.05, defaultGain, 1)
     }));
   };
 
   const toggleFrequency = (hz: number) => {
-    const normalized = normalizeFrequency(hz);
+    const normalized = normalizeUserFrequency(hz);
     const isSelected = selectedFrequencies.includes(normalized);
 
     if (isSelected) {
       setSelectedFrequencies((prev) => prev.filter((value) => value !== normalized));
       setFrequencyVolumes((prev) => {
         const next = { ...prev };
-        delete next[frequencyKey(normalized)];
+        delete next[frequencyKeyForCurrentRange(normalized)];
         return next;
       });
       return;
@@ -1863,7 +1952,7 @@ export default function FrequencyCreator() {
     });
     setFrequencyVolumes((prev) => ({
       ...prev,
-      [frequencyKey(normalized)]: prev[frequencyKey(normalized)] ?? 1
+      [frequencyKeyForCurrentRange(normalized)]: prev[frequencyKeyForCurrentRange(normalized)] ?? 1
     }));
   };
 
@@ -1872,7 +1961,7 @@ export default function FrequencyCreator() {
       setStatus(
         tFrequencyCreatorStatus('enterValidFrequencyRange', {
           min: MIN_CUSTOM_FREQUENCY_HZ,
-          max: MAX_CUSTOM_FREQUENCY_HZ
+          max: roundedActiveFrequencyMaxHz
         })
       );
       return;
@@ -1885,8 +1974,31 @@ export default function FrequencyCreator() {
 
   const nudgeCustomFrequency = (direction: 1 | -1) => {
     const base = customFrequencyValid ? customFrequencyValue : 432;
-    const next = normalizeFrequency(base + direction);
+    const next = normalizeUserFrequency(base + direction);
     setCustomFrequencyInput(String(next));
+  };
+
+  const handleAdvancedFrequencyModeChange = (enabled: boolean) => {
+    const nextFrequencyMaxHz = enabled ? advancedFrequencyMaxHz : MAX_CUSTOM_FREQUENCY_HZ;
+
+    setAdvancedFrequencyMode(enabled);
+    setSelectedFrequencies((prev) => dedupeFrequencies(prev, nextFrequencyMaxHz));
+    setSweepConfig((prev) => ({
+      ...prev,
+      targetHz: normalizeFrequency(prev.targetHz, nextFrequencyMaxHz)
+    }));
+    setCustomFrequencyInput((prev) => {
+      if (prev.trim().length === 0) {
+        return prev;
+      }
+
+      const parsed = Number(prev);
+      if (!Number.isFinite(parsed)) {
+        return prev;
+      }
+
+      return String(normalizeFrequency(parsed, nextFrequencyMaxHz));
+    });
   };
 
   const addHarmonics = () => {
@@ -1902,16 +2014,16 @@ export default function FrequencyCreator() {
       const harmonic2 = frequency * 2;
       const harmonic3 = frequency * 3;
 
-      if (isValidFrequency(harmonic2)) {
-        const normalized = normalizeFrequency(harmonic2);
+      if (isValidFrequency(harmonic2, activeFrequencyMaxHz)) {
+        const normalized = normalizeUserFrequency(harmonic2);
         if (!selectedFrequencies.includes(normalized)) {
           addFrequency(normalized, 0.55);
           added += 1;
         }
       }
 
-      if (isValidFrequency(harmonic3)) {
-        const normalized = normalizeFrequency(harmonic3);
+      if (isValidFrequency(harmonic3, activeFrequencyMaxHz)) {
+        const normalized = normalizeUserFrequency(harmonic3);
         if (!selectedFrequencies.includes(normalized)) {
           addFrequency(normalized, 0.35);
           added += 1;
@@ -1932,7 +2044,7 @@ export default function FrequencyCreator() {
   };
 
   const setFrequencyGain = (hz: number, value: number) => {
-    const key = frequencyKey(hz);
+    const key = frequencyKeyForCurrentRange(hz);
     setFrequencyVolumes((prev) => ({
       ...prev,
       [key]: clamp(0.05, value, 1)
@@ -2121,7 +2233,7 @@ export default function FrequencyCreator() {
     }
 
     const incoming = voiceBioprintConfig.recommendations.map((item) => ({
-      frequency: normalizeFrequency(item.frequency),
+      frequency: normalizeUserFrequency(item.frequency),
       gain: clamp(0.05, item.gain, 1)
     }));
 
@@ -2140,7 +2252,7 @@ export default function FrequencyCreator() {
     setFrequencyVolumes((prev) => {
       const next = { ...prev };
       incoming.forEach((item) => {
-        const key = frequencyKey(item.frequency);
+        const key = frequencyKeyForCurrentRange(item.frequency);
         next[key] = typeof next[key] === 'number' ? next[key] : item.gain;
       });
       return next;
@@ -2221,7 +2333,7 @@ export default function FrequencyCreator() {
     }
 
     const incoming = intentionConfig.mappedFrequencies.map((frequency) => ({
-      frequency: normalizeFrequency(frequency),
+      frequency: normalizeUserFrequency(frequency),
       gain: clamp(0.05, 0.28 + intentionConfig.mappingConfidence * 0.38, 0.85)
     }));
 
@@ -2240,7 +2352,7 @@ export default function FrequencyCreator() {
     setFrequencyVolumes((prev) => {
       const next = { ...prev };
       incoming.forEach((item) => {
-        const key = frequencyKey(item.frequency);
+        const key = frequencyKeyForCurrentRange(item.frequency);
         next[key] = typeof next[key] === 'number' ? next[key] : item.gain;
       });
       return next;
@@ -2546,6 +2658,10 @@ export default function FrequencyCreator() {
       await generator.initialize(DEFAULT_EFFECTS, {
         enableAudioBridge: shouldEnableBridge
       });
+      const initializedSampleRate = generator.getSampleRate();
+      if (typeof initializedSampleRate === 'number' && Number.isFinite(initializedSampleRate) && initializedSampleRate > 0) {
+        setAudioSampleRate(initializedSampleRate);
+      }
       if (adaptiveJourneyConfig.enabled && !binauralConfig.enabled) {
         setBinauralConfig((prev) => ({ ...prev, enabled: true }));
       }
@@ -2887,10 +3003,15 @@ export default function FrequencyCreator() {
         thumbnailUrl = supabase.storage.from(THUMBNAIL_BUCKET).getPublicUrl(thumbData.path).data.publicUrl;
       }
 
-      const frequenciesToStore = frequenciesForStorage(mixStyle, selectedFrequencies, mixedVoices);
+      const frequenciesToStore = frequenciesForStorage(
+        mixStyle,
+        selectedFrequencies,
+        mixedVoices,
+        activeFrequencyMaxHz
+      );
       const frequencyVolumesPayload: Json = Object.fromEntries(
         selectedFrequencies.map((frequency) => {
-          const key = frequencyKey(frequency);
+          const key = frequencyKeyForCurrentRange(frequency);
           return [key, frequencyVolumes[key] ?? 1];
         })
       );
@@ -3580,9 +3701,23 @@ export default function FrequencyCreator() {
               <p className="text-xs text-ink/60">
                 {tFrequencyCreator('ui.selectedFrequenciesDescription', {
                   min: MIN_CUSTOM_FREQUENCY_HZ,
-                  max: MAX_CUSTOM_FREQUENCY_HZ
+                  max: roundedActiveFrequencyMaxHz
                 })}
               </p>
+              <label className="mt-3 inline-flex items-center gap-2 text-xs text-ink/70">
+                <input
+                  type="checkbox"
+                  checked={advancedFrequencyMode}
+                  onChange={(event) => handleAdvancedFrequencyModeChange(event.target.checked)}
+                  className="h-4 w-4"
+                />
+                <span>{tFrequencyCreator('ui.enableAdvancedFrequencyRange')}</span>
+                <span className="text-ink/55">
+                  {tFrequencyCreator('ui.advancedFrequencyRangeHint', {
+                    max: Math.round(advancedFrequencyMaxHz)
+                  })}
+                </span>
+              </label>
               <div className="mt-3 flex flex-wrap items-end gap-2">
                 <label className="flex flex-col gap-1 text-xs uppercase tracking-[0.2em] text-ink/60">
                   {tFrequencyCreator('ui.customHz')}
@@ -3597,7 +3732,7 @@ export default function FrequencyCreator() {
                     <input
                       type="number"
                       min={MIN_CUSTOM_FREQUENCY_HZ}
-                      max={MAX_CUSTOM_FREQUENCY_HZ}
+                      max={roundedActiveFrequencyMaxHz}
                       step={0.1}
                       value={customFrequencyInput}
                       onChange={(event) => setCustomFrequencyInput(event.target.value)}
@@ -3624,7 +3759,7 @@ export default function FrequencyCreator() {
                 <p className="mt-2 text-xs text-rose-600">
                   {tFrequencyCreator('ui.frequencyRangeValidation', {
                     min: MIN_CUSTOM_FREQUENCY_HZ,
-                    max: MAX_CUSTOM_FREQUENCY_HZ
+                    max: roundedActiveFrequencyMaxHz
                   })}
                 </p>
               ) : null}
@@ -3936,7 +4071,7 @@ export default function FrequencyCreator() {
             ) : (
               <div className="space-y-3">
                 {selectedFrequencies.map((frequency) => {
-                  const key = frequencyKey(frequency);
+                  const key = frequencyKeyForCurrentRange(frequency);
                   const gain = frequencyVolumes[key] ?? 1;
                   return (
                     <div key={key} className="rounded-2xl border border-ink/10 bg-white px-3 py-3">
@@ -4196,12 +4331,12 @@ export default function FrequencyCreator() {
                       <input
                         type="number"
                         min={MIN_CUSTOM_FREQUENCY_HZ}
-                        max={MAX_CUSTOM_FREQUENCY_HZ}
+                        max={roundedActiveFrequencyMaxHz}
                         value={sweepConfig.targetHz}
                         onChange={(event) =>
                           setSweepConfig((prev) => ({
                             ...prev,
-                            targetHz: normalizeFrequency(Number(event.target.value))
+                            targetHz: normalizeUserFrequency(Number(event.target.value))
                           }))
                         }
                         className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"

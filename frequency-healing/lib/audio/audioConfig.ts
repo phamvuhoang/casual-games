@@ -2,6 +2,8 @@ import type { Json } from '@/lib/supabase/types';
 
 export const MIN_CUSTOM_FREQUENCY_HZ = 20;
 export const MAX_CUSTOM_FREQUENCY_HZ = 2000;
+export const MAX_ADVANCED_CUSTOM_FREQUENCY_HZ = 20000;
+export const DEFAULT_SAMPLE_RATE_HZ = 44100;
 export const MAX_AUDIO_STEPS = 16;
 
 export type RhythmSubdivision = '4n' | '8n' | '16n' | '8t';
@@ -306,13 +308,29 @@ export function clamp(min: number, value: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-export function normalizeFrequency(value: number) {
-  const rounded = Math.round(value * 100) / 100;
-  return clamp(MIN_CUSTOM_FREQUENCY_HZ, rounded, MAX_CUSTOM_FREQUENCY_HZ);
+export function resolveAdvancedFrequencyMaxHz(sampleRate?: number | null) {
+  const safeSampleRate =
+    typeof sampleRate === 'number' && Number.isFinite(sampleRate) && sampleRate > 0
+      ? sampleRate
+      : DEFAULT_SAMPLE_RATE_HZ;
+  const nyquistSafeMax = safeSampleRate * 0.45;
+  return Math.max(MIN_CUSTOM_FREQUENCY_HZ, Math.min(MAX_ADVANCED_CUSTOM_FREQUENCY_HZ, nyquistSafeMax));
 }
 
-export function frequencyKey(value: number) {
-  return normalizeFrequency(value).toFixed(2);
+function resolveFrequencyMax(maxHz?: number) {
+  if (typeof maxHz !== 'number' || !Number.isFinite(maxHz)) {
+    return MAX_CUSTOM_FREQUENCY_HZ;
+  }
+  return Math.max(MIN_CUSTOM_FREQUENCY_HZ, maxHz);
+}
+
+export function normalizeFrequency(value: number, maxHz?: number) {
+  const rounded = Math.round(value * 100) / 100;
+  return clamp(MIN_CUSTOM_FREQUENCY_HZ, rounded, resolveFrequencyMax(maxHz));
+}
+
+export function frequencyKey(value: number, maxHz?: number) {
+  return normalizeFrequency(value, maxHz).toFixed(2);
 }
 
 export function createDefaultAudioConfig(): AudioConfigShape {
@@ -375,9 +393,13 @@ export function normalizeRhythmSteps(input: unknown) {
   return steps;
 }
 
-export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape {
+export function parseAudioConfig(
+  raw: Json | null | undefined,
+  options: { maxFrequencyHz?: number } = {}
+): AudioConfigShape {
   const config = createDefaultAudioConfig();
   const object = asObject(raw);
+  const maxFrequencyHz = resolveFrequencyMax(options.maxFrequencyHz);
 
   if (!object) {
     return config;
@@ -385,7 +407,7 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
 
   const rawFrequencies = Array.isArray(object.selectedFrequencies) ? object.selectedFrequencies : [];
   const selectedFrequencies = rawFrequencies
-    .map((value) => (typeof value === 'number' ? normalizeFrequency(value) : null))
+    .map((value) => (typeof value === 'number' ? normalizeFrequency(value, maxFrequencyHz) : null))
     .filter((value): value is number => value !== null);
 
   const frequencyVolumes: Record<string, number> = {};
@@ -433,7 +455,7 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
       const reason = typeof entry.reason === 'string' ? entry.reason : 'Personalized recommendation';
       const explicitReasonKey = typeof entry.reasonKey === 'string' ? entry.reasonKey : null;
       return {
-        frequency: normalizeFrequency(asNumber(entry.frequency, 432)),
+        frequency: normalizeFrequency(asNumber(entry.frequency, 432), maxFrequencyHz),
         gain: clamp(0.05, asNumber(entry.gain, 0.55), 1),
         score: clamp(0, asNumber(entry.score, 0), 1),
         reason,
@@ -442,7 +464,9 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
     })
     .slice(0, 6);
   const lastDominantFrequencies = rawDominantFrequencies
-    .map((entry) => (typeof entry === 'number' && Number.isFinite(entry) ? normalizeFrequency(entry) : null))
+    .map((entry) =>
+      typeof entry === 'number' && Number.isFinite(entry) ? normalizeFrequency(entry, maxFrequencyHz) : null
+    )
     .filter((value): value is number => value !== null)
     .slice(0, 8);
   const journeySteps = rawJourneySteps
@@ -455,7 +479,9 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
     }))
     .slice(0, 8);
   const lastLayerFrequencies = rawHarmonicLayers
-    .map((entry) => (typeof entry === 'number' && Number.isFinite(entry) ? normalizeFrequency(entry) : null))
+    .map((entry) =>
+      typeof entry === 'number' && Number.isFinite(entry) ? normalizeFrequency(entry, maxFrequencyHz) : null
+    )
     .filter((value): value is number => value !== null)
     .slice(0, 24);
   const lastInterferenceFrequencies = rawHarmonicInterference
@@ -467,7 +493,9 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
     .filter((entry) => entry.length > 0)
     .slice(0, 12);
   const mappedFrequencies = rawIntentionFrequencies
-    .map((entry) => (typeof entry === 'number' && Number.isFinite(entry) ? normalizeFrequency(entry) : null))
+    .map((entry) =>
+      typeof entry === 'number' && Number.isFinite(entry) ? normalizeFrequency(entry, maxFrequencyHz) : null
+    )
     .filter((value): value is number => value !== null)
     .slice(0, 8);
 
@@ -489,7 +517,7 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
     },
     sweep: {
       enabled: asBoolean(sweep?.enabled, config.sweep.enabled),
-      targetHz: normalizeFrequency(asNumber(sweep?.targetHz, config.sweep.targetHz)),
+      targetHz: normalizeFrequency(asNumber(sweep?.targetHz, config.sweep.targetHz), maxFrequencyHz),
       durationSeconds: clamp(1, asNumber(sweep?.durationSeconds, config.sweep.durationSeconds), 180),
       curve: asString(sweep?.curve, ['linear', 'exponential', 'easeInOut'], config.sweep.curve)
     },

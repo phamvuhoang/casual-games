@@ -5,6 +5,7 @@ import { DEFAULT_EFFECTS } from '@/lib/audio/effects';
 import {
   clamp,
   normalizeFrequency,
+  resolveAdvancedFrequencyMaxHz,
   normalizeRhythmSteps,
   type ModulationConfig,
   type RhythmConfig,
@@ -180,6 +181,14 @@ export class FrequencyGenerator {
     return this.analyser;
   }
 
+  getSampleRate() {
+    return Tone.getContext().rawContext.sampleRate;
+  }
+
+  private getFrequencyCeilingHz() {
+    return resolveAdvancedFrequencyMaxHz(this.getSampleRate());
+  }
+
   updateEffects(effects: EffectsConfig) {
     this.lastEffects = effects;
     if (this.reverb && effects.reverb) {
@@ -220,7 +229,7 @@ export class FrequencyGenerator {
       },
       sweep: {
         enabled: Boolean(config.sweep.enabled),
-        targetHz: normalizeFrequency(config.sweep.targetHz),
+        targetHz: normalizeFrequency(config.sweep.targetHz, this.getFrequencyCeilingHz()),
         durationSeconds: clamp(1, config.sweep.durationSeconds, 180),
         curve: config.sweep.curve
       }
@@ -244,11 +253,13 @@ export class FrequencyGenerator {
 
     this.stopSynths(true);
     this.lastFrequencies = frequencies.map((config) => ({ ...config }));
-    this.voiceBaseFrequencies = frequencies.map((config) => normalizeFrequency(config.frequency));
+    const frequencyCeilingHz = this.getFrequencyCeilingHz();
+    this.voiceBaseFrequencies = frequencies.map((config) => normalizeFrequency(config.frequency, frequencyCeilingHz));
     this.voiceSweepTargets = this.computeSweepTargets(this.voiceBaseFrequencies);
     this.isPlaying = this.voiceBaseFrequencies.length > 0;
 
-    this.synths = frequencies.map((config) => {
+    this.synths = frequencies.map((config, index) => {
+      const baseFrequency = this.voiceBaseFrequencies[index] ?? config.frequency;
       const synth = new Tone.Synth({
         oscillator: { type: config.waveform },
         envelope: {
@@ -289,7 +300,7 @@ export class FrequencyGenerator {
       } else {
         destination.connect(this.inputBus!);
       }
-      synth.triggerAttack(config.frequency);
+      synth.triggerAttack(baseFrequency);
       return synth;
     });
 
@@ -1040,7 +1051,7 @@ export class FrequencyGenerator {
 
     const anchor = Math.max(20, baseFrequencies[0]);
     const ratio = this.automationConfig.sweep.targetHz / anchor;
-    return baseFrequencies.map((frequency) => clamp(20, frequency * ratio, 10000));
+    return baseFrequencies.map((frequency) => clamp(20, frequency * ratio, this.getFrequencyCeilingHz()));
   }
 
   private stopAutomationLoop(resetToBase = true) {
@@ -1137,7 +1148,7 @@ export class FrequencyGenerator {
       const target = this.voiceSweepTargets[index] ?? base;
       const sweptFrequency = sweepEnabled ? base + (target - base) * sweepAmount : base;
       const modulationOffset = modulationEnabled ? lfoValue * modulation.depthHz : 0;
-      const nextFrequency = clamp(20, sweptFrequency + modulationOffset, 10000);
+      const nextFrequency = clamp(20, sweptFrequency + modulationOffset, this.getFrequencyCeilingHz());
       synth.frequency.setValueAtTime(nextFrequency, time);
     });
 

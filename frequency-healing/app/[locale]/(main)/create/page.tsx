@@ -57,21 +57,21 @@ const CREATE_KEYWORDS: Record<AppLocale, string[]> = {
 
 const CREATE_FEATURES: Record<AppLocale, string[]> = {
   en: [
-    'Custom frequency stack (20-2000Hz)',
+    'Custom frequency stack (20-2000Hz, advanced up to 20kHz)',
     'Adaptive binaural journey templates',
     'Breath-sync protocol with pacing guidance',
     'Voice Bioprint vocal spectrum mapping',
     'Quantum intention mapping and harmonic field tools'
   ],
   ja: [
-    'カスタム周波数スタック（20〜2000Hz）',
+    'カスタム周波数スタック（20〜2000Hz、拡張で最大20kHz）',
     'アダプティブ・バイノーラル・ジャーニー',
     '呼吸ペーシング付き Breath-Sync プロトコル',
     'Voice Bioprint 音声スペクトラム解析',
     '量子意図マッピングとハーモニックフィールド'
   ],
   vi: [
-    'Chồng tần số tùy chỉnh (20-2000Hz)',
+    'Chồng tần số tùy chỉnh (20-2000Hz, nâng cao tới 20kHz)',
     'Lộ trình binaural thích ứng',
     'Giao thức Breath-Sync có hướng dẫn nhịp thở',
     'Voice Bioprint phân tích phổ giọng nói',

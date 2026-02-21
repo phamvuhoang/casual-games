@@ -364,6 +364,8 @@
         "seed": "シード",
         "selectedFrequencies": "選択中の周波数",
         "selectedFrequenciesDescription": "任意の周波数（{min}-{max}Hz）を追加し、ハーモニクス、モジュレーション、リズム整形を使えます。",
+        "enableAdvancedFrequencyRange": "高度な周波数レンジを有効化",
+        "advancedFrequencyRangeHint": "（サンプルレート連動、最大 {max}Hz）",
         "sensitivity": "感度",
         "sessionSaved": "セッションを保存しました。",
         "share": "共有",

@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
+import { track } from '@vercel/analytics';
+import { usePathname, useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import HelpPopover from '@/components/ui/HelpPopover';
 import Modal from '@/components/ui/Modal';
@@ -116,6 +118,8 @@ import { createSlug } from '@/lib/utils/helpers';
 
 const DEFAULT_VOLUME = 0.35;
 const DRAFT_KEY = 'frequency-healing:draft';
+const STUDIO_UNLOCK_KEY = 'frequency-healing:studio-unlocked';
+const FIRST_VALUE_KEY = 'frequency-healing:first-value-reached';
 const MAX_EXPORT_SECONDS = 300;
 const SUPABASE_OBJECT_LIMIT_BYTES = 50 * 1024 * 1024;
 const VIDEO_UPLOAD_TARGET_BYTES = 49 * 1024 * 1024;
@@ -227,6 +231,27 @@ type DraftState = {
   audioConfig: Json;
 };
 
+const POST_AUTH_FOCUS_VALUES = [
+  'publishing',
+  'frequency_stack',
+  'advanced_tools',
+  'voice_bioprint',
+  'sympathetic_resonance',
+  'adaptive_journey',
+  'breath_sync',
+  'intention_imprint',
+  'harmonic_field'
+] as const;
+
+type PostAuthFocus = (typeof POST_AUTH_FOCUS_VALUES)[number];
+
+function parsePostAuthFocus(value: string | null): PostAuthFocus | null {
+  if (!value) {
+    return null;
+  }
+  return (POST_AUTH_FOCUS_VALUES as readonly string[]).includes(value) ? (value as PostAuthFocus) : null;
+}
+
 function isValidFrequency(value: number) {
   return Number.isFinite(value) && value >= MIN_CUSTOM_FREQUENCY_HZ && value <= MAX_CUSTOM_FREQUENCY_HZ;
 }
@@ -259,6 +284,8 @@ function isBaseVisualizationType(type: VisualizerType): type is BaseVisualizatio
 }
 
 export default function FrequencyCreator() {
+  const router = useRouter();
+  const pathname = usePathname();
   const locale = useLocale();
   const intentionLocale: IntentionLocale = locale === 'ja' || locale === 'vi' ? locale : 'en';
   const tCreate = useTranslations('create');
@@ -299,6 +326,11 @@ export default function FrequencyCreator() {
   const [showSessionInfoOverlay, setShowSessionInfoOverlay] = useState(false);
   const [showPublishingTools, setShowPublishingTools] = useState(false);
   const [showAdvancedSoundTools, setShowAdvancedSoundTools] = useState(false);
+  const [isStudioUnlocked, setIsStudioUnlocked] = useState(false);
+  const [hasReachedFirstValue, setHasReachedFirstValue] = useState(false);
+  const [postAuthFocus, setPostAuthFocus] = useState<PostAuthFocus | null>(null);
+  const [authModalFocus, setAuthModalFocus] = useState<PostAuthFocus>('publishing');
+  const [handledPostAuthFocus, setHandledPostAuthFocus] = useState(false);
   const [liveVisualizationEnabled, setLiveVisualizationEnabled] = useState(true);
   const [showMobileLiveDock, setShowMobileLiveDock] = useState(true);
   const [isCompactViewport, setIsCompactViewport] = useState(false);
@@ -381,9 +413,20 @@ export default function FrequencyCreator() {
   const breathLastBpmRef = useRef<number | null>(null);
   const breathLastConfidenceRef = useRef(0);
   const breathSampleGateRef = useRef<number>(0);
+  const publishingToolsRef = useRef<HTMLDivElement | null>(null);
+  const voiceBioprintRef = useRef<HTMLDivElement | null>(null);
+  const sympatheticResonanceRef = useRef<HTMLDivElement | null>(null);
+  const adaptiveJourneyRef = useRef<HTMLDivElement | null>(null);
+  const breathSyncRef = useRef<HTMLDivElement | null>(null);
+  const intentionImprintRef = useRef<HTMLDivElement | null>(null);
+  const harmonicFieldRef = useRef<HTMLDivElement | null>(null);
   const mp3LimitSeconds = MP3_ESTIMATED_MAX_SECONDS;
   const showMp3Warning = audioFormat === 'mp3' && duration > mp3LimitSeconds;
   const maxSelectableFrequencies = mixStyle === 'golden432' ? MAX_PHASE2_FREQUENCIES : MAX_PHASE2_FREQUENCIES;
+  const isGuest = !userId;
+  const canAccessStudioControls = Boolean(userId) || isStudioUnlocked;
+  const canUseAdvancedModules = Boolean(userId);
+  const shouldShowAdvancedPreviews = isGuest && hasReachedFirstValue;
 
   const generator = useMemo(() => new FrequencyGenerator(), []);
   const micService = useMemo(() => new MicrophoneAnalysisService(), []);
@@ -628,6 +671,41 @@ export default function FrequencyCreator() {
         description: tFrequencyCreator(HARMONIC_PRESET_I18N_KEYS.earth_sky.description)
       }
     }),
+    [tFrequencyCreator]
+  );
+  const advancedFeaturePreviews = useMemo(
+    () => [
+      {
+        key: 'voice_bioprint' as const,
+        title: tFrequencyCreator('ui.voiceBioprintBeta'),
+        description: tFrequencyCreator('ui.voiceBioprintDescription')
+      },
+      {
+        key: 'sympathetic_resonance' as const,
+        title: tFrequencyCreator('ui.sympatheticResonanceTitle'),
+        description: tFrequencyCreator('ui.sympatheticResonanceDescription')
+      },
+      {
+        key: 'adaptive_journey' as const,
+        title: tFrequencyCreator('ui.adaptiveBinauralJourney'),
+        description: tFrequencyCreator('help.adaptiveJourneyText')
+      },
+      {
+        key: 'breath_sync' as const,
+        title: tFrequencyCreator('ui.breathSyncProtocol'),
+        description: tFrequencyCreator('help.breathSyncText')
+      },
+      {
+        key: 'intention_imprint' as const,
+        title: tFrequencyCreator('ui.quantumIntentionImprintExperimental'),
+        description: tFrequencyCreator('help.intentionImprintText')
+      },
+      {
+        key: 'harmonic_field' as const,
+        title: tFrequencyCreator('ui.solfeggioHarmonicField'),
+        description: tFrequencyCreator('help.harmonicFieldText')
+      }
+    ],
     [tFrequencyCreator]
   );
 
@@ -887,6 +965,16 @@ export default function FrequencyCreator() {
       return;
     }
     setOrigin(window.location.origin);
+    setPostAuthFocus(parsePostAuthFocus(new URLSearchParams(window.location.search).get('postAuthFocus')));
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    setIsStudioUnlocked(window.localStorage.getItem(STUDIO_UNLOCK_KEY) === '1');
+    setHasReachedFirstValue(window.localStorage.getItem(FIRST_VALUE_KEY) === '1');
   }, []);
 
   useEffect(() => {
@@ -908,10 +996,10 @@ export default function FrequencyCreator() {
   }, []);
 
   useEffect(() => {
-    if (!isCompactViewport) {
+    if (!isCompactViewport && userId) {
       setShowAdvancedSoundTools(true);
     }
-  }, [isCompactViewport]);
+  }, [isCompactViewport, userId]);
 
   useEffect(() => {
     if (isIOS && includeVideo) {
@@ -944,6 +1032,75 @@ export default function FrequencyCreator() {
   }, [supabase]);
 
   useEffect(() => {
+    if (!userId || typeof window === 'undefined') {
+      return;
+    }
+
+    setIsStudioUnlocked(true);
+    window.localStorage.setItem(STUDIO_UNLOCK_KEY, '1');
+  }, [userId]);
+
+  useEffect(() => {
+    setHandledPostAuthFocus(false);
+  }, [postAuthFocus]);
+
+  useEffect(() => {
+    if (!userId || !postAuthFocus || handledPostAuthFocus) {
+      return;
+    }
+
+    setHandledPostAuthFocus(true);
+    setAuthModalFocus(postAuthFocus);
+
+    if (postAuthFocus === 'publishing') {
+      setShowPublishingTools(true);
+    }
+    if (postAuthFocus === 'frequency_stack') {
+      setIsStudioUnlocked(true);
+    }
+    if (
+      postAuthFocus === 'advanced_tools' ||
+      postAuthFocus === 'adaptive_journey' ||
+      postAuthFocus === 'breath_sync' ||
+      postAuthFocus === 'intention_imprint' ||
+      postAuthFocus === 'harmonic_field'
+    ) {
+      setShowAdvancedSoundTools(true);
+    }
+
+    try {
+      track('post_auth_focus_returned', { focus: postAuthFocus });
+    } catch (error) {
+      console.warn('Analytics track failed.', error);
+    }
+
+    const focusTimer = window.setTimeout(() => {
+      const targetMap: Record<PostAuthFocus, HTMLElement | null> = {
+        publishing: publishingToolsRef.current,
+        frequency_stack: frequencyStackRef.current,
+        advanced_tools: advancedSoundRef.current,
+        voice_bioprint: voiceBioprintRef.current,
+        sympathetic_resonance: sympatheticResonanceRef.current,
+        adaptive_journey: adaptiveJourneyRef.current,
+        breath_sync: breathSyncRef.current,
+        intention_imprint: intentionImprintRef.current,
+        harmonic_field: harmonicFieldRef.current
+      };
+      targetMap[postAuthFocus]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 260);
+
+    const nextParams = new URLSearchParams(window.location.search);
+    nextParams.delete('postAuthFocus');
+    const nextHref = nextParams.size > 0 ? `${pathname}?${nextParams.toString()}` : pathname;
+    router.replace(nextHref, { scroll: false });
+    setPostAuthFocus(null);
+
+    return () => {
+      window.clearTimeout(focusTimer);
+    };
+  }, [handledPostAuthFocus, pathname, postAuthFocus, router, userId]);
+
+  useEffect(() => {
     if (typeof window === 'undefined') {
       return;
     }
@@ -952,6 +1109,11 @@ export default function FrequencyCreator() {
     if (!raw) {
       return;
     }
+
+    setIsStudioUnlocked(true);
+    setHasReachedFirstValue(true);
+    window.localStorage.setItem(STUDIO_UNLOCK_KEY, '1');
+    window.localStorage.setItem(FIRST_VALUE_KEY, '1');
 
     try {
       const draft = JSON.parse(raw) as Partial<DraftState>;
@@ -2285,6 +2447,72 @@ export default function FrequencyCreator() {
 
   const currentLayerEntries = visualizationType === 'multi-layer' ? visualizationLayers : effectiveVisualizationLayers;
 
+  const trackEvent = useCallback(
+    (name: string, properties?: Record<string, string | number | boolean | null | undefined>) => {
+      try {
+        track(name, properties);
+      } catch (error) {
+        console.warn('Analytics track failed.', error);
+      }
+    },
+    []
+  );
+
+  const createRedirectTo = useCallback(
+    (focus: PostAuthFocus) => {
+      return `${pathname}?postAuthFocus=${focus}`;
+    },
+    [pathname]
+  );
+
+  const buildAuthHref = useCallback(
+    (mode: 'login' | 'signup', focus: PostAuthFocus) => {
+      return `/${mode}?redirectTo=${encodeURIComponent(createRedirectTo(focus))}`;
+    },
+    [createRedirectTo]
+  );
+
+  const handleUnlockStudioControls = (source: 'manual' | 'sticky' | 'auto_after_first_play' = 'manual') => {
+    setIsStudioUnlocked(true);
+    setHasReachedFirstValue(true);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(STUDIO_UNLOCK_KEY, '1');
+      window.localStorage.setItem(FIRST_VALUE_KEY, '1');
+    }
+    trackEvent('ftue_studio_unlocked', {
+      source,
+      is_guest: isGuest,
+      is_authenticated: Boolean(userId)
+    });
+    setStatus(tFrequencyCreator('ui.studioControlsUnlocked'));
+  };
+
+  const handleAuthCtaClick = (
+    source:
+      | 'guest_publishing'
+      | 'advanced_preview'
+      | 'auth_modal'
+      | 'sticky_advanced',
+    cta: 'sign_in' | 'sign_up',
+    focus: PostAuthFocus
+  ) => {
+    trackEvent('ftue_auth_cta_click', {
+      source,
+      cta,
+      focus
+    });
+  };
+
+  const handlePromptSignIn = (source: 'advanced_preview_card' | 'sticky_advanced', focus: PostAuthFocus) => {
+    trackEvent('ftue_advanced_teaser_click', {
+      source,
+      focus
+    });
+    setAuthModalFocus(focus);
+    setStatus(tFrequencyCreatorStatus('signInToSaveComposition'));
+    setAuthModalOpen(true);
+  };
+
   const handlePlay = async () => {
     if (isSaving) {
       return;
@@ -2346,6 +2574,29 @@ export default function FrequencyCreator() {
       generator.setRhythmPattern(rhythmConfig);
       generator.setAutomation({ modulation: modulationConfig, sweep: sweepConfig });
       setAnalyser(generator.getAnalyser());
+
+      if (!hasReachedFirstValue) {
+        setHasReachedFirstValue(true);
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(FIRST_VALUE_KEY, '1');
+        }
+        trackEvent('ftue_first_play_started', {
+          is_guest: isGuest,
+          selected_frequency_count: selectedFrequencies.length
+        });
+      }
+      if (!userId && !isStudioUnlocked) {
+        setIsStudioUnlocked(true);
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(STUDIO_UNLOCK_KEY, '1');
+        }
+        trackEvent('ftue_studio_unlocked', {
+          source: 'auto_after_first_play',
+          is_guest: true,
+          is_authenticated: false
+        });
+      }
+
       setIsPlaying(true);
       setStatus(null);
     } catch (error) {
@@ -2489,6 +2740,7 @@ export default function FrequencyCreator() {
 
     if (!userId) {
       setStatus(tFrequencyCreatorStatus('signInToSaveComposition'));
+      setAuthModalFocus('publishing');
       setAuthModalOpen(true);
       return;
     }
@@ -2498,6 +2750,7 @@ export default function FrequencyCreator() {
     const activeUser = data.user ?? null;
     if (!activeUserId || !activeUser) {
       setStatus(tFrequencyCreatorStatus('signInToSaveComposition'));
+      setAuthModalFocus('publishing');
       setAuthModalOpen(true);
       return;
     }
@@ -2998,6 +3251,11 @@ export default function FrequencyCreator() {
           <p className="text-sm text-ink/70">
             {tFrequencyCreator('ui.quickResonanceDescription')}
           </p>
+          {isGuest && !hasReachedFirstValue ? (
+            <p className="rounded-2xl border border-ink/10 bg-white/82 px-3 py-2 text-xs text-ink/65">
+              {tFrequencyCreator('ui.firstSessionHint')}
+            </p>
+          ) : null}
           <div className="rounded-2xl border border-ink/10 bg-white/82 p-4">
             <p className="text-xs uppercase tracking-[0.22em] text-ink/55">{tFrequencyCreator('ui.activeFrequencyStack')}</p>
             <p className="mt-2 text-sm font-semibold text-ink/90">{selectedFrequencySummary}</p>
@@ -3015,9 +3273,15 @@ export default function FrequencyCreator() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => frequencyStackRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                onClick={() => {
+                  if (!canAccessStudioControls) {
+                    handleUnlockStudioControls();
+                    return;
+                  }
+                  frequencyStackRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
               >
-                {tFrequencyCreator('ui.tuneFrequencies')}
+                {canAccessStudioControls ? tFrequencyCreator('ui.tuneFrequencies') : tFrequencyCreator('ui.unlockStudioControls')}
               </Button>
             </div>
           </div>
@@ -3164,396 +3428,468 @@ export default function FrequencyCreator() {
         </button>
 
         {showPublishingTools ? (
-          <div id="publishing-tools" className="mt-4 space-y-4">
+          <div id="publishing-tools" ref={publishingToolsRef} className="mt-4 space-y-4">
             {!userId ? (
-              <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
-                <p className="text-sm text-ink/70">
-                  {tFrequencyCreator('ui.guestCompositionNotice')}
-                </p>
-                <div className="mt-3 flex flex-wrap gap-3">
+              <div className="rounded-3xl border border-ink/10 bg-white/82 p-5">
+                <p className="text-xs uppercase tracking-[0.2em] text-ink/55">{tFrequencyCreator('ui.guestPublishingTitle')}</p>
+                <p className="mt-2 text-sm text-ink/72">{tFrequencyCreator('ui.guestPublishingDescription')}</p>
+                <ul className="mt-3 space-y-1 text-xs text-ink/65">
+                  <li>{tFrequencyCreator('ui.guestPublishingBenefitSave')}</li>
+                  <li>{tFrequencyCreator('ui.guestPublishingBenefitAdvanced')}</li>
+                  <li>{tFrequencyCreator('ui.guestPublishingBenefitPublish')}</li>
+                </ul>
+                <div className="mt-4 flex flex-wrap gap-3">
                   <Button asChild size="sm">
-                    <Link href="/login?redirectTo=/create">{tFrequencyCreator('ui.signInToSave')}</Link>
+                    <Link
+                      href={buildAuthHref('login', 'publishing')}
+                      onClick={() => handleAuthCtaClick('guest_publishing', 'sign_in', 'publishing')}
+                    >
+                      {tFrequencyCreator('ui.signInToSave')}
+                    </Link>
                   </Button>
                   <Button asChild size="sm" variant="outline">
-                    <Link href="/signup?redirectTo=/discover">{tFrequencyCreator('ui.createAccount')}</Link>
+                    <Link
+                      href={buildAuthHref('signup', 'publishing')}
+                      onClick={() => handleAuthCtaClick('guest_publishing', 'sign_up', 'publishing')}
+                    >
+                      {tFrequencyCreator('ui.createAccount')}
+                    </Link>
                   </Button>
                 </div>
+                <p className="mt-3 text-xs text-ink/58">{tFrequencyCreator('ui.localDraftNotice')}</p>
               </div>
-            ) : null}
-
-            <div className="grid gap-3">
-              <label className="text-xs uppercase tracking-[0.3em] text-ink/60">{tFrequencyCreator('ui.title')}</label>
-              <input
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                className="w-full rounded-2xl border border-ink/10 bg-white/80 px-4 py-3 text-sm"
-              />
-              <label className="text-xs uppercase tracking-[0.3em] text-ink/60">{tFrequencyCreator('ui.description')}</label>
-              <textarea
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                className="min-h-[90px] w-full rounded-2xl border border-ink/10 bg-white/80 px-4 py-3 text-sm"
-              />
-            </div>
-
-            <div className="grid gap-3 text-sm md:grid-cols-2">
-              <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/80 px-3 py-2">
-                <span>{tFrequencyCreator('ui.exportFormat')}</span>
-                <select
-                  value={audioFormat}
-                  onChange={(event) => setAudioFormat(event.target.value as typeof audioFormat)}
-                  className="rounded-full border border-ink/10 bg-white px-3 py-2"
-                >
-                  {AUDIO_FORMATS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/80 px-3 py-2">
-                <span>{tFrequencyCreator('ui.captureVideo')}</span>
-                <input
-                  type="checkbox"
-                  checked={includeVideo}
-                  onChange={(event) => setIncludeVideo(event.target.checked)}
-                  disabled={isIOS}
-                  className="h-4 w-4"
-                />
-              </label>
-              <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/80 px-3 py-2">
-                <span>{tFrequencyCreator('ui.publicShare')}</span>
-                <input
-                  type="checkbox"
-                  checked={isPublic}
-                  onChange={(event) => setIsPublic(event.target.checked)}
-                  className="h-4 w-4"
-                />
-              </label>
-              <div className="flex items-center gap-3">
-                <Button variant="outline" onClick={handleSave} disabled={!isPlaying || isSaving}>
-                  {isSaving ? tFrequencyCreator('ui.saving') : tFrequencyCreator('ui.saveAndShare')}
-                </Button>
-              </div>
-            </div>
-            {showMp3Warning ? (
-              <p className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                {tFrequencyCreator('ui.mp3Warning', {
-                  seconds: mp3LimitSeconds
-                })}
-              </p>
-            ) : null}
-            {includeVideo ? (
-              <p className="rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-700">
-                {tFrequencyCreator('ui.videoExport50mbNote')}
-              </p>
-            ) : null}
-            {savedCompositionId ? (
-              <div className="rounded-2xl border border-ink/10 bg-white/80 p-4">
-                <p className="text-sm font-semibold text-ink/85">{tFrequencyCreator('ui.sessionSaved')}</p>
-                <p className="mt-1 text-xs text-ink/60">
-                  {savedCompositionPublic
-                    ? tFrequencyCreator('ui.savedPublicShareHint')
-                    : tFrequencyCreator('ui.savedPrivateHint')}
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button asChild size="sm" variant="outline">
-                    <Link href={savedCompositionPath ?? '/discover'}>{tFrequencyCreator('ui.openComposition')}</Link>
-                  </Button>
-                  {savedCompositionPublic ? (
-                    <>
-                      <Button size="sm" variant="outline" onClick={handleCopyShareLink}>
-                        {tFrequencyCreator('ui.copyLink')}
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={handleNativeShare}>
-                        {tFrequencyCreator('ui.share')}
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={handleCopyEmbedCode}>
-                        {tFrequencyCreator('ui.copyEmbed')}
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => handleSocialShare('x')}>
-                        X
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => handleSocialShare('facebook')}>
-                        Facebook
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => handleSocialShare('linkedin')}>
-                        LinkedIn
-                      </Button>
-                    </>
-                  ) : null}
+            ) : (
+              <>
+                <div className="grid gap-3">
+                  <label className="text-xs uppercase tracking-[0.3em] text-ink/60">{tFrequencyCreator('ui.title')}</label>
+                  <input
+                    value={title}
+                    onChange={(event) => setTitle(event.target.value)}
+                    className="w-full rounded-2xl border border-ink/10 bg-white/80 px-4 py-3 text-sm"
+                  />
+                  <label className="text-xs uppercase tracking-[0.3em] text-ink/60">{tFrequencyCreator('ui.description')}</label>
+                  <textarea
+                    value={description}
+                    onChange={(event) => setDescription(event.target.value)}
+                    className="min-h-[90px] w-full rounded-2xl border border-ink/10 bg-white/80 px-4 py-3 text-sm"
+                  />
                 </div>
-                {savedCompositionUrl ? <p className="mt-3 text-xs text-ink/55">{savedCompositionUrl}</p> : null}
-                {shareStatus ? <p className="mt-2 text-xs text-ink/65">{shareStatus}</p> : null}
-              </div>
-            ) : null}
+
+                <div className="grid gap-3 text-sm md:grid-cols-2">
+                  <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/80 px-3 py-2">
+                    <span>{tFrequencyCreator('ui.exportFormat')}</span>
+                    <select
+                      value={audioFormat}
+                      onChange={(event) => setAudioFormat(event.target.value as typeof audioFormat)}
+                      className="rounded-full border border-ink/10 bg-white px-3 py-2"
+                    >
+                      {AUDIO_FORMATS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/80 px-3 py-2">
+                    <span>{tFrequencyCreator('ui.captureVideo')}</span>
+                    <input
+                      type="checkbox"
+                      checked={includeVideo}
+                      onChange={(event) => setIncludeVideo(event.target.checked)}
+                      disabled={isIOS}
+                      className="h-4 w-4"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/80 px-3 py-2">
+                    <span>{tFrequencyCreator('ui.publicShare')}</span>
+                    <input
+                      type="checkbox"
+                      checked={isPublic}
+                      onChange={(event) => setIsPublic(event.target.checked)}
+                      className="h-4 w-4"
+                    />
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <Button variant="outline" onClick={handleSave} disabled={!isPlaying || isSaving}>
+                      {isSaving ? tFrequencyCreator('ui.saving') : tFrequencyCreator('ui.saveAndShare')}
+                    </Button>
+                  </div>
+                </div>
+                {showMp3Warning ? (
+                  <p className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    {tFrequencyCreator('ui.mp3Warning', {
+                      seconds: mp3LimitSeconds
+                    })}
+                  </p>
+                ) : null}
+                {includeVideo ? (
+                  <p className="rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-700">
+                    {tFrequencyCreator('ui.videoExport50mbNote')}
+                  </p>
+                ) : null}
+                {savedCompositionId ? (
+                  <div className="rounded-2xl border border-ink/10 bg-white/80 p-4">
+                    <p className="text-sm font-semibold text-ink/85">{tFrequencyCreator('ui.sessionSaved')}</p>
+                    <p className="mt-1 text-xs text-ink/60">
+                      {savedCompositionPublic
+                        ? tFrequencyCreator('ui.savedPublicShareHint')
+                        : tFrequencyCreator('ui.savedPrivateHint')}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={savedCompositionPath ?? '/discover'}>{tFrequencyCreator('ui.openComposition')}</Link>
+                      </Button>
+                      {savedCompositionPublic ? (
+                        <>
+                          <Button size="sm" variant="outline" onClick={handleCopyShareLink}>
+                            {tFrequencyCreator('ui.copyLink')}
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={handleNativeShare}>
+                            {tFrequencyCreator('ui.share')}
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={handleCopyEmbedCode}>
+                            {tFrequencyCreator('ui.copyEmbed')}
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => handleSocialShare('x')}>
+                            X
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => handleSocialShare('facebook')}>
+                            Facebook
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => handleSocialShare('linkedin')}>
+                            LinkedIn
+                          </Button>
+                        </>
+                      ) : null}
+                    </div>
+                    {savedCompositionUrl ? <p className="mt-3 text-xs text-ink/55">{savedCompositionUrl}</p> : null}
+                    {shareStatus ? <p className="mt-2 text-xs text-ink/65">{shareStatus}</p> : null}
+                  </div>
+                ) : null}
+              </>
+            )}
           </div>
         ) : null}
       </div>
 
       <div className="grid gap-6 md:grid-cols-[1.2fr_0.8fr]">
         <div className="space-y-4">
-          <div ref={frequencyStackRef} className="rounded-3xl border border-ink/10 bg-white/80 p-4">
-            <h3 className="text-lg font-semibold">{tFrequencyCreator('ui.selectedFrequencies')}</h3>
-            <p className="text-xs text-ink/60">
-              {tFrequencyCreator('ui.selectedFrequenciesDescription', {
-                min: MIN_CUSTOM_FREQUENCY_HZ,
-                max: MAX_CUSTOM_FREQUENCY_HZ
-              })}
-            </p>
-            <div className="mt-3 flex flex-wrap items-end gap-2">
-              <label className="flex flex-col gap-1 text-xs uppercase tracking-[0.2em] text-ink/60">
-                {tFrequencyCreator('ui.customHz')}
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => nudgeCustomFrequency(-1)}
-                    className="h-9 w-9 rounded-full border border-ink/15 bg-white text-lg leading-none"
-                  >
-                    -
-                  </button>
-                  <input
-                    type="number"
-                    min={MIN_CUSTOM_FREQUENCY_HZ}
-                    max={MAX_CUSTOM_FREQUENCY_HZ}
-                    step={0.1}
-                    value={customFrequencyInput}
-                    onChange={(event) => setCustomFrequencyInput(event.target.value)}
-                    className="w-32 rounded-full border border-ink/10 bg-white px-3 py-2 text-sm"
-                    placeholder={tFrequencyCreator('ui.customFrequencyPlaceholder')}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => nudgeCustomFrequency(1)}
-                    className="h-9 w-9 rounded-full border border-ink/15 bg-white text-lg leading-none"
-                  >
-                    +
-                  </button>
-                </div>
-              </label>
-              <Button size="sm" onClick={addCustomFrequency}>
-                {tFrequencyCreator('ui.addFrequency')}
-              </Button>
-              <Button size="sm" variant="outline" onClick={addHarmonics}>
-                {tFrequencyCreator('ui.addHarmonics')}
-              </Button>
-            </div>
-            {customFrequencyInput.trim().length > 0 && !customFrequencyValid ? (
-              <p className="mt-2 text-xs text-rose-600">
-                {tFrequencyCreator('ui.frequencyRangeValidation', {
+          {canAccessStudioControls ? (
+            <div ref={frequencyStackRef} className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+              <h3 className="text-lg font-semibold">{tFrequencyCreator('ui.selectedFrequencies')}</h3>
+              <p className="text-xs text-ink/60">
+                {tFrequencyCreator('ui.selectedFrequenciesDescription', {
                   min: MIN_CUSTOM_FREQUENCY_HZ,
                   max: MAX_CUSTOM_FREQUENCY_HZ
                 })}
               </p>
-            ) : null}
-          </div>
-
-          <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="space-y-1">
-                <h3 className="text-lg font-semibold">{tFrequencyCreator('ui.voiceBioprintBeta')}</h3>
-                <p className="text-xs text-ink/60">
-                  {tFrequencyCreator('ui.voiceBioprintDescription')}
-                </p>
+              <div className="mt-3 flex flex-wrap items-end gap-2">
+                <label className="flex flex-col gap-1 text-xs uppercase tracking-[0.2em] text-ink/60">
+                  {tFrequencyCreator('ui.customHz')}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => nudgeCustomFrequency(-1)}
+                      className="h-9 w-9 rounded-full border border-ink/15 bg-white text-lg leading-none"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      min={MIN_CUSTOM_FREQUENCY_HZ}
+                      max={MAX_CUSTOM_FREQUENCY_HZ}
+                      step={0.1}
+                      value={customFrequencyInput}
+                      onChange={(event) => setCustomFrequencyInput(event.target.value)}
+                      className="w-32 rounded-full border border-ink/10 bg-white px-3 py-2 text-sm"
+                      placeholder={tFrequencyCreator('ui.customFrequencyPlaceholder')}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => nudgeCustomFrequency(1)}
+                      className="h-9 w-9 rounded-full border border-ink/15 bg-white text-lg leading-none"
+                    >
+                      +
+                    </button>
+                  </div>
+                </label>
+                <Button size="sm" onClick={addCustomFrequency}>
+                  {tFrequencyCreator('ui.addFrequency')}
+                </Button>
+                <Button size="sm" variant="outline" onClick={addHarmonics}>
+                  {tFrequencyCreator('ui.addHarmonics')}
+                </Button>
               </div>
-              <HelpPopover
-                align="left"
-                label={tFrequencyCreator('help.voiceBioprintLabel')}
-                text={tFrequencyCreator('help.voiceBioprintText')}
-              />
-            </div>
-
-            <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-              {tFrequencyCreator('ui.voiceBioprintNotice')}
-            </div>
-
-            <label className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/80 px-3 py-2 text-sm text-ink/70">
-              <span>{tFrequencyCreator('ui.voiceBioprintDisclaimerCheckbox')}</span>
-              <input
-                type="checkbox"
-                checked={voiceBioprintConfig.disclaimerAccepted}
-                onChange={(event) =>
-                  setVoiceBioprintConfig((prev) => ({
-                    ...prev,
-                    disclaimerAccepted: event.target.checked
-                  }))
-                }
-                className="h-4 w-4"
-              />
-            </label>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                onClick={handleCaptureVoiceBioprint}
-                disabled={isCapturingVoice || !voiceBioprintConfig.disclaimerAccepted}
-              >
-                {isCapturingVoice ? tFrequencyCreator('ui.capturing') : tFrequencyCreator('ui.captureVoiceProfile')}
-              </Button>
-              <Button size="sm" variant="outline" onClick={handleUseStarterBioprintProfile} disabled={isCapturingVoice}>
-                {tFrequencyCreator('ui.useStarterProfile')}
-              </Button>
-            </div>
-
-            {voiceCaptureError ? <p className="mt-2 text-xs text-rose-600">{voiceCaptureError}</p> : null}
-            {voiceTelemetry ? (
-              <p className="mt-2 text-xs text-ink/55">
-                {tFrequencyCreator('ui.voiceTelemetry', {
-                  captureMs: voiceTelemetry.captureMs,
-                  analysisMs: voiceTelemetry.analysisMs,
-                  frameCount: voiceTelemetry.frameCount
-                })}
-              </p>
-            ) : null}
-
-            <div className="mt-3">
-              <VoicePortraitCard
-                profile={voiceProfile}
-                recommendations={voiceBioprintConfig.recommendations}
-                onApply={handleApplyVoiceRecommendations}
-                disabled={isSaving}
-              />
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="space-y-1">
-                <h3 className="text-lg font-semibold">{tFrequencyCreator('ui.sympatheticResonanceTitle')}</h3>
-                <p className="text-xs text-ink/60">
-                  {tFrequencyCreator('ui.sympatheticResonanceDescription')}
+              {customFrequencyInput.trim().length > 0 && !customFrequencyValid ? (
+                <p className="mt-2 text-xs text-rose-600">
+                  {tFrequencyCreator('ui.frequencyRangeValidation', {
+                    min: MIN_CUSTOM_FREQUENCY_HZ,
+                    max: MAX_CUSTOM_FREQUENCY_HZ
+                  })}
                 </p>
-              </div>
-              <HelpPopover
-                align="left"
-                label={tFrequencyCreator('help.roomTunerLabel')}
-                text={tFrequencyCreator('help.roomTunerText')}
-              />
+              ) : null}
             </div>
-
-            <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-              {tFrequencyCreator('ui.cleanseExperimentalNotice')}
-            </div>
-
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/85 px-3 py-2 text-sm text-ink/70">
-                <span>{tFrequencyCreator('ui.enableRoomTuner')}</span>
-                <input
-                  type="checkbox"
-                  checked={sympatheticConfig.enabled}
-                  onChange={(event) =>
-                    setSympatheticConfig((prev) => ({
-                      ...prev,
-                      enabled: event.target.checked
-                    }))
-                  }
-                  className="h-4 w-4"
-                />
-              </label>
-              <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/85 px-3 py-2 text-sm text-ink/70">
-                <span>{tFrequencyCreator('ui.mode')}</span>
-                <select
-                  value={sympatheticConfig.mode}
-                  onChange={(event) =>
-                    setSympatheticConfig((prev) => ({
-                      ...prev,
-                      mode: event.target.value as SympatheticResonanceMode
-                    }))
-                  }
-                  className="rounded-full border border-ink/10 bg-white px-3 py-2"
-                >
-                  <option value="harmonize">{tFrequencyCreator('ui.harmonize')}</option>
-                  <option value="cleanse">{tFrequencyCreator('ui.cleanseExperimental')}</option>
-                </select>
-              </label>
-              <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/85 px-3 py-2 text-sm text-ink/70">
-                <span>{tFrequencyCreator('ui.scanInterval')}</span>
-                <input
-                  type="number"
-                  min={2}
-                  max={30}
-                  value={sympatheticConfig.scanIntervalSeconds}
-                  onChange={(event) =>
-                    setSympatheticConfig((prev) => ({
-                      ...prev,
-                      scanIntervalSeconds: clamp(2, Number(event.target.value), 30)
-                    }))
-                  }
-                  className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
-                />
-              </label>
-              <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/85 px-3 py-2 text-sm text-ink/70">
-                <span>{tFrequencyCreator('ui.confidenceThreshold')}</span>
-                <input
-                  type="number"
-                  min={0.05}
-                  max={0.95}
-                  step={0.01}
-                  value={sympatheticConfig.confidenceThreshold}
-                  onChange={(event) =>
-                    setSympatheticConfig((prev) => ({
-                      ...prev,
-                      confidenceThreshold: clamp(0.05, Number(event.target.value), 0.95)
-                    }))
-                  }
-                  className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
-                />
-              </label>
-            </div>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={handleCalibrateRoom} disabled={isCalibratingRoom}>
-                {isCalibratingRoom ? tFrequencyCreator('ui.calibrating') : tFrequencyCreator('ui.calibrateRoom')}
-              </Button>
-              <Button size="sm" variant="outline" onClick={handleScanRoomNow} disabled={isCalibratingRoom}>
-                {tFrequencyCreator('ui.scanNow')}
-              </Button>
-            </div>
-
-            <div className="mt-3 grid gap-3 md:grid-cols-3">
-              <div className="rounded-2xl border border-ink/10 bg-white/85 px-3 py-2">
-                <p className="text-xs uppercase tracking-[0.2em] text-ink/55">{tFrequencyCreator('ui.monitor')}</p>
-                <p className="mt-1 text-sm font-semibold text-ink/85">
-                  {sympatheticConfig.enabled && isRoomMonitoring
-                    ? tFrequencyCreator('ui.active')
-                    : tFrequencyCreator('ui.idle')}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-ink/10 bg-white/85 px-3 py-2">
-                <p className="text-xs uppercase tracking-[0.2em] text-ink/55">{tFrequencyCreator('ui.confidence')}</p>
-                <p className="mt-1 text-sm font-semibold text-ink/85">
-                  {roomScanResult ? `${Math.round(roomScanResult.confidence * 100)}%` : `${Math.round(sympatheticConfig.lastConfidence * 100)}%`}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-ink/10 bg-white/85 px-3 py-2">
-                <p className="text-xs uppercase tracking-[0.2em] text-ink/55">{tFrequencyCreator('ui.calibratedNoiseFloor')}</p>
-                <p className="mt-1 text-sm font-semibold text-ink/85">
-                  {typeof sympatheticConfig.calibratedNoiseFloorDb === 'number'
-                    ? `${sympatheticConfig.calibratedNoiseFloorDb.toFixed(1)} dB`
-                    : tFrequencyCreator('ui.notCalibrated')}
-                </p>
+          ) : (
+            <div className="rounded-3xl border border-ink/10 bg-white/82 p-4">
+              <h3 className="text-lg font-semibold">{tFrequencyCreator('ui.studioControlsTitle')}</h3>
+              <p className="mt-2 text-sm text-ink/70">{tFrequencyCreator('ui.studioControlsDescription')}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button size="sm" onClick={() => handleUnlockStudioControls('manual')}>
+                  {tFrequencyCreator('ui.unlockStudioControls')}
+                </Button>
+                <Button size="sm" variant="outline" onClick={handlePlay} disabled={mixedVoices.length === 0 || isSaving}>
+                  {isPlaying ? tFrequencyCreator('ui.stopNow') : tFrequencyCreator('ui.playNow')}
+                </Button>
               </div>
             </div>
+          )}
 
-            {roomScanStatus ? <p className="mt-2 text-xs text-ink/60">{roomScanStatus}</p> : null}
-            <p className="mt-2 text-xs text-ink/55">
-              {tFrequencyCreator('ui.dominantRoomTones')}{' '}
-              {roomScanResult?.dominantFrequencies.length
-                ? roomScanResult.dominantFrequencies.map((value) => `${Math.round(value)}Hz`).join(', ')
-                : sympatheticConfig.lastDominantFrequencies.map((value) => `${Math.round(value)}Hz`).join(', ') ||
-                  tFrequencyCreator('ui.noneYet')}
-            </p>
-            <p className="mt-1 text-xs text-ink/55">
-              {tFrequencyCreator('ui.responseTones')}{' '}
-              {roomResponseFrequencies.length > 0
-                ? roomResponseFrequencies.slice(0, 8).map((value) => `${Math.round(value)}Hz`).join(', ')
-                : tFrequencyCreator('ui.noneYet')}
-            </p>
+          {canUseAdvancedModules ? (
+            <>
+              <div ref={voiceBioprintRef} className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <h3 className="text-lg font-semibold">{tFrequencyCreator('ui.voiceBioprintBeta')}</h3>
+                    <p className="text-xs text-ink/60">
+                      {tFrequencyCreator('ui.voiceBioprintDescription')}
+                    </p>
+                  </div>
+                  <HelpPopover
+                    align="left"
+                    label={tFrequencyCreator('help.voiceBioprintLabel')}
+                    text={tFrequencyCreator('help.voiceBioprintText')}
+                  />
+                </div>
 
-            <div className="mt-3">
-              <RoomFrequencyMap levels={roomScanResult?.spectrumMap ?? []} />
+                <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                  {tFrequencyCreator('ui.voiceBioprintNotice')}
+                </div>
+
+                <label className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/80 px-3 py-2 text-sm text-ink/70">
+                  <span>{tFrequencyCreator('ui.voiceBioprintDisclaimerCheckbox')}</span>
+                  <input
+                    type="checkbox"
+                    checked={voiceBioprintConfig.disclaimerAccepted}
+                    onChange={(event) =>
+                      setVoiceBioprintConfig((prev) => ({
+                        ...prev,
+                        disclaimerAccepted: event.target.checked
+                      }))
+                    }
+                    className="h-4 w-4"
+                  />
+                </label>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    onClick={handleCaptureVoiceBioprint}
+                    disabled={isCapturingVoice || !voiceBioprintConfig.disclaimerAccepted}
+                  >
+                    {isCapturingVoice ? tFrequencyCreator('ui.capturing') : tFrequencyCreator('ui.captureVoiceProfile')}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={handleUseStarterBioprintProfile} disabled={isCapturingVoice}>
+                    {tFrequencyCreator('ui.useStarterProfile')}
+                  </Button>
+                </div>
+
+                {voiceCaptureError ? <p className="mt-2 text-xs text-rose-600">{voiceCaptureError}</p> : null}
+                {voiceTelemetry ? (
+                  <p className="mt-2 text-xs text-ink/55">
+                    {tFrequencyCreator('ui.voiceTelemetry', {
+                      captureMs: voiceTelemetry.captureMs,
+                      analysisMs: voiceTelemetry.analysisMs,
+                      frameCount: voiceTelemetry.frameCount
+                    })}
+                  </p>
+                ) : null}
+
+                <div className="mt-3">
+                  <VoicePortraitCard
+                    profile={voiceProfile}
+                    recommendations={voiceBioprintConfig.recommendations}
+                    onApply={handleApplyVoiceRecommendations}
+                    disabled={isSaving}
+                  />
+                </div>
+              </div>
+
+              <div ref={sympatheticResonanceRef} className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <h3 className="text-lg font-semibold">{tFrequencyCreator('ui.sympatheticResonanceTitle')}</h3>
+                    <p className="text-xs text-ink/60">
+                      {tFrequencyCreator('ui.sympatheticResonanceDescription')}
+                    </p>
+                  </div>
+                  <HelpPopover
+                    align="left"
+                    label={tFrequencyCreator('help.roomTunerLabel')}
+                    text={tFrequencyCreator('help.roomTunerText')}
+                  />
+                </div>
+
+                <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                  {tFrequencyCreator('ui.cleanseExperimentalNotice')}
+                </div>
+
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/85 px-3 py-2 text-sm text-ink/70">
+                    <span>{tFrequencyCreator('ui.enableRoomTuner')}</span>
+                    <input
+                      type="checkbox"
+                      checked={sympatheticConfig.enabled}
+                      onChange={(event) =>
+                        setSympatheticConfig((prev) => ({
+                          ...prev,
+                          enabled: event.target.checked
+                        }))
+                      }
+                      className="h-4 w-4"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/85 px-3 py-2 text-sm text-ink/70">
+                    <span>{tFrequencyCreator('ui.mode')}</span>
+                    <select
+                      value={sympatheticConfig.mode}
+                      onChange={(event) =>
+                        setSympatheticConfig((prev) => ({
+                          ...prev,
+                          mode: event.target.value as SympatheticResonanceMode
+                        }))
+                      }
+                      className="rounded-full border border-ink/10 bg-white px-3 py-2"
+                    >
+                      <option value="harmonize">{tFrequencyCreator('ui.harmonize')}</option>
+                      <option value="cleanse">{tFrequencyCreator('ui.cleanseExperimental')}</option>
+                    </select>
+                  </label>
+                  <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/85 px-3 py-2 text-sm text-ink/70">
+                    <span>{tFrequencyCreator('ui.scanInterval')}</span>
+                    <input
+                      type="number"
+                      min={2}
+                      max={30}
+                      value={sympatheticConfig.scanIntervalSeconds}
+                      onChange={(event) =>
+                        setSympatheticConfig((prev) => ({
+                          ...prev,
+                          scanIntervalSeconds: clamp(2, Number(event.target.value), 30)
+                        }))
+                      }
+                      className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 rounded-2xl border border-ink/10 bg-white/85 px-3 py-2 text-sm text-ink/70">
+                    <span>{tFrequencyCreator('ui.confidenceThreshold')}</span>
+                    <input
+                      type="number"
+                      min={0.05}
+                      max={0.95}
+                      step={0.01}
+                      value={sympatheticConfig.confidenceThreshold}
+                      onChange={(event) =>
+                        setSympatheticConfig((prev) => ({
+                          ...prev,
+                          confidenceThreshold: clamp(0.05, Number(event.target.value), 0.95)
+                        }))
+                      }
+                      className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
+                    />
+                  </label>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={handleCalibrateRoom} disabled={isCalibratingRoom}>
+                    {isCalibratingRoom ? tFrequencyCreator('ui.calibrating') : tFrequencyCreator('ui.calibrateRoom')}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={handleScanRoomNow} disabled={isCalibratingRoom}>
+                    {tFrequencyCreator('ui.scanNow')}
+                  </Button>
+                </div>
+
+                <div className="mt-3 grid gap-3 md:grid-cols-3">
+                  <div className="rounded-2xl border border-ink/10 bg-white/85 px-3 py-2">
+                    <p className="text-xs uppercase tracking-[0.2em] text-ink/55">{tFrequencyCreator('ui.monitor')}</p>
+                    <p className="mt-1 text-sm font-semibold text-ink/85">
+                      {sympatheticConfig.enabled && isRoomMonitoring
+                        ? tFrequencyCreator('ui.active')
+                        : tFrequencyCreator('ui.idle')}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-ink/10 bg-white/85 px-3 py-2">
+                    <p className="text-xs uppercase tracking-[0.2em] text-ink/55">{tFrequencyCreator('ui.confidence')}</p>
+                    <p className="mt-1 text-sm font-semibold text-ink/85">
+                      {roomScanResult ? `${Math.round(roomScanResult.confidence * 100)}%` : `${Math.round(sympatheticConfig.lastConfidence * 100)}%`}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-ink/10 bg-white/85 px-3 py-2">
+                    <p className="text-xs uppercase tracking-[0.2em] text-ink/55">{tFrequencyCreator('ui.calibratedNoiseFloor')}</p>
+                    <p className="mt-1 text-sm font-semibold text-ink/85">
+                      {typeof sympatheticConfig.calibratedNoiseFloorDb === 'number'
+                        ? `${sympatheticConfig.calibratedNoiseFloorDb.toFixed(1)} dB`
+                        : tFrequencyCreator('ui.notCalibrated')}
+                    </p>
+                  </div>
+                </div>
+
+                {roomScanStatus ? <p className="mt-2 text-xs text-ink/60">{roomScanStatus}</p> : null}
+                <p className="mt-2 text-xs text-ink/55">
+                  {tFrequencyCreator('ui.dominantRoomTones')}{' '}
+                  {roomScanResult?.dominantFrequencies.length
+                    ? roomScanResult.dominantFrequencies.map((value) => `${Math.round(value)}Hz`).join(', ')
+                    : sympatheticConfig.lastDominantFrequencies.map((value) => `${Math.round(value)}Hz`).join(', ') ||
+                      tFrequencyCreator('ui.noneYet')}
+                </p>
+                <p className="mt-1 text-xs text-ink/55">
+                  {tFrequencyCreator('ui.responseTones')}{' '}
+                  {roomResponseFrequencies.length > 0
+                    ? roomResponseFrequencies.slice(0, 8).map((value) => `${Math.round(value)}Hz`).join(', ')
+                    : tFrequencyCreator('ui.noneYet')}
+                </p>
+
+                <div className="mt-3">
+                  <RoomFrequencyMap levels={roomScanResult?.spectrumMap ?? []} />
+                </div>
+              </div>
+            </>
+          ) : shouldShowAdvancedPreviews ? (
+            <div className="rounded-3xl border border-ink/10 bg-white/82 p-4">
+              <p className="text-xs uppercase tracking-[0.22em] text-ink/55">{tFrequencyCreator('ui.advancedPreviewTitle')}</p>
+              <p className="mt-2 text-sm text-ink/70">{tFrequencyCreator('ui.advancedPreviewDescription')}</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {advancedFeaturePreviews.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => handlePromptSignIn('advanced_preview_card', item.key)}
+                    className="rounded-2xl border border-ink/10 bg-white px-3 py-3 text-left transition hover:border-ink/25"
+                  >
+                    <p className="text-sm font-semibold text-ink/85">{item.title}</p>
+                    <p className="mt-1 text-xs text-ink/62 line-clamp-3">{item.description}</p>
+                  </button>
+                ))}
+              </div>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Button asChild size="sm">
+                  <Link
+                    href={buildAuthHref('login', 'advanced_tools')}
+                    onClick={() => handleAuthCtaClick('advanced_preview', 'sign_in', 'advanced_tools')}
+                  >
+                    {tFrequencyCreator('ui.advancedPreviewCta')}
+                  </Link>
+                </Button>
+                <Button asChild size="sm" variant="outline">
+                  <Link
+                    href={buildAuthHref('signup', 'advanced_tools')}
+                    onClick={() => handleAuthCtaClick('advanced_preview', 'sign_up', 'advanced_tools')}
+                  >
+                    {tFrequencyCreator('ui.createAccount')}
+                  </Link>
+                </Button>
+              </div>
             </div>
-          </div>
+          ) : null}
 
           <div className="grid gap-3 md:grid-cols-2">
             {PRESET_FREQUENCIES.map((freq) => (
@@ -3578,7 +3914,8 @@ export default function FrequencyCreator() {
             ))}
           </div>
 
-          <div ref={advancedSoundRef} className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+          {canAccessStudioControls ? (
+            <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">
@@ -3631,9 +3968,11 @@ export default function FrequencyCreator() {
                 })}
               </div>
             )}
-          </div>
+            </div>
+          ) : null}
 
-          <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+          {canUseAdvancedModules ? (
+            <div ref={advancedSoundRef} className="rounded-3xl border border-ink/10 bg-white/80 p-4">
             <button
               type="button"
               onClick={() => setShowAdvancedSoundTools((prev) => !prev)}
@@ -3660,7 +3999,7 @@ export default function FrequencyCreator() {
 
             {showAdvancedSoundTools ? (
               <div id="advanced-sound-tools" className="mt-4 space-y-4">
-                <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+                <div ref={adaptiveJourneyRef} className="rounded-3xl border border-ink/10 bg-white/80 p-4">
                   <div className="mb-3 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">
@@ -3741,7 +4080,7 @@ export default function FrequencyCreator() {
                   </div>
                 </div>
 
-                <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+                <div ref={breathSyncRef} className="rounded-3xl border border-ink/10 bg-white/80 p-4">
                   <div className="flex items-center gap-2">
                     <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">
                       {tFrequencyCreator('ui.modulationAndSweep')}
@@ -3887,7 +4226,7 @@ export default function FrequencyCreator() {
                   </div>
                 </div>
 
-                <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+                <div ref={intentionImprintRef} className="rounded-3xl border border-ink/10 bg-white/80 p-4">
                   <div className="flex items-center gap-2">
                     <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">
                       {tFrequencyCreator('ui.binauralMode')}
@@ -3951,7 +4290,7 @@ export default function FrequencyCreator() {
                   </div>
                 </div>
 
-                <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+                <div ref={harmonicFieldRef} className="rounded-3xl border border-ink/10 bg-white/80 p-4">
                   <div className="flex items-center gap-2">
                     <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">
                       {tFrequencyCreator('ui.adaptiveBinauralJourney')}
@@ -4561,7 +4900,8 @@ export default function FrequencyCreator() {
                 </div>
               </div>
             ) : null}
-          </div>
+            </div>
+          ) : null}
         </div>
 
         <div ref={liveSectionRef} className="space-y-4 md:sticky md:top-28 md:self-start">
@@ -4869,10 +5209,16 @@ export default function FrequencyCreator() {
           <div className="mt-2 flex flex-wrap gap-2 text-xs">
             <button
               type="button"
-              onClick={() => frequencyStackRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              onClick={() => {
+                if (!canAccessStudioControls) {
+                  handleUnlockStudioControls('sticky');
+                  return;
+                }
+                frequencyStackRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
               className="rounded-full border border-ink/15 bg-white px-3 py-1 text-ink/70"
             >
-              {tFrequencyCreator('ui.frequencyStackShort')}
+              {canAccessStudioControls ? tFrequencyCreator('ui.frequencyStackShort') : tFrequencyCreator('ui.unlockStudioControls')}
             </button>
             <button
               type="button"
@@ -4884,12 +5230,20 @@ export default function FrequencyCreator() {
             <button
               type="button"
               onClick={() => {
+                if (!canUseAdvancedModules) {
+                  handlePromptSignIn('sticky_advanced', 'advanced_tools');
+                  return;
+                }
                 setShowAdvancedSoundTools((prev) => !prev);
                 advancedSoundRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
               }}
               className="rounded-full border border-ink/15 bg-white px-3 py-1 text-ink/70"
             >
-              {showAdvancedSoundTools ? tFrequencyCreator('ui.hideAdvancedAudio') : tFrequencyCreator('ui.showAdvancedAudio')}
+              {canUseAdvancedModules
+                ? showAdvancedSoundTools
+                  ? tFrequencyCreator('ui.hideAdvancedAudio')
+                  : tFrequencyCreator('ui.showAdvancedAudio')
+                : tFrequencyCreator('ui.advancedPreviewCta')}
             </button>
             <button
               type="button"
@@ -4908,10 +5262,20 @@ export default function FrequencyCreator() {
         </p>
         <div className="mt-4 flex flex-wrap gap-3">
           <Button asChild size="sm">
-            <Link href="/login?redirectTo=/create">{tFrequencyCreator('ui.signIn')}</Link>
+            <Link
+              href={buildAuthHref('login', authModalFocus)}
+              onClick={() => handleAuthCtaClick('auth_modal', 'sign_in', authModalFocus)}
+            >
+              {tFrequencyCreator('ui.signIn')}
+            </Link>
           </Button>
           <Button asChild size="sm" variant="outline">
-            <Link href="/signup?redirectTo=/discover">{tFrequencyCreator('ui.createAccount')}</Link>
+            <Link
+              href={buildAuthHref('signup', authModalFocus)}
+              onClick={() => handleAuthCtaClick('auth_modal', 'sign_up', authModalFocus)}
+            >
+              {tFrequencyCreator('ui.createAccount')}
+            </Link>
           </Button>
         </div>
       </Modal>

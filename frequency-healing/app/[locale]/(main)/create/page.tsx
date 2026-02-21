@@ -19,21 +19,39 @@ const CREATE_KEYWORDS: Record<AppLocale, string[]> = {
     'solfeggio frequency generator',
     'binaural beat creator',
     'meditation audio composer',
-    'breath sync meditation tool'
+    'breath sync meditation tool',
+    'custom frequency stack',
+    'adaptive binaural journey',
+    'voice bioprint',
+    'quantum intention mapping',
+    'harmonic field generator',
+    'sympathetic resonance'
   ],
   ja: [
     'ヒーリング周波数ジェネレーター',
     'ソルフェジオ周波数ジェネレーター',
     'バイノーラルビート作成',
     '瞑想音声コンポーザー',
-    '呼吸シンク瞑想ツール'
+    '呼吸シンク瞑想ツール',
+    'カスタム周波数スタック',
+    'アダプティブバイノーラルジャーニー',
+    'Voice Bioprint',
+    '量子意図マッピング',
+    'ハーモニックフィールド生成',
+    '共鳴ルームチューニング'
   ],
   vi: [
     'trình tạo tần số chữa lành',
     'trình tạo tần số solfeggio',
     'trình tạo binaural beat',
     'công cụ soạn âm thanh thiền',
-    'công cụ breath-sync'
+    'công cụ breath-sync',
+    'chồng tần số tùy chỉnh',
+    'lộ trình binaural thích ứng',
+    'voice bioprint',
+    'ánh xạ ý định lượng tử',
+    'harmonic field generator',
+    'cộng hưởng phòng âm'
   ]
 };
 

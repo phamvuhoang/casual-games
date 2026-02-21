@@ -397,6 +397,51 @@ export interface Database {
         };
         Relationships: [];
       };
+      intention_imprints: {
+        Row: {
+          id: string;
+          user_id: string;
+          composition_id: string | null;
+          intention_text: string;
+          mapping: Json;
+          extracted_keywords: string[];
+          mapped_frequencies: Json;
+          mapping_confidence: number | null;
+          modulation_rate_hz: number | null;
+          modulation_depth_hz: number | null;
+          ritual_intensity: number | null;
+          certificate_seed: string | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          composition_id?: string | null;
+          intention_text: string;
+          mapping: Json;
+          extracted_keywords?: string[];
+          mapped_frequencies: Json;
+          mapping_confidence?: number | null;
+          modulation_rate_hz?: number | null;
+          modulation_depth_hz?: number | null;
+          ritual_intensity?: number | null;
+          certificate_seed?: string | null;
+          created_at?: string | null;
+        };
+        Update: {
+          composition_id?: string | null;
+          intention_text?: string;
+          mapping?: Json;
+          extracted_keywords?: string[];
+          mapped_frequencies?: Json;
+          mapping_confidence?: number | null;
+          modulation_rate_hz?: number | null;
+          modulation_depth_hz?: number | null;
+          ritual_intensity?: number | null;
+          certificate_seed?: string | null;
+        };
+        Relationships: [];
+      };
     };
     Views: {};
     Functions: {

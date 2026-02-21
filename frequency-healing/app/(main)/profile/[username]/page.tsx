@@ -15,6 +15,7 @@ type Collection = Database['public']['Tables']['collections']['Row'];
 type VoiceProfileRow = Database['public']['Tables']['voice_profiles']['Row'];
 type BreathSessionRow = Database['public']['Tables']['breath_sessions']['Row'];
 type HarmonicFieldSessionRow = Database['public']['Tables']['harmonic_field_sessions']['Row'];
+type IntentionImprintRow = Database['public']['Tables']['intention_imprints']['Row'];
 
 interface VoiceHistoryEntry {
   id: string;
@@ -57,6 +58,19 @@ interface BreathSessionHistoryEntry {
   inhaleRatio: number;
   sensitivity: number;
   sampleCount: number;
+}
+
+interface IntentionImprintHistoryEntry {
+  id: string;
+  createdAt: string;
+  intentionText: string;
+  extractedKeywords: string[];
+  mappedFrequencies: number[];
+  mappingConfidence: number;
+  modulationRateHz: number;
+  modulationDepthHz: number;
+  ritualIntensity: number;
+  certificateSeed: string | null;
 }
 
 function clamp(min: number, value: number, max: number) {
@@ -118,6 +132,13 @@ function formatHz(values: number[]) {
     return 'None';
   }
   return values.map((value) => `${Math.round(value)}Hz`).join(', ');
+}
+
+function formatKeywords(values: string[]) {
+  if (values.length === 0) {
+    return 'None';
+  }
+  return values.join(', ');
 }
 
 function formatPercent(value: number) {
@@ -187,6 +208,50 @@ function parseBreathSessionHistoryEntry(row: BreathSessionRow): BreathSessionHis
   };
 }
 
+function parseIntentionImprintHistoryEntry(row: IntentionImprintRow): IntentionImprintHistoryEntry {
+  const mapping = asObject(row.mapping);
+  const mappingKeywords = Array.isArray(mapping?.keywords)
+    ? mapping.keywords
+        .map((value) => (typeof value === 'string' ? value.trim().toLowerCase() : ''))
+        .filter((value) => value.length > 0)
+    : [];
+  const rowKeywords = Array.isArray(row.extracted_keywords)
+    ? row.extracted_keywords
+        .map((value) => (typeof value === 'string' ? value.trim().toLowerCase() : ''))
+        .filter((value) => value.length > 0)
+    : [];
+  const extractedKeywords = (rowKeywords.length > 0 ? rowKeywords : mappingKeywords).slice(0, 12);
+
+  const mappingFrequencies = toNumberArray(mapping?.mappedFrequencies, 12);
+  const rowFrequencies = toNumberArray(row.mapped_frequencies, 12);
+  const mappedFrequencies = (rowFrequencies.length > 0 ? rowFrequencies : mappingFrequencies).slice(0, 12);
+
+  const intentionText =
+    typeof row.intention_text === 'string' && row.intention_text.trim().length > 0
+      ? row.intention_text
+      : typeof mapping?.intentionText === 'string'
+        ? mapping.intentionText
+        : '';
+
+  return {
+    id: row.id,
+    createdAt: row.created_at ?? new Date().toISOString(),
+    intentionText,
+    extractedKeywords,
+    mappedFrequencies,
+    mappingConfidence: clamp(0, asNumber(row.mapping_confidence, asNumber(mapping?.mappingConfidence, 0)), 1),
+    modulationRateHz: clamp(0.05, asNumber(row.modulation_rate_hz, asNumber(mapping?.modulationRateHz, 0.22)), 8),
+    modulationDepthHz: clamp(0.5, asNumber(row.modulation_depth_hz, asNumber(mapping?.modulationDepthHz, 7.4)), 60),
+    ritualIntensity: clamp(0.1, asNumber(row.ritual_intensity, asNumber(mapping?.ritualIntensity, 0.45)), 1),
+    certificateSeed:
+      typeof row.certificate_seed === 'string'
+        ? row.certificate_seed
+        : typeof mapping?.certificateSeed === 'string'
+          ? mapping.certificateSeed
+          : null
+  };
+}
+
 export default function ProfilePage() {
   const { username } = useParams<{ username: string }>();
   const supabase = createSupabaseClient();
@@ -215,6 +280,8 @@ export default function ProfilePage() {
   const [breathHistoryStatus, setBreathHistoryStatus] = useState<string | null>(null);
   const [harmonicHistory, setHarmonicHistory] = useState<HarmonicFieldHistoryEntry[]>([]);
   const [harmonicHistoryStatus, setHarmonicHistoryStatus] = useState<string | null>(null);
+  const [intentionHistory, setIntentionHistory] = useState<IntentionImprintHistoryEntry[]>([]);
+  const [intentionHistoryStatus, setIntentionHistoryStatus] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -448,6 +515,45 @@ export default function ProfilePage() {
     };
   }, [isOwner, profile, supabase]);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadIntentionHistory = async () => {
+      if (!profile || !isOwner) {
+        setIntentionHistory([]);
+        setIntentionHistoryStatus(null);
+        return;
+      }
+
+      setIntentionHistoryStatus(null);
+
+      const { data, error } = await supabase
+        .from('intention_imprints')
+        .select('*')
+        .eq('user_id', profile.id)
+        .order('created_at', { ascending: false })
+        .limit(24);
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (error) {
+        setIntentionHistory([]);
+        setIntentionHistoryStatus(error.message);
+        return;
+      }
+
+      setIntentionHistory((data ?? []).map(parseIntentionImprintHistoryEntry));
+    };
+
+    loadIntentionHistory();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOwner, profile, supabase]);
+
   const latestVoiceProfile = voiceHistory[0] ?? null;
   const previousVoiceProfile = voiceHistory[1] ?? null;
   const latestConfidenceDelta =
@@ -524,6 +630,36 @@ export default function ProfilePage() {
     }
     return entries.sort((left, right) => right[1] - left[1])[0][0];
   }, [harmonicPresetCounts]);
+  const latestIntentionImprint = intentionHistory[0] ?? null;
+  const previousIntentionImprint = intentionHistory[1] ?? null;
+  const intentionConfidenceDelta =
+    latestIntentionImprint && previousIntentionImprint
+      ? latestIntentionImprint.mappingConfidence - previousIntentionImprint.mappingConfidence
+      : null;
+  const intentionAverageConfidence =
+    intentionHistory.length > 0
+      ? intentionHistory.reduce((sum, entry) => sum + entry.mappingConfidence, 0) / intentionHistory.length
+      : null;
+  const intentionAverageRitualIntensity =
+    intentionHistory.length > 0
+      ? intentionHistory.reduce((sum, entry) => sum + entry.ritualIntensity, 0) / intentionHistory.length
+      : null;
+  const intentionKeywordCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    intentionHistory.forEach((entry) => {
+      entry.extractedKeywords.forEach((keyword) => {
+        counts[keyword] = (counts[keyword] ?? 0) + 1;
+      });
+    });
+    return counts;
+  }, [intentionHistory]);
+  const intentionTopKeyword = useMemo(() => {
+    const entries = Object.entries(intentionKeywordCounts);
+    if (entries.length === 0) {
+      return null;
+    }
+    return entries.sort((left, right) => right[1] - left[1])[0][0];
+  }, [intentionKeywordCounts]);
 
   const handleCreateCollection = async () => {
     if (!profile || !viewerId || !isOwner) {
@@ -1039,6 +1175,96 @@ export default function ProfilePage() {
                     <p className="mt-1 text-xs text-ink/50">
                       {entry.includeInterference ? 'Interference on' : 'Interference off'} ·{' '}
                       {entry.spatialMotionEnabled ? 'Spatial motion on' : 'Spatial motion off'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </Card>
+      ) : null}
+
+      {isOwner ? (
+        <Card className="glass-panel">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Quantum Intention Imprint History</h2>
+              <p className="text-sm text-ink/60">
+                Private records of your intention mappings and modulation profiles.
+              </p>
+            </div>
+            <span className="text-xs uppercase tracking-[0.2em] text-ink/50">
+              {intentionHistory.length} imprints
+            </span>
+          </div>
+
+          {intentionHistoryStatus ? (
+            <p className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-600">
+              {intentionHistoryStatus}
+            </p>
+          ) : null}
+
+          {intentionHistory.length === 0 ? (
+            <div className="mt-4 rounded-2xl border border-ink/10 bg-white/70 p-4 text-sm text-ink/60">
+              <p>No intention imprints yet. Enable Quantum Intention mode in Creator and save a session.</p>
+              <div className="mt-3">
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/create">Open Creator</Link>
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="mt-4 grid gap-3 md:grid-cols-4">
+                <div className="rounded-2xl border border-ink/10 bg-white/80 p-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Latest seed</p>
+                  <p className="mt-1 text-sm font-semibold text-ink/85">
+                    {latestIntentionImprint?.certificateSeed ?? 'N/A'}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-ink/10 bg-white/80 p-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Avg mapping confidence</p>
+                  <p className="mt-1 text-sm font-semibold text-ink/85">
+                    {intentionAverageConfidence !== null ? formatPercent(intentionAverageConfidence) : 'N/A'}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-ink/10 bg-white/80 p-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Confidence trend</p>
+                  <p className="mt-1 text-sm font-semibold text-ink/85">
+                    {intentionConfidenceDelta !== null ? formatSignedPercent(intentionConfidenceDelta) : 'N/A'}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-ink/10 bg-white/80 p-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-ink/55">Avg ritual intensity</p>
+                  <p className="mt-1 text-sm font-semibold text-ink/85">
+                    {intentionAverageRitualIntensity !== null ? formatPercent(intentionAverageRitualIntensity) : 'N/A'}
+                  </p>
+                  <p className="text-xs text-ink/55">Top keyword: {intentionTopKeyword ?? 'N/A'}</p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3">
+                {intentionHistory.map((entry, index) => (
+                  <div key={entry.id} className="rounded-2xl border border-ink/10 bg-white/80 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-ink/85">
+                        Imprint #{intentionHistory.length - index} · {formatDateTime(entry.createdAt)}
+                      </p>
+                      <span className="text-xs text-ink/60">
+                        Confidence {formatPercent(entry.mappingConfidence)} · Intensity {formatPercent(entry.ritualIntensity)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-ink/60">
+                      {entry.intentionText.length > 140
+                        ? `${entry.intentionText.slice(0, 137)}...`
+                        : entry.intentionText || 'No intention text recorded.'}
+                    </p>
+                    <p className="mt-1 text-xs text-ink/55">
+                      Keywords: {formatKeywords(entry.extractedKeywords)} · Field: {formatHz(entry.mappedFrequencies)}
+                    </p>
+                    <p className="mt-1 text-xs text-ink/50">
+                      Mod {entry.modulationRateHz.toFixed(2)}Hz / {entry.modulationDepthHz.toFixed(2)} depth · Seed{' '}
+                      {entry.certificateSeed ?? 'n/a'}
                     </p>
                   </div>
                 ))}

@@ -104,6 +104,20 @@ export interface BreathSyncConfig {
   lastSampledAt: string | null;
 }
 
+export interface IntentionImprintConfig {
+  enabled: boolean;
+  disclaimerAccepted: boolean;
+  intentionText: string;
+  extractedKeywords: string[];
+  mappedFrequencies: number[];
+  mappingConfidence: number;
+  modulationRateHz: number;
+  modulationDepthHz: number;
+  ritualIntensity: number;
+  certificateSeed: string | null;
+  lastImprintedAt: string | null;
+}
+
 export interface HarmonicFieldConfig {
   enabled: boolean;
   presetId: string;
@@ -121,6 +135,7 @@ export interface InnovationConfig {
   sympatheticResonance: SympatheticResonanceConfig;
   adaptiveBinauralJourney: AdaptiveBinauralJourneyConfig;
   breathSync: BreathSyncConfig;
+  intentionImprint: IntentionImprintConfig;
   harmonicField: HarmonicFieldConfig;
 }
 
@@ -214,6 +229,19 @@ const DEFAULT_CONFIG: AudioConfigShape = {
       phaseProgress: 0,
       lastSampledAt: null
     },
+    intentionImprint: {
+      enabled: false,
+      disclaimerAccepted: false,
+      intentionText: '',
+      extractedKeywords: [],
+      mappedFrequencies: [],
+      mappingConfidence: 0,
+      modulationRateHz: 0.22,
+      modulationDepthHz: 7.4,
+      ritualIntensity: 0.45,
+      certificateSeed: null,
+      lastImprintedAt: null
+    },
     harmonicField: {
       enabled: false,
       presetId: 'chakra_ladder',
@@ -289,6 +317,11 @@ export function createDefaultAudioConfig(): AudioConfigShape {
         steps: DEFAULT_CONFIG.innovation.adaptiveBinauralJourney.steps.map((entry) => ({ ...entry }))
       },
       breathSync: { ...DEFAULT_CONFIG.innovation.breathSync },
+      intentionImprint: {
+        ...DEFAULT_CONFIG.innovation.intentionImprint,
+        extractedKeywords: [...DEFAULT_CONFIG.innovation.intentionImprint.extractedKeywords],
+        mappedFrequencies: [...DEFAULT_CONFIG.innovation.intentionImprint.mappedFrequencies]
+      },
       harmonicField: {
         ...DEFAULT_CONFIG.innovation.harmonicField,
         lastLayerFrequencies: [...DEFAULT_CONFIG.innovation.harmonicField.lastLayerFrequencies],
@@ -350,6 +383,7 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
   const sympatheticResonance = asObject(innovation?.sympatheticResonance);
   const adaptiveBinauralJourney = asObject(innovation?.adaptiveBinauralJourney);
   const breathSync = asObject(innovation?.breathSync);
+  const intentionImprint = asObject(innovation?.intentionImprint);
   const harmonicField = asObject(innovation?.harmonicField);
   const rawRecommendations = Array.isArray(voiceBioprint?.recommendations) ? voiceBioprint?.recommendations : [];
   const rawDominantFrequencies = Array.isArray(sympatheticResonance?.lastDominantFrequencies)
@@ -361,6 +395,12 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
     : [];
   const rawHarmonicInterference = Array.isArray(harmonicField?.lastInterferenceFrequencies)
     ? harmonicField?.lastInterferenceFrequencies
+    : [];
+  const rawIntentionKeywords = Array.isArray(intentionImprint?.extractedKeywords)
+    ? intentionImprint?.extractedKeywords
+    : [];
+  const rawIntentionFrequencies = Array.isArray(intentionImprint?.mappedFrequencies)
+    ? intentionImprint?.mappedFrequencies
     : [];
   const recommendations = rawRecommendations
     .map((entry) => asObject(entry))
@@ -393,6 +433,14 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
     .map((entry) => (typeof entry === 'number' && Number.isFinite(entry) ? clamp(0.1, entry, 400) : null))
     .filter((value): value is number => value !== null)
     .slice(0, 24);
+  const extractedKeywords = rawIntentionKeywords
+    .map((entry) => (typeof entry === 'string' ? entry.trim().toLowerCase() : ''))
+    .filter((entry) => entry.length > 0)
+    .slice(0, 12);
+  const mappedFrequencies = rawIntentionFrequencies
+    .map((entry) => (typeof entry === 'number' && Number.isFinite(entry) ? normalizeFrequency(entry) : null))
+    .filter((value): value is number => value !== null)
+    .slice(0, 8);
 
   return {
     version: 2,
@@ -577,6 +625,47 @@ export function parseAudioConfig(raw: Json | null | undefined): AudioConfigShape
           typeof breathSync?.lastSampledAt === 'string'
             ? breathSync.lastSampledAt
             : config.innovation.breathSync.lastSampledAt
+      },
+      intentionImprint: {
+        enabled: asBoolean(intentionImprint?.enabled, config.innovation.intentionImprint.enabled),
+        disclaimerAccepted: asBoolean(
+          intentionImprint?.disclaimerAccepted,
+          config.innovation.intentionImprint.disclaimerAccepted
+        ),
+        intentionText:
+          typeof intentionImprint?.intentionText === 'string'
+            ? intentionImprint.intentionText.slice(0, 500)
+            : config.innovation.intentionImprint.intentionText,
+        extractedKeywords,
+        mappedFrequencies,
+        mappingConfidence: clamp(
+          0,
+          asNumber(intentionImprint?.mappingConfidence, config.innovation.intentionImprint.mappingConfidence),
+          1
+        ),
+        modulationRateHz: clamp(
+          0.05,
+          asNumber(intentionImprint?.modulationRateHz, config.innovation.intentionImprint.modulationRateHz),
+          8
+        ),
+        modulationDepthHz: clamp(
+          0.5,
+          asNumber(intentionImprint?.modulationDepthHz, config.innovation.intentionImprint.modulationDepthHz),
+          60
+        ),
+        ritualIntensity: clamp(
+          0.1,
+          asNumber(intentionImprint?.ritualIntensity, config.innovation.intentionImprint.ritualIntensity),
+          1
+        ),
+        certificateSeed:
+          typeof intentionImprint?.certificateSeed === 'string'
+            ? intentionImprint.certificateSeed
+            : config.innovation.intentionImprint.certificateSeed,
+        lastImprintedAt:
+          typeof intentionImprint?.lastImprintedAt === 'string'
+            ? intentionImprint.lastImprintedAt
+            : config.innovation.intentionImprint.lastImprintedAt
       },
       harmonicField: {
         enabled: asBoolean(harmonicField?.enabled, config.innovation.harmonicField.enabled),

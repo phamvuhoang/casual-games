@@ -11,7 +11,7 @@ import VoicePortraitCard from '@/components/audio/VoicePortraitCard';
 import RoomFrequencyMap from '@/components/audio/RoomFrequencyMap';
 import type { VisualizationSessionOverlayData } from '@/components/audio/visualizationSessionOverlay';
 import { useBackgroundAudioBridge } from '@/components/background/BackgroundAudioBridge';
-import { FrequencyGenerator } from '@/lib/audio/FrequencyGenerator';
+import { FrequencyGenerator, type FrequencyConfig } from '@/lib/audio/FrequencyGenerator';
 import { MicrophoneAnalysisService } from '@/lib/audio/MicrophoneAnalysisService';
 import {
   createAdaptiveJourneySteps,
@@ -30,6 +30,10 @@ import {
   type BreathSyncRuntimeFrame,
   type BreathSyncSamplePoint
 } from '@/lib/audio/BreathSyncEngine';
+import {
+  analyzeQuantumIntention,
+  buildIntentionShareText
+} from '@/lib/audio/QuantumIntentionEngine';
 import {
   analyzeRoomSpectrum,
   buildRoomResponseTones,
@@ -68,6 +72,7 @@ import {
   type BreathSyncConfig,
   type BreathSyncMode,
   type HarmonicFieldConfig,
+  type IntentionImprintConfig,
   type ModulationConfig,
   type RhythmConfig,
   type SympatheticResonanceConfig,
@@ -265,6 +270,9 @@ export default function FrequencyCreator() {
   const [breathSyncConfig, setBreathSyncConfig] = useState<BreathSyncConfig>(
     defaultAudioConfig.innovation.breathSync
   );
+  const [intentionConfig, setIntentionConfig] = useState<IntentionImprintConfig>(
+    defaultAudioConfig.innovation.intentionImprint
+  );
   const [harmonicFieldConfig, setHarmonicFieldConfig] = useState<HarmonicFieldConfig>(
     defaultAudioConfig.innovation.harmonicField
   );
@@ -299,6 +307,10 @@ export default function FrequencyCreator() {
   const [isBreathCalibrating, setIsBreathCalibrating] = useState(false);
   const [breathRuntime, setBreathRuntime] = useState<BreathSyncRuntimeFrame | null>(null);
   const [breathSamples, setBreathSamples] = useState<BreathSyncSamplePoint[]>([]);
+  const [intentionStatus, setIntentionStatus] = useState<string | null>(null);
+  const [intentionShareText, setIntentionShareText] = useState('');
+  const [intentionDisclaimerModalOpen, setIntentionDisclaimerModalOpen] = useState(false);
+  const [intentionEnableOnAcknowledge, setIntentionEnableOnAcknowledge] = useState(false);
   const frequencyStackRef = useRef<HTMLDivElement | null>(null);
   const advancedSoundRef = useRef<HTMLDivElement | null>(null);
   const liveSectionRef = useRef<HTMLDivElement | null>(null);
@@ -385,6 +397,9 @@ export default function FrequencyCreator() {
           phaseProgress: breathRuntime?.phaseProgress ?? breathSyncConfig.phaseProgress,
           lastSampledAt: breathSamples[0]?.capturedAt ?? breathSyncConfig.lastSampledAt
         },
+        intentionImprint: {
+          ...intentionConfig
+        },
         harmonicField: {
           ...harmonicFieldConfig,
           lastLayerFrequencies: harmonicFieldConfig.enabled
@@ -409,6 +424,7 @@ export default function FrequencyCreator() {
       breathSyncConfig,
       breathRuntime,
       breathSamples,
+      intentionConfig,
       harmonicFieldConfig,
       harmonicFieldBundle,
       journeyRuntime,
@@ -441,6 +457,11 @@ export default function FrequencyCreator() {
         },
         breathSync: {
           ...audioConfig.innovation.breathSync
+        },
+        intentionImprint: {
+          ...audioConfig.innovation.intentionImprint,
+          extractedKeywords: [...audioConfig.innovation.intentionImprint.extractedKeywords],
+          mappedFrequencies: [...audioConfig.innovation.intentionImprint.mappedFrequencies]
         },
         harmonicField: {
           ...audioConfig.innovation.harmonicField,
@@ -522,6 +543,9 @@ export default function FrequencyCreator() {
     if (breathSyncConfig.enabled) {
       activeModules.push('Breath Sync');
     }
+    if (intentionConfig.enabled) {
+      activeModules.push('Intention Imprint');
+    }
     if (harmonicFieldConfig.enabled) {
       activeModules.push('Harmonic Field');
     }
@@ -540,6 +564,7 @@ export default function FrequencyCreator() {
     sympatheticConfig.mode,
     adaptiveJourneyConfig.enabled,
     breathSyncConfig.enabled,
+    intentionConfig.enabled,
     harmonicFieldConfig.enabled
   ]);
 
@@ -618,20 +643,88 @@ export default function FrequencyCreator() {
 
   const harmonicFieldVoices = useMemo(() => harmonicFieldBundle.voices, [harmonicFieldBundle]);
 
-  const mixedVoices = useMemo(
+  const intentionSupportVoices = useMemo<FrequencyConfig[]>(() => {
+    if (!intentionConfig.enabled || intentionConfig.mappedFrequencies.length === 0) {
+      return [];
+    }
+
+    const selectedSet = new Set(selectedFrequencies.map((frequency) => normalizeFrequency(frequency)));
+    return intentionConfig.mappedFrequencies
+      .map((frequency) => normalizeFrequency(frequency))
+      .filter((frequency) => !selectedSet.has(frequency))
+      .slice(0, 4)
+      .map((frequency, index) => ({
+        frequency,
+        volume: clamp(0.01, volume * 0.16 * (1 + intentionConfig.mappingConfidence * 0.35), 0.16),
+        waveform: 'sine' as const,
+        pan: index % 2 === 0 ? -0.18 : 0.18,
+        attackSeconds: 1.2,
+        releaseSeconds: 2.2,
+        modulationRateHz: clamp(0.05, intentionConfig.modulationRateHz + index * 0.03, 6),
+        modulationDepth: clamp(0.05, intentionConfig.ritualIntensity * 0.25, 0.55)
+      }));
+  }, [
+    intentionConfig.enabled,
+    intentionConfig.mappedFrequencies,
+    intentionConfig.mappingConfidence,
+    intentionConfig.modulationRateHz,
+    intentionConfig.ritualIntensity,
+    selectedFrequencies,
+    volume
+  ]);
+
+  const preIntentionVoices = useMemo<FrequencyConfig[]>(
     () => [
       ...baseMixedVoices,
       ...(sympatheticConfig.enabled ? roomResponseVoices : []),
-      ...(harmonicFieldConfig.enabled ? harmonicFieldVoices : [])
+      ...(harmonicFieldConfig.enabled ? harmonicFieldVoices : []),
+      ...(intentionConfig.enabled ? intentionSupportVoices : [])
     ],
     [
       baseMixedVoices,
       roomResponseVoices,
       sympatheticConfig.enabled,
       harmonicFieldConfig.enabled,
-      harmonicFieldVoices
+      harmonicFieldVoices,
+      intentionConfig.enabled,
+      intentionSupportVoices
     ]
   );
+
+  const mixedVoices = useMemo<FrequencyConfig[]>(() => {
+    if (!intentionConfig.enabled) {
+      return preIntentionVoices;
+    }
+
+    const imprintRateHz = clamp(0.05, intentionConfig.modulationRateHz, 8);
+    const imprintDepthScale = clamp(0.02, intentionConfig.modulationDepthHz / 36, 1.8);
+    const imprintIntensity = clamp(0.1, intentionConfig.ritualIntensity, 1);
+
+    return preIntentionVoices.map((voice, index) => {
+      const baseRate = voice.modulationRateHz ?? 0;
+      const nextRate = baseRate > 0 ? baseRate * 0.68 + imprintRateHz * 0.32 : imprintRateHz + index * 0.02;
+      const baseDepth = voice.modulationDepth ?? 0.08;
+      const nextDepth = clamp(0.02, baseDepth + imprintDepthScale * 0.09 * imprintIntensity, 0.65);
+      const seed = intentionConfig.certificateSeed && intentionConfig.certificateSeed.length > 0
+        ? intentionConfig.certificateSeed
+        : 'INT-SEED';
+      const detuneOffset = seed.charCodeAt(index % seed.length) % 3;
+
+      return {
+        ...voice,
+        modulationRateHz: Number(clamp(0.05, nextRate, 8).toFixed(3)),
+        modulationDepth: Number(nextDepth.toFixed(3)),
+        detuneCents: Number(((voice.detuneCents ?? 0) + (index % 2 === 0 ? detuneOffset : -detuneOffset)).toFixed(2))
+      };
+    });
+  }, [
+    intentionConfig.certificateSeed,
+    intentionConfig.enabled,
+    intentionConfig.modulationDepthHz,
+    intentionConfig.modulationRateHz,
+    intentionConfig.ritualIntensity,
+    preIntentionVoices
+  ]);
 
   useEffect(() => {
     return () => {
@@ -646,6 +739,28 @@ export default function FrequencyCreator() {
   useEffect(() => {
     setIsIOS(isIOSDevice());
   }, []);
+
+  useEffect(() => {
+    const trimmed = intentionConfig.intentionText.trim();
+    if (trimmed.length === 0) {
+      setIntentionShareText('');
+      return;
+    }
+
+    setIntentionShareText(
+      buildIntentionShareText({
+        intentionText: trimmed,
+        keywords: intentionConfig.extractedKeywords,
+        mappedFrequencies: intentionConfig.mappedFrequencies,
+        certificateSeed: intentionConfig.certificateSeed ?? 'INT-UNKNOWN'
+      })
+    );
+  }, [
+    intentionConfig.certificateSeed,
+    intentionConfig.extractedKeywords,
+    intentionConfig.intentionText,
+    intentionConfig.mappedFrequencies
+  ]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -732,7 +847,18 @@ export default function FrequencyCreator() {
         setSympatheticConfig(parsed.innovation.sympatheticResonance);
         setAdaptiveJourneyConfig(parsed.innovation.adaptiveBinauralJourney);
         setBreathSyncConfig(parsed.innovation.breathSync);
+        setIntentionConfig(parsed.innovation.intentionImprint);
         setHarmonicFieldConfig(parsed.innovation.harmonicField);
+        if (parsed.innovation.intentionImprint.intentionText.trim().length > 0) {
+          setIntentionShareText(
+            buildIntentionShareText({
+              intentionText: parsed.innovation.intentionImprint.intentionText,
+              keywords: parsed.innovation.intentionImprint.extractedKeywords,
+              mappedFrequencies: parsed.innovation.intentionImprint.mappedFrequencies,
+              certificateSeed: parsed.innovation.intentionImprint.certificateSeed ?? 'INT-UNKNOWN'
+            })
+          );
+        }
         if (parsed.innovation.sympatheticResonance.lastDominantFrequencies.length > 0) {
           setRoomResponseFrequencies(parsed.innovation.sympatheticResonance.lastDominantFrequencies);
         }
@@ -1720,6 +1846,120 @@ export default function FrequencyCreator() {
     setStatus(`Applied ${added} voice-bioprint recommendation${added > 1 ? 's' : ''}.`);
   };
 
+  const openIntentionDisclaimer = (enableOnAcknowledge: boolean) => {
+    setIntentionEnableOnAcknowledge(enableOnAcknowledge);
+    setIntentionDisclaimerModalOpen(true);
+  };
+
+  const handleAcknowledgeIntentionDisclaimer = () => {
+    setIntentionConfig((prev) => ({
+      ...prev,
+      disclaimerAccepted: true,
+      enabled: intentionEnableOnAcknowledge ? true : prev.enabled
+    }));
+    setIntentionDisclaimerModalOpen(false);
+    setIntentionEnableOnAcknowledge(false);
+    setIntentionStatus('Quantum Intention disclaimer acknowledged.');
+  };
+
+  const handleAnalyzeIntention = () => {
+    const trimmed = intentionConfig.intentionText.trim();
+    if (trimmed.length < 4) {
+      setIntentionStatus('Enter a short intention (at least 4 characters) before analyzing.');
+      return;
+    }
+
+    const result = analyzeQuantumIntention(trimmed);
+    const generatedAt = new Date().toISOString();
+
+    setIntentionConfig((prev) => ({
+      ...prev,
+      extractedKeywords: result.keywords,
+      mappedFrequencies: result.mappedFrequencies,
+      mappingConfidence: result.confidence,
+      modulationRateHz: result.modulationRateHz,
+      modulationDepthHz: result.modulationDepthHz,
+      ritualIntensity: result.ritualIntensity,
+      certificateSeed: result.certificateSeed,
+      lastImprintedAt: generatedAt
+    }));
+    setIntentionShareText(
+      buildIntentionShareText({
+        intentionText: trimmed,
+        keywords: result.keywords,
+        mappedFrequencies: result.mappedFrequencies,
+        certificateSeed: result.certificateSeed
+      })
+    );
+    setIntentionStatus(`${result.reflectionSummary} Confidence ${Math.round(result.confidence * 100)}%.`);
+  };
+
+  const handleApplyIntentionMapping = () => {
+    if (intentionConfig.mappedFrequencies.length === 0) {
+      setIntentionStatus('Analyze your intention first to generate a frequency map.');
+      return;
+    }
+
+    const incoming = intentionConfig.mappedFrequencies.map((frequency) => ({
+      frequency: normalizeFrequency(frequency),
+      gain: clamp(0.05, 0.28 + intentionConfig.mappingConfidence * 0.38, 0.85)
+    }));
+
+    let added = 0;
+    setSelectedFrequencies((prev) => {
+      const next = [...prev];
+      incoming.forEach((item) => {
+        if (!next.includes(item.frequency) && next.length < maxSelectableFrequencies) {
+          next.push(item.frequency);
+          added += 1;
+        }
+      });
+      return next;
+    });
+
+    setFrequencyVolumes((prev) => {
+      const next = { ...prev };
+      incoming.forEach((item) => {
+        const key = frequencyKey(item.frequency);
+        next[key] = typeof next[key] === 'number' ? next[key] : item.gain;
+      });
+      return next;
+    });
+
+    setIntentionConfig((prev) => ({
+      ...prev,
+      lastImprintedAt: new Date().toISOString()
+    }));
+
+    if (added === 0) {
+      setStatus('Intention frequencies are already in your stack.');
+      return;
+    }
+
+    setStatus(`Applied ${added} intention frequency${added > 1 ? 's' : ''} to your stack.`);
+    setIntentionStatus('Intention frequencies blended into active stack.');
+  };
+
+  const handleCopyIntentionShare = async () => {
+    if (!intentionShareText) {
+      setIntentionStatus('Analyze an intention first to generate share text.');
+      return;
+    }
+
+    if (!navigator.clipboard?.writeText) {
+      setIntentionStatus('Clipboard access is unavailable in this browser.');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(intentionShareText);
+      setIntentionStatus('Intention share text copied.');
+    } catch (error) {
+      console.error(error);
+      setIntentionStatus('Could not copy intention share text.');
+    }
+  };
+
   const handleCalibrateRoom = async () => {
     if (isCalibratingRoom) {
       return;
@@ -1896,6 +2136,13 @@ export default function FrequencyCreator() {
       return;
     }
 
+    if (intentionConfig.enabled && !intentionConfig.disclaimerAccepted) {
+      setStatus('Acknowledge the Quantum Intention disclaimer before starting playback.');
+      setIntentionStatus('Quantum Intention mode requires acknowledgement before playback.');
+      openIntentionDisclaimer(false);
+      return;
+    }
+
     try {
       const shouldEnableBridge = isIOS || isIOSDevice() || isAndroidDevice();
       await generator.initialize(DEFAULT_EFFECTS, {
@@ -2049,6 +2296,13 @@ export default function FrequencyCreator() {
 
     if (mixedVoices.length === 0) {
       setStatus('Select at least one frequency or enable a harmonic field.');
+      return;
+    }
+
+    if (intentionConfig.enabled && !intentionConfig.disclaimerAccepted) {
+      setStatus('Acknowledge the Quantum Intention disclaimer before saving.');
+      setIntentionStatus('Quantum Intention mode requires acknowledgement before saving.');
+      openIntentionDisclaimer(false);
       return;
     }
 
@@ -2214,6 +2468,13 @@ export default function FrequencyCreator() {
         mix_style: mixStyle,
         binaural_enabled: binauralConfig.enabled
       };
+      const intentionKeywordTags = intentionConfig.enabled
+        ? intentionConfig.extractedKeywords
+            .slice(0, 2)
+            .map((keyword) => keyword.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''))
+            .filter((keyword) => keyword.length > 0)
+            .map((keyword) => `intent-${keyword}`)
+        : [];
 
       const insertPayload: CompositionInsert = {
         user_id: activeUserId,
@@ -2271,6 +2532,19 @@ export default function FrequencyCreator() {
             phaseProgress: breathRuntime?.phaseProgress ?? breathSyncConfig.phaseProgress,
             lastSampledAt: breathSamples[0]?.capturedAt ?? breathSyncConfig.lastSampledAt
           },
+          intentionImprint: {
+            enabled: intentionConfig.enabled,
+            disclaimerAccepted: intentionConfig.disclaimerAccepted,
+            intentionText: intentionConfig.intentionText,
+            extractedKeywords: intentionConfig.extractedKeywords,
+            mappedFrequencies: intentionConfig.mappedFrequencies,
+            mappingConfidence: intentionConfig.mappingConfidence,
+            modulationRateHz: intentionConfig.modulationRateHz,
+            modulationDepthHz: intentionConfig.modulationDepthHz,
+            ritualIntensity: intentionConfig.ritualIntensity,
+            certificateSeed: intentionConfig.certificateSeed,
+            lastImprintedAt: intentionConfig.lastImprintedAt
+          },
           harmonicField: {
             enabled: harmonicFieldConfig.enabled,
             presetId: harmonicFieldConfig.presetId,
@@ -2288,10 +2562,12 @@ export default function FrequencyCreator() {
           sympatheticConfig.enabled ? 'sympathetic_resonance' : null,
           adaptiveJourneyConfig.enabled ? 'adaptive_binaural_journey' : null,
           breathSyncConfig.enabled ? 'breath_sync_protocol' : null,
+          intentionConfig.enabled ? 'quantum_intention_imprint' : null,
           harmonicFieldConfig.enabled ? 'solfeggio_harmonic_field' : null
         ].filter((value): value is string => Boolean(value)),
         scientific_disclaimer_ack:
           voiceBioprintConfig.disclaimerAccepted ||
+          (intentionConfig.enabled && intentionConfig.disclaimerAccepted) ||
           Boolean(sympatheticConfig.enabled) ||
           Boolean(breathSyncConfig.enabled) ||
           Boolean(harmonicFieldConfig.enabled),
@@ -2310,6 +2586,8 @@ export default function FrequencyCreator() {
           sympatheticConfig.enabled ? `room-${sympatheticConfig.mode}` : null,
           adaptiveJourneyConfig.enabled ? `journey-${adaptiveJourneyConfig.intent}` : null,
           breathSyncConfig.enabled ? 'breath-sync' : null,
+          intentionConfig.enabled ? 'quantum-intention' : null,
+          ...intentionKeywordTags,
           harmonicFieldConfig.enabled ? 'solfeggio-field' : null,
           harmonicFieldConfig.enabled ? `field-${harmonicFieldConfig.presetId}` : null
         ].filter((tag): tag is string => Boolean(tag) && tag !== 'none')
@@ -2442,6 +2720,39 @@ export default function FrequencyCreator() {
 
           if (harmonicInsertError) {
             console.warn('Harmonic field persistence failed.', harmonicInsertError);
+          }
+        }
+
+        if (intentionConfig.enabled && intentionConfig.intentionText.trim().length > 0) {
+          const createdAt = intentionConfig.lastImprintedAt ?? new Date().toISOString();
+          const mappingPayload: Json = {
+            intentionText: intentionConfig.intentionText.trim(),
+            keywords: intentionConfig.extractedKeywords,
+            mappedFrequencies: intentionConfig.mappedFrequencies,
+            mappingConfidence: intentionConfig.mappingConfidence,
+            modulationRateHz: intentionConfig.modulationRateHz,
+            modulationDepthHz: intentionConfig.modulationDepthHz,
+            ritualIntensity: intentionConfig.ritualIntensity,
+            certificateSeed: intentionConfig.certificateSeed,
+            shareText: intentionShareText
+          };
+          const { error: intentionInsertError } = await supabase.from('intention_imprints').insert({
+            user_id: activeUserId,
+            composition_id: insertResult.data.id,
+            intention_text: intentionConfig.intentionText.trim(),
+            mapping: mappingPayload,
+            extracted_keywords: intentionConfig.extractedKeywords,
+            mapped_frequencies: intentionConfig.mappedFrequencies as unknown as Json,
+            mapping_confidence: intentionConfig.mappingConfidence,
+            modulation_rate_hz: intentionConfig.modulationRateHz,
+            modulation_depth_hz: intentionConfig.modulationDepthHz,
+            ritual_intensity: intentionConfig.ritualIntensity,
+            certificate_seed: intentionConfig.certificateSeed,
+            created_at: createdAt
+          });
+
+          if (intentionInsertError) {
+            console.warn('Intention imprint persistence failed.', intentionInsertError);
           }
         }
 
@@ -3691,6 +4002,189 @@ export default function FrequencyCreator() {
                 <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
                   <div className="flex items-center gap-2">
                     <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">
+                      Quantum intention imprint (experimental)
+                    </h4>
+                    <HelpPopover
+                      align="left"
+                      label="Intention imprint help"
+                      text="Creative ritual mode that maps text intention to gentle modulation settings. This is not a medical claim and should be treated as reflective sound design."
+                    />
+                  </div>
+                  <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    Experimental ritual mode. Treat outcomes as reflective support, not scientific proof or clinical treatment.
+                  </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Enable intention mode</span>
+                      <input
+                        type="checkbox"
+                        checked={intentionConfig.enabled}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          if (checked && !intentionConfig.disclaimerAccepted) {
+                            setIntentionStatus('Acknowledge the disclaimer before enabling intention mode.');
+                            openIntentionDisclaimer(true);
+                            return;
+                          }
+                          setIntentionConfig((prev) => ({
+                            ...prev,
+                            enabled: checked
+                          }));
+                        }}
+                        className="h-4 w-4"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Disclaimer acknowledged</span>
+                      <input
+                        type="checkbox"
+                        checked={intentionConfig.disclaimerAccepted}
+                        onChange={(event) =>
+                          setIntentionConfig((prev) => ({
+                            ...prev,
+                            disclaimerAccepted: event.target.checked,
+                            enabled: event.target.checked ? prev.enabled : false
+                          }))
+                        }
+                        className="h-4 w-4"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Modulation rate</span>
+                      <input
+                        type="number"
+                        min={0.05}
+                        max={8}
+                        step={0.01}
+                        value={intentionConfig.modulationRateHz}
+                        onChange={(event) =>
+                          setIntentionConfig((prev) => ({
+                            ...prev,
+                            modulationRateHz: clamp(0.05, Number(event.target.value), 8)
+                          }))
+                        }
+                        className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm">
+                      <span>Modulation depth</span>
+                      <input
+                        type="number"
+                        min={0.5}
+                        max={60}
+                        step={0.1}
+                        value={intentionConfig.modulationDepthHz}
+                        onChange={(event) =>
+                          setIntentionConfig((prev) => ({
+                            ...prev,
+                            modulationDepthHz: clamp(0.5, Number(event.target.value), 60)
+                          }))
+                        }
+                        className="w-24 rounded-full border border-ink/10 bg-white px-3 py-2 text-right"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 text-sm sm:col-span-2">
+                      <span>Ritual intensity</span>
+                      <input
+                        type="range"
+                        min={0.1}
+                        max={1}
+                        step={0.05}
+                        value={intentionConfig.ritualIntensity}
+                        onChange={(event) =>
+                          setIntentionConfig((prev) => ({
+                            ...prev,
+                            ritualIntensity: Number(event.target.value)
+                          }))
+                        }
+                        className="w-44"
+                      />
+                      <span className="w-10 text-right text-xs">{Math.round(intentionConfig.ritualIntensity * 100)}%</span>
+                    </label>
+                  </div>
+                  <label className="mt-3 block text-xs uppercase tracking-[0.2em] text-ink/55">Intention text</label>
+                  <textarea
+                    value={intentionConfig.intentionText}
+                    onChange={(event) => {
+                      const nextText = event.target.value.slice(0, 500);
+                      setIntentionConfig((prev) => ({
+                        ...prev,
+                        intentionText: nextText
+                      }));
+                      setIntentionStatus(null);
+                    }}
+                    placeholder="Example: I welcome calm focus and grounded energy."
+                    className="mt-2 min-h-[88px] w-full rounded-2xl border border-ink/10 bg-white px-3 py-3 text-sm"
+                  />
+                  <p className="mt-1 text-xs text-ink/55">{intentionConfig.intentionText.length}/500 characters</p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={handleAnalyzeIntention}>
+                      Analyze intention
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleApplyIntentionMapping}
+                      disabled={intentionConfig.mappedFrequencies.length === 0}
+                    >
+                      Apply mapped tones
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={handleCopyIntentionShare} disabled={!intentionShareText}>
+                      Copy share text
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openIntentionDisclaimer(false)}
+                    >
+                      View disclaimer
+                    </Button>
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-4">
+                    <div className="rounded-2xl border border-ink/10 bg-white px-3 py-2 text-xs text-ink/65">
+                      <p className="uppercase tracking-[0.2em] text-ink/55">Confidence</p>
+                      <p className="mt-1">{Math.round(intentionConfig.mappingConfidence * 100)}%</p>
+                    </div>
+                    <div className="rounded-2xl border border-ink/10 bg-white px-3 py-2 text-xs text-ink/65">
+                      <p className="uppercase tracking-[0.2em] text-ink/55">Seed</p>
+                      <p className="mt-1">{intentionConfig.certificateSeed ?? 'Not generated'}</p>
+                    </div>
+                    <div className="rounded-2xl border border-ink/10 bg-white px-3 py-2 text-xs text-ink/65">
+                      <p className="uppercase tracking-[0.2em] text-ink/55">Mapped tones</p>
+                      <p className="mt-1">{intentionConfig.mappedFrequencies.length}</p>
+                    </div>
+                    <div className="rounded-2xl border border-ink/10 bg-white px-3 py-2 text-xs text-ink/65">
+                      <p className="uppercase tracking-[0.2em] text-ink/55">Last imprint</p>
+                      <p className="mt-1">
+                        {intentionConfig.lastImprintedAt ? new Date(intentionConfig.lastImprintedAt).toLocaleString() : 'Not yet'}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-ink/60">
+                    Keywords:{' '}
+                    {intentionConfig.extractedKeywords.length > 0
+                      ? intentionConfig.extractedKeywords.join(', ')
+                      : 'Analyze to extract keywords.'}
+                  </p>
+                  <p className="mt-1 text-xs text-ink/60">
+                    Mapped frequencies:{' '}
+                    {intentionConfig.mappedFrequencies.length > 0
+                      ? intentionConfig.mappedFrequencies.map((value) => `${Math.round(value)}Hz`).join(' • ')
+                      : 'None yet'}
+                  </p>
+                  <p className="mt-1 text-xs text-ink/55 break-words">
+                    Share text: {intentionShareText || 'Analyze an intention to generate share text.'}
+                  </p>
+                  {intentionStatus ? (
+                    <p className="mt-2 rounded-2xl border border-ink/10 bg-white/80 px-3 py-2 text-xs text-ink/65">
+                      {intentionStatus}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="rounded-3xl border border-ink/10 bg-white/80 p-4">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-ink/60">
                       Solfeggio harmonic field
                     </h4>
                     <HelpPopover
@@ -4176,6 +4670,37 @@ export default function FrequencyCreator() {
           </Button>
           <Button asChild size="sm" variant="outline">
             <Link href="/signup?redirectTo=/discover">Create account</Link>
+          </Button>
+        </div>
+      </Modal>
+      <Modal
+        open={intentionDisclaimerModalOpen}
+        onClose={() => {
+          setIntentionDisclaimerModalOpen(false);
+          setIntentionEnableOnAcknowledge(false);
+        }}
+        title="Quantum Intention Disclaimer"
+      >
+        <p className="text-sm text-ink/70">
+          Quantum Intention Imprinting is an experimental reflective tool. It does not diagnose, treat, or cure any
+          medical condition and should not replace professional care.
+        </p>
+        <p className="mt-3 text-sm text-ink/70">
+          Continue only if you understand this mode is for personal ritual and creative listening.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <Button size="sm" onClick={handleAcknowledgeIntentionDisclaimer}>
+            I understand
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setIntentionDisclaimerModalOpen(false);
+              setIntentionEnableOnAcknowledge(false);
+            }}
+          >
+            Cancel
           </Button>
         </div>
       </Modal>

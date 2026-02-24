@@ -24,74 +24,25 @@
     }
   },
   "home": {
-    "harmonicStudio": "Harmonic Studio",
-    "title": "Design healing sound journeys with guided, calming visual space.",
-    "description": "Build intentional frequency sessions, refine advanced audio movement, and enter a responsive meditative canvas that stays soft on focus.",
-    "startListening": "Start Listening Now",
-    "exploreSessions": "Explore Sessions",
-    "noAccount": "No account needed for your first 2-minute session.",
-    "firstTime": "First time here?",
-    "firstTimeBody": "Open the studio, choose a preset, and hear your first session in under two minutes.",
-    "openInstant": "Open Instant Session",
-    "coreFrequencies": "Core frequencies",
-    "starterStacks": "Suggested starter stacks",
-    "startWithStack": "Start with these in Studio",
-    "wellnessDisclaimer": "Healing outcomes vary by context and individual response. Use as a wellness companion, not medical treatment.",
-    "journeyPoints": [
-      {
-        "title": "Set intention",
-        "description": "Choose frequencies for grounding, heart coherence, focus, or sleep support."
-      },
-      {
-        "title": "Shape your field",
-        "description": "Layer rhythm, modulation, binaural offset, and ambient texture in one studio flow."
-      },
-      {
-        "title": "Enter resonance",
-        "description": "Pair the session with visual atmospheres tuned for immersive, low-distraction attention."
-      }
-    ],
-    "quickStartTitle": "Quick Start",
-    "quickStartHeading": "Enter your session in under 10 seconds",
-    "quickStartSteps": [
-      "Tap Play with the default sacred geometry visualization.",
-      "Adjust only what you feel: frequencies, rhythm, or ambience.",
-      "Open publishing tools later if you want to save or share."
-    ],
-    "openQuick": "Open Quick Resonance",
-    "openControls": "Open Studio Controls",
-    "frequencyCards": [
-      {
-        "label": "Natural tuning",
-        "value": "432 Hz"
-      },
-      {
-        "label": "Love / coherence",
-        "value": "528 Hz"
-      },
-      {
-        "label": "Heart resonance",
-        "value": "639 Hz"
-      },
-      {
-        "label": "Higher awareness",
-        "value": "963 Hz"
-      }
-    ],
-    "firstSessionIdeas": [
-      {
-        "label": "Grounding reset",
-        "stack": "396 + 432 Hz"
-      },
-      {
-        "label": "Heart ease",
-        "stack": "528 + 639 Hz"
-      },
-      {
-        "label": "Quiet focus",
-        "stack": "432 + 852 Hz"
-      }
-    ]
+    "title": "Let your breath create sound.",
+    "subtitle": "Grant microphone access and enter a live healing field in under five seconds.",
+    "prompt": "Breathe with us",
+    "allowMicHint": "No account, no setup. Your session runs privately in this browser.",
+    "startButton": "Enable microphone",
+    "retry": "Try microphone again",
+    "starting": "Preparing your breath field...",
+    "listening": "Listening and syncing to your breath",
+    "micDenied": "Microphone permission was denied. Allow access to continue.",
+    "micUnavailable": "Microphone is unavailable in this browser.",
+    "phaseInhale": "Inhale",
+    "phaseExhale": "Exhale",
+    "breathRateLabel": "Breath rate",
+    "coherenceLabel": "Coherence",
+    "rhythmLabel": "Rhythm",
+    "frequencyLabel": "528 Hz - Heart Coherence",
+    "sessionReadyTitle": "Your first coherence session is complete.",
+    "sessionReadyBody": "Save this ritual or explore advanced studio features when you are ready.",
+    "sessionCta": "Explore advanced features"
   },
   "create": {
     "studioLabel": "Creator Studio",

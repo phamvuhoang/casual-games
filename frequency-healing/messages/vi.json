@@ -24,74 +24,25 @@
     }
   },
   "home": {
-    "harmonicStudio": "Studio Hòa Âm",
-    "title": "Thiết kế hành trình âm thanh trị liệu với không gian hình ảnh êm dịu, dẫn hướng.",
-    "description": "Tạo phiên tần số có chủ đích, tinh chỉnh chuyển động âm thanh nâng cao, và bước vào không gian thiền phản hồi theo âm thanh.",
-    "startListening": "Bắt đầu nghe ngay",
-    "exploreSessions": "Khám phá phiên",
-    "noAccount": "Không cần tài khoản cho phiên đầu tiên trong 2 phút.",
-    "firstTime": "Lần đầu sử dụng?",
-    "firstTimeBody": "Mở studio, chọn một preset và nghe phiên đầu tiên trong chưa tới 2 phút.",
-    "openInstant": "Mở phiên tức thì",
-    "coreFrequencies": "Tần số cốt lõi",
-    "starterStacks": "Stack gợi ý để bắt đầu",
-    "startWithStack": "Bắt đầu với stack này trong Studio",
-    "wellnessDisclaimer": "Hiệu quả phụ thuộc vào bối cảnh và phản hồi cá nhân. Sử dụng như công cụ hỗ trợ wellbeing, không thay thế điều trị y khoa.",
-    "journeyPoints": [
-      {
-        "title": "Đặt ý định",
-        "description": "Chọn tần số cho grounding, đồng bộ tim, tập trung hoặc hỗ trợ giấc ngủ."
-      },
-      {
-        "title": "Tạo trường âm",
-        "description": "Kết hợp rhythm, modulation, binaural offset và ambient trong một luồng làm việc."
-      },
-      {
-        "title": "Đi vào cộng hưởng",
-        "description": "Kết hợp phiên nghe với bầu không khí hình ảnh đắm chìm, ít xao nhãng."
-      }
-    ],
-    "quickStartTitle": "Bắt đầu nhanh",
-    "quickStartHeading": "Vào phiên nghe trong dưới 10 giây",
-    "quickStartSteps": [
-      "Nhấn Phát với visual sacred geometry mặc định.",
-      "Chỉ chỉnh phần bạn cảm thấy cần: tần số, nhịp hoặc ambience.",
-      "Mở công cụ xuất bản sau nếu bạn muốn lưu/chia sẻ."
-    ],
-    "openQuick": "Mở cộng hưởng nhanh",
-    "openControls": "Mở điều khiển Studio",
-    "frequencyCards": [
-      {
-        "label": "Tinh chỉnh tự nhiên",
-        "value": "432 Hz"
-      },
-      {
-        "label": "Tình yêu / đồng bộ",
-        "value": "528 Hz"
-      },
-      {
-        "label": "Cộng hưởng trái tim",
-        "value": "639 Hz"
-      },
-      {
-        "label": "Nhận thức cao hơn",
-        "value": "963 Hz"
-      }
-    ],
-    "firstSessionIdeas": [
-      {
-        "label": "Đặt lại grounding",
-        "stack": "396 + 432 Hz"
-      },
-      {
-        "label": "Dễ chịu vùng tim",
-        "stack": "528 + 639 Hz"
-      },
-      {
-        "label": "Tập trung tĩnh",
-        "stack": "432 + 852 Hz"
-      }
-    ]
+    "title": "Hãy để hơi thở tạo nên âm thanh.",
+    "subtitle": "Cho phép micro và bước vào trường âm chữa lành trực tiếp trong dưới 5 giây.",
+    "prompt": "Thở cùng chúng tôi",
+    "allowMicHint": "Không cần tài khoản, không cần thiết lập. Phiên chạy riêng tư ngay trên trình duyệt này.",
+    "startButton": "Bật micro",
+    "retry": "Thử lại micro",
+    "starting": "Đang chuẩn bị trường hơi thở...",
+    "listening": "Đang lắng nghe và đồng bộ hơi thở",
+    "micDenied": "Bạn đã từ chối quyền micro. Hãy cho phép để tiếp tục.",
+    "micUnavailable": "Trình duyệt này không có micro khả dụng.",
+    "phaseInhale": "Hít vào",
+    "phaseExhale": "Thở ra",
+    "breathRateLabel": "Nhịp thở",
+    "coherenceLabel": "Coherence",
+    "rhythmLabel": "Nhịp",
+    "frequencyLabel": "528 Hz - Heart Coherence",
+    "sessionReadyTitle": "Bạn đã hoàn thành phiên coherence đầu tiên.",
+    "sessionReadyBody": "Khi sẵn sàng, hãy lưu phiên này hoặc khám phá các tính năng nâng cao trong studio.",
+    "sessionCta": "Khám phá tính năng nâng cao"
   },
   "create": {
     "studioLabel": "Studio Sáng Tạo",

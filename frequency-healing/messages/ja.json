@@ -24,74 +24,25 @@
     }
   },
   "home": {
-    "harmonicStudio": "ハーモニックスタジオ",
-    "title": "穏やかなビジュアル空間で、癒しのサウンドジャーニーを設計。",
-    "description": "意図ある周波数セッションを作成し、高度な音響モーションを調整し、集中を妨げない瞑想キャンバスへ。",
-    "startListening": "今すぐ再生を開始",
-    "exploreSessions": "セッションを探す",
-    "noAccount": "最初の2分セッションにアカウントは不要です。",
-    "firstTime": "初めてですか？",
-    "firstTimeBody": "スタジオを開いてプリセットを選べば、2分以内に最初のセッションを体験できます。",
-    "openInstant": "インスタントセッションを開く",
-    "coreFrequencies": "主要周波数",
-    "starterStacks": "推奨スタータースタック",
-    "startWithStack": "この設定でスタジオ開始",
-    "wellnessDisclaimer": "効果は状況や個人差により異なります。医療行為ではなくウェルネス用途としてご利用ください。",
-    "journeyPoints": [
-      {
-        "title": "意図を定める",
-        "description": "グラウンディング、心のコヒーレンス、集中、睡眠サポート向けの周波数を選択。"
-      },
-      {
-        "title": "フィールドを整える",
-        "description": "リズム、モジュレーション、バイノーラル差分、環境音を1つの流れで重ねます。"
-      },
-      {
-        "title": "共鳴に入る",
-        "description": "没入感と低ノイズ集中を狙ったビジュアル空間とセッションを組み合わせます。"
-      }
-    ],
-    "quickStartTitle": "クイックスタート",
-    "quickStartHeading": "10秒以内でセッション開始",
-    "quickStartSteps": [
-      "既定の神聖幾何学ビジュアライザーで再生をタップ。",
-      "必要な項目だけ調整: 周波数・リズム・環境音。",
-      "保存や共有は後から公開ツールで行えます。"
-    ],
-    "openQuick": "クイック共鳴を開く",
-    "openControls": "スタジオ操作を開く",
-    "frequencyCards": [
-      {
-        "label": "自然チューニング",
-        "value": "432 Hz"
-      },
-      {
-        "label": "愛 / コヒーレンス",
-        "value": "528 Hz"
-      },
-      {
-        "label": "ハート共鳴",
-        "value": "639 Hz"
-      },
-      {
-        "label": "高次意識",
-        "value": "963 Hz"
-      }
-    ],
-    "firstSessionIdeas": [
-      {
-        "label": "グラウンディングリセット",
-        "stack": "396 + 432 Hz"
-      },
-      {
-        "label": "ハートの安らぎ",
-        "stack": "528 + 639 Hz"
-      },
-      {
-        "label": "静かな集中",
-        "stack": "432 + 852 Hz"
-      }
-    ]
+    "title": "呼吸で音を生み出そう。",
+    "subtitle": "マイクを許可すると、5秒以内にライブヒーリングフィールドへ入れます。",
+    "prompt": "一緒に呼吸しましょう",
+    "allowMicHint": "アカウント不要、設定不要。セッションはこのブラウザ内で実行されます。",
+    "startButton": "マイクを有効化",
+    "retry": "もう一度マイクを試す",
+    "starting": "呼吸フィールドを準備中...",
+    "listening": "呼吸を検知して同期中",
+    "micDenied": "マイク権限が拒否されました。続行するには許可してください。",
+    "micUnavailable": "このブラウザではマイクを利用できません。",
+    "phaseInhale": "吸う",
+    "phaseExhale": "吐く",
+    "breathRateLabel": "呼吸レート",
+    "coherenceLabel": "コヒーレンス",
+    "rhythmLabel": "リズム",
+    "frequencyLabel": "528 Hz - ハート・コヒーレンス",
+    "sessionReadyTitle": "最初のコヒーレンスセッションが完了しました。",
+    "sessionReadyBody": "準備ができたら、この体験を保存するか高度なスタジオ機能を試してください。",
+    "sessionCta": "高度機能を試す"
   },
   "create": {
     "studioLabel": "クリエイタースタジオ",

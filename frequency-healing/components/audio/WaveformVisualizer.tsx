@@ -9,6 +9,7 @@ import {
   type VisualizerType
 } from '@/lib/visualization/config';
 import { CompositorRenderer } from '@/lib/visualization/renderers/CompositorRenderer';
+import { cn } from '@/lib/utils/helpers';
 import {
   drawBreathGuideOverlay,
   drawSessionOverlay,
@@ -26,6 +27,7 @@ interface WaveformVisualizerProps {
   sessionInfo?: VisualizationSessionOverlayData | null;
   breathGuide?: BreathGuideOverlayData | null;
   onCanvasReady?: (canvas: HTMLCanvasElement | null) => void;
+  className?: string;
 }
 
 function toBaseType(type: VisualizerType): BaseVisualizationType {
@@ -43,7 +45,8 @@ export default function WaveformVisualizer({
   showSessionInfo = false,
   sessionInfo = null,
   breathGuide = null,
-  onCanvasReady
+  onCanvasReady,
+  className
 }: WaveformVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<VisualizationEngine | null>(null);
@@ -163,7 +166,7 @@ export default function WaveformVisualizer({
   }, [isActive]);
 
   return (
-    <div className="relative h-64 w-full overflow-hidden rounded-3xl border border-black/5 bg-black/10 md:h-72">
+    <div className={cn('relative h-64 w-full overflow-hidden rounded-3xl border border-black/5 bg-black/10 md:h-72', className)}>
       <canvas ref={canvasRef} className="h-full w-full" />
       {isLowPower ? (
         <span className="absolute bottom-2 right-3 rounded-full bg-black/35 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-white/80">

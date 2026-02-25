@@ -151,6 +151,10 @@ export default async function HomePage({ params }: { params: Params }) {
           coherenceLabel={t('coherenceLabel')}
           rhythmLabel={t('rhythmLabel')}
           frequencyLabel={t('frequencyLabel')}
+          stopControlLabel={t('stopControlLabel')}
+          stopControlHint={t('stopControlHint')}
+          stopControlProgressHint={t('stopControlProgressHint')}
+          stopControlCompleting={t('stopControlCompleting')}
           sessionReadyTitle={t('sessionReadyTitle')}
           sessionReadyBody={t('sessionReadyBody')}
           sessionCtaLabel={t('sessionCta')}

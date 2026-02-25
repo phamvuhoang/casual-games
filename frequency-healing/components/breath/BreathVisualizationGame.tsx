@@ -27,6 +27,10 @@ type BreathVisualizationGameProps = {
   coherenceLabel: string;
   rhythmLabel: string;
   frequencyLabel: string;
+  stopControlLabel: string;
+  stopControlHint: string;
+  stopControlProgressHint: string;
+  stopControlCompleting: string;
   sessionReadyTitle: string;
   sessionReadyBody: string;
   sessionCtaLabel: string;
@@ -40,6 +44,8 @@ const BREATH_SENSITIVITY = 0.72;
 const CTA_REVEAL_MS = 75_000;
 const RUNTIME_TICK_MS = 320;
 const BREATH_SAMPLE_INTERVAL_MS = 22_000;
+const HOLD_TO_STOP_MS = 1_250;
+const HOLD_TO_STOP_TICK_MS = 16;
 
 const BREATH_FIELD_STACK: FrequencyConfig[] = [
   {
@@ -106,6 +112,10 @@ export default function BreathVisualizationGame({
   coherenceLabel,
   rhythmLabel,
   frequencyLabel,
+  stopControlLabel,
+  stopControlHint,
+  stopControlProgressHint,
+  stopControlCompleting,
   sessionReadyTitle,
   sessionReadyBody,
   sessionCtaLabel
@@ -117,6 +127,7 @@ export default function BreathVisualizationGame({
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [showSessionCta, setShowSessionCta] = useState(false);
   const [isSamplingBreath, setIsSamplingBreath] = useState(false);
+  const [stopHoldProgress, setStopHoldProgress] = useState(0);
   const [isLowPower, setIsLowPower] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -132,7 +143,10 @@ export default function BreathVisualizationGame({
   const breathSamplerRef = useRef(new MicrophoneAnalysisService());
   const runtimeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sampleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopHoldTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sampleInFlightRef = useRef(false);
+  const stopHoldStartRef = useRef<number | null>(null);
+  const stopHoldTriggeredRef = useRef(false);
   const sessionStartRef = useRef<number | null>(null);
   const breathBpmRef = useRef(TARGET_BPM);
   const confidenceRef = useRef(0.65);
@@ -181,6 +195,70 @@ export default function BreathVisualizationGame({
     }
   }, []);
 
+  const clearStopHoldTimer = useCallback(() => {
+    if (stopHoldTimerRef.current) {
+      clearInterval(stopHoldTimerRef.current);
+      stopHoldTimerRef.current = null;
+    }
+  }, []);
+
+  const cancelStopHold = useCallback(
+    (resetProgress = true) => {
+      clearStopHoldTimer();
+      stopHoldStartRef.current = null;
+      stopHoldTriggeredRef.current = false;
+      if (resetProgress) {
+        setStopHoldProgress(0);
+      }
+    },
+    [clearStopHoldTimer]
+  );
+
+  const stopExperience = useCallback(async () => {
+    cancelStopHold();
+    clearTimers();
+    sampleInFlightRef.current = false;
+    sessionStartRef.current = null;
+    generatorRef.current.stop();
+    setAnalyser(null);
+    resetSessionState();
+    setErrorMessage(null);
+    setStage('idle');
+    await Promise.all([liveMicRef.current.stop(), breathSamplerRef.current.stop()]);
+  }, [cancelStopHold, clearTimers, resetSessionState]);
+
+  const beginStopHold = useCallback(() => {
+    if (stage !== 'active' || stopHoldTimerRef.current) {
+      return;
+    }
+
+    stopHoldTriggeredRef.current = false;
+    stopHoldStartRef.current = performance.now();
+    setStopHoldProgress(0);
+
+    stopHoldTimerRef.current = setInterval(() => {
+      if (!stopHoldStartRef.current) {
+        return;
+      }
+
+      const progress = Math.min(1, (performance.now() - stopHoldStartRef.current) / HOLD_TO_STOP_MS);
+      setStopHoldProgress(progress);
+
+      if (progress >= 1 && !stopHoldTriggeredRef.current) {
+        stopHoldTriggeredRef.current = true;
+        clearStopHoldTimer();
+        void stopExperience();
+      }
+    }, HOLD_TO_STOP_TICK_MS);
+  }, [clearStopHoldTimer, stage, stopExperience]);
+
+  const endStopHold = useCallback(() => {
+    if (stopHoldTriggeredRef.current) {
+      return;
+    }
+    cancelStopHold();
+  }, [cancelStopHold]);
+
   const sampleBreath = useCallback(async () => {
     if (!sessionStartRef.current || sampleInFlightRef.current) {
       return;
@@ -225,6 +303,7 @@ export default function BreathVisualizationGame({
       return;
     }
 
+    cancelStopHold();
     clearTimers();
     resetSessionState();
     setErrorMessage(null);
@@ -330,7 +409,7 @@ export default function BreathVisualizationGame({
       }
       setStage('error');
     }
-  }, [clearTimers, micDeniedMessage, micUnavailableMessage, resetSessionState, sampleBreath, stage]);
+  }, [cancelStopHold, clearTimers, micDeniedMessage, micUnavailableMessage, resetSessionState, sampleBreath, stage]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -353,6 +432,7 @@ export default function BreathVisualizationGame({
 
     return () => {
       isMountedRef.current = false;
+      cancelStopHold();
       clearTimers();
       sampleInFlightRef.current = false;
       sessionStartRef.current = null;
@@ -361,7 +441,7 @@ export default function BreathVisualizationGame({
       void liveMicRef.current.stop();
       void breathSamplerRef.current.stop();
     };
-  }, [clearTimers]);
+  }, [cancelStopHold, clearTimers]);
 
   useEffect(() => {
     const canvas = backgroundCanvasRef.current;
@@ -475,6 +555,13 @@ export default function BreathVisualizationGame({
   const phaseLabel = runtime.phase === 'inhale' ? phaseInhaleLabel : phaseExhaleLabel;
   const sessionMinutes = Math.floor(elapsedSeconds / 60);
   const sessionSeconds = elapsedSeconds % 60;
+  const stopHoldDegrees = Math.round(Math.max(0, Math.min(1, stopHoldProgress)) * 360);
+  const stopHoldHintText =
+    stopHoldProgress >= 1
+      ? stopControlCompleting
+      : stopHoldProgress > 0
+        ? stopControlProgressHint
+        : stopControlHint;
 
   return (
     <section
@@ -547,6 +634,51 @@ export default function BreathVisualizationGame({
             <p className="text-xs uppercase tracking-[0.2em] text-ink/58">
               {String(sessionMinutes).padStart(2, '0')}:{String(sessionSeconds).padStart(2, '0')}
             </p>
+          ) : null}
+
+          {stage === 'active' ? (
+            <div className="mt-1 flex w-full flex-col items-center gap-2">
+              <button
+                type="button"
+                aria-label={stopControlLabel}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  if (event.currentTarget.setPointerCapture) {
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                  }
+                  beginStopHold();
+                }}
+                onPointerUp={endStopHold}
+                onPointerLeave={endStopHold}
+                onPointerCancel={endStopHold}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    beginStopHold();
+                  }
+                }}
+                onKeyUp={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    endStopHold();
+                  }
+                }}
+                onBlur={endStopHold}
+                className="group relative h-20 w-20 rounded-full transition duration-200 hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lagoon/60"
+              >
+                <span
+                  className="absolute inset-0 rounded-full"
+                  style={{
+                    background: `conic-gradient(rgba(106,146,194,0.95) ${stopHoldDegrees}deg, rgba(23,32,52,0.16) ${stopHoldDegrees}deg)`
+                  }}
+                />
+                <span className="absolute inset-[5px] flex items-center justify-center rounded-full border border-white/55 bg-white/88 text-[10px] font-semibold tracking-[0.14em] text-ink/78 shadow-[0_10px_24px_rgba(25,34,52,0.2)] backdrop-blur-sm">
+                  {Math.round(stopHoldProgress * 100)}%
+                </span>
+              </button>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-ink/62">{stopControlLabel}</p>
+              <p className="text-xs text-ink/62">{stopHoldHintText}</p>
+            </div>
           ) : null}
 
           {errorMessage ? <p className="text-sm text-rose-700">{errorMessage}</p> : null}

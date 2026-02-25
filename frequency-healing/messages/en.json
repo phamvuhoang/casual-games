@@ -40,6 +40,10 @@
     "coherenceLabel": "Coherence",
     "rhythmLabel": "Rhythm",
     "frequencyLabel": "528 Hz - Heart Coherence",
+    "stopControlLabel": "Hold to close session",
+    "stopControlHint": "Press and hold for a gentle fade-out.",
+    "stopControlProgressHint": "Keep holding to release the field...",
+    "stopControlCompleting": "Releasing...",
     "sessionReadyTitle": "Your first coherence session is complete.",
     "sessionReadyBody": "Save this ritual or explore advanced studio features when you are ready.",
     "sessionCta": "Explore advanced features"

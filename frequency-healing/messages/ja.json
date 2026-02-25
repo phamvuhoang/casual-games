@@ -40,6 +40,10 @@
     "coherenceLabel": "コヒーレンス",
     "rhythmLabel": "リズム",
     "frequencyLabel": "528 Hz - ハート・コヒーレンス",
+    "stopControlLabel": "長押しでセッション終了",
+    "stopControlHint": "長押しすると穏やかにフェードアウトします。",
+    "stopControlProgressHint": "そのまま長押ししてフィールドを解放...",
+    "stopControlCompleting": "終了しています...",
     "sessionReadyTitle": "最初のコヒーレンスセッションが完了しました。",
     "sessionReadyBody": "準備ができたら、この体験を保存するか高度なスタジオ機能を試してください。",
     "sessionCta": "高度機能を試す"

@@ -40,6 +40,10 @@
     "coherenceLabel": "Coherence",
     "rhythmLabel": "Nhịp",
     "frequencyLabel": "528 Hz - Heart Coherence",
+    "stopControlLabel": "Giữ để kết thúc phiên",
+    "stopControlHint": "Nhấn giữ để âm thanh fade-out nhẹ nhàng.",
+    "stopControlProgressHint": "Tiếp tục giữ để giải phóng trường âm...",
+    "stopControlCompleting": "Đang kết thúc...",
     "sessionReadyTitle": "Bạn đã hoàn thành phiên coherence đầu tiên.",
     "sessionReadyBody": "Khi sẵn sàng, hãy lưu phiên này hoặc khám phá các tính năng nâng cao trong studio.",
     "sessionCta": "Khám phá tính năng nâng cao"

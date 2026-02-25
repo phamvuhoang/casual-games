@@ -11,7 +11,8 @@ import { cn } from '@/lib/utils/helpers';
 
 const links = [
   { key: 'create', href: '/create' },
-  { key: 'discover', href: '/discover' }
+  { key: 'discover', href: '/discover' },
+  { href: '/ecstatic', label: 'Ecstatic' }
 ] as const;
 
 export default function Header() {
@@ -95,6 +96,8 @@ export default function Header() {
     await supabase.auth.signOut();
   };
 
+  const isActiveLink = (href: string) => pathname === href || pathname?.startsWith(`${href}/`);
+
   return (
     <header className="fixed left-0 right-0 top-0 z-40 px-4 pt-3 sm:px-6 md:px-10">
       <div className="mx-auto flex w-full max-w-[1220px] items-center justify-between rounded-[1.8rem] border border-white/35 bg-white/70 px-4 py-3 shadow-[0_18px_48px_rgba(44,28,80,0.15)] backdrop-blur-xl md:px-6">
@@ -114,10 +117,10 @@ export default function Header() {
               href={link.href}
               className={cn(
                 'rounded-full px-4 py-2 transition',
-                pathname === link.href ? 'bg-white text-ink shadow-sm' : 'text-ink/70 hover:bg-white/70 hover:text-ink'
+                isActiveLink(link.href) ? 'bg-white text-ink shadow-sm' : 'text-ink/70 hover:bg-white/70 hover:text-ink'
               )}
             >
-              {t(link.key)}
+              {'key' in link ? t(link.key) : link.label}
             </Link>
           ))}
         </nav>
@@ -161,10 +164,10 @@ export default function Header() {
                 key={link.href}
                 href={link.href}
                 className={`rounded-2xl border border-ink/10 px-4 py-3 transition ${
-                  pathname === link.href ? 'bg-white text-ink shadow-sm' : 'bg-white/70 hover:text-ink'
+                  isActiveLink(link.href) ? 'bg-white text-ink shadow-sm' : 'bg-white/70 hover:text-ink'
                 }`}
               >
-                {t(link.key)}
+                {'key' in link ? t(link.key) : link.label}
               </Link>
             ))}
             {email && profilePath ? (

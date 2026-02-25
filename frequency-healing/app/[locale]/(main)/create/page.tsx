@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import FrequencyCreator from '@/components/audio/FrequencyCreator';
+import Button from '@/components/ui/Button';
+import { Link } from '@/i18n/navigation';
 import { LOCALE_TO_HREFLANG, type AppLocale } from '@/i18n/routing';
 import {
   SITE_NAME,
@@ -150,6 +152,19 @@ export default async function CreatePage({ params }: { params: Params }) {
           <p className="text-xs uppercase tracking-[0.28em] text-ink/60">{t('studioLabel')}</p>
           <h1 className="mt-3 text-3xl font-semibold md:text-4xl">{t('title')}</h1>
           <p className="mt-3 max-w-3xl text-sm text-ink/70">{t('description')}</p>
+        </div>
+        <div className="rounded-3xl border border-ink/10 bg-white/80 p-5 shadow-[0_14px_34px_rgba(24,28,44,0.12)]">
+          <p className="text-xs uppercase tracking-[0.24em] text-ink/58">Standalone Feature</p>
+          <h2 className="mt-2 text-xl font-semibold">Ecstatic Dance Conductor</h2>
+          <p className="mt-2 max-w-3xl text-sm text-ink/68">
+            Open the dedicated Ecstatic page for setup, fullscreen live conduction, visual lab tooling, and local replay
+            without database changes.
+          </p>
+          <div className="mt-3">
+            <Button asChild size="sm">
+              <Link href="/ecstatic">Open Ecstatic Mode</Link>
+            </Button>
+          </div>
         </div>
         <FrequencyCreator />
       </div>

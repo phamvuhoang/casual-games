@@ -40,6 +40,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       lastModified: now,
       changeFrequency: 'daily',
       priority: 0.9
+    }),
+    buildLocalizedEntry('/ecstatic', {
+      lastModified: now,
+      changeFrequency: 'weekly',
+      priority: 0.7
+    }),
+    buildLocalizedEntry('/ecstatic/visual-lab', {
+      lastModified: now,
+      changeFrequency: 'weekly',
+      priority: 0.6
     })
   ];
 

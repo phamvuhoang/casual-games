@@ -157,6 +157,8 @@ export default async function HomePage({ params }: { params: Params }) {
           stopControlCompleting={t('stopControlCompleting')}
           sessionReadyTitle={t('sessionReadyTitle')}
           sessionReadyBody={t('sessionReadyBody')}
+          somaticSessionReadyTitle={t('somaticSessionReadyTitle')}
+          somaticSessionReadyBody={t('somaticSessionReadyBody')}
           sessionCtaLabel={t('sessionCta')}
         />
       </div>

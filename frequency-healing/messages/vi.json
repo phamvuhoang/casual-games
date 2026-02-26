@@ -46,6 +46,8 @@
     "stopControlCompleting": "Đang kết thúc...",
     "sessionReadyTitle": "Bạn đã hoàn thành phiên coherence đầu tiên.",
     "sessionReadyBody": "Khi sẵn sàng, hãy lưu phiên này hoặc khám phá các tính năng nâng cao trong studio.",
+    "somaticSessionReadyTitle": "Phiên Somatic Trace của bạn đã hoàn tất.",
+    "somaticSessionReadyBody": "Khi sẵn sàng, hãy lưu bản đồ trạng thái cơ thể này hoặc khám phá các tính năng nâng cao trong studio.",
     "sessionCta": "Khám phá tính năng nâng cao"
   },
   "create": {

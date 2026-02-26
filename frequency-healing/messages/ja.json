@@ -46,6 +46,8 @@
     "stopControlCompleting": "終了しています...",
     "sessionReadyTitle": "最初のコヒーレンスセッションが完了しました。",
     "sessionReadyBody": "準備ができたら、この体験を保存するか高度なスタジオ機能を試してください。",
+    "somaticSessionReadyTitle": "ソマティックトレースセッションが完了しました。",
+    "somaticSessionReadyBody": "準備ができたら、この身体状態マップを保存するか高度なスタジオ機能を試してください。",
     "sessionCta": "高度機能を試す"
   },
   "create": {

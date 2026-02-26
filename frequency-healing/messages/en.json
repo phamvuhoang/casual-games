@@ -46,6 +46,8 @@
     "stopControlCompleting": "Releasing...",
     "sessionReadyTitle": "Your first coherence session is complete.",
     "sessionReadyBody": "Save this ritual or explore advanced studio features when you are ready.",
+    "somaticSessionReadyTitle": "Your somatic trace session is complete.",
+    "somaticSessionReadyBody": "Save this body-state map or explore advanced studio features when you are ready.",
     "sessionCta": "Explore advanced features"
   },
   "create": {

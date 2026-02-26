@@ -1174,6 +1174,7 @@ export default function BreathVisualizationGame({
   const activeSessionReadyTitle = mode === 'somatic' ? somaticSessionReadyTitle : sessionReadyTitle;
   const activeSessionReadyBody = mode === 'somatic' ? somaticSessionReadyBody : sessionReadyBody;
   const shouldShowSessionCta = stage === 'active' && (mode === 'somatic' ? showSomaticSessionCta : showSessionCta);
+  const fieldTouchAction = mode === 'somatic' || isTracing ? 'none' : 'pan-y';
 
   const breathGuide: BreathGuideOverlayData | null =
     mode === 'breath' && stage === 'active'
@@ -1251,7 +1252,8 @@ export default function BreathVisualizationGame({
 
         <div
           ref={fieldSurfaceRef}
-          className="relative"
+          className="relative select-none"
+          style={{ touchAction: fieldTouchAction }}
           onPointerDown={handleFieldPointerDown}
           onPointerMove={handleFieldPointerMove}
           onPointerUp={finishTrace}

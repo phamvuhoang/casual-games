@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import {
+  drawSomaticTraceOverlay,
   drawSessionOverlay,
   getSessionOverlayLines,
+  type SomaticTraceOverlayData,
   type VisualizationSessionOverlayData
 } from '@/components/audio/visualizationSessionOverlay';
 
@@ -13,6 +15,7 @@ interface ThreeVisualizerProps {
   isActive: boolean;
   showSessionInfo?: boolean;
   sessionInfo?: VisualizationSessionOverlayData | null;
+  somaticOverlay?: SomaticTraceOverlayData | null;
   onCanvasReady?: (canvas: HTMLCanvasElement | null) => void;
 }
 
@@ -32,6 +35,7 @@ export default function ThreeVisualizer({
   isActive,
   showSessionInfo = false,
   sessionInfo = null,
+  somaticOverlay = null,
   onCanvasReady
 }: ThreeVisualizerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -49,6 +53,8 @@ export default function ThreeVisualizer({
   const smoothedEnergyRef = useRef(0.08);
   const exportCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const exportCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const overlayCtxRef = useRef<CanvasRenderingContext2D | null>(null);
   const starBasePositionsRef = useRef<Float32Array | null>(null);
   const starSeedsRef = useRef<Float32Array | null>(null);
 
@@ -79,9 +85,12 @@ export default function ThreeVisualizer({
 
     const exportCanvas = document.createElement('canvas');
     const exportCtx = exportCanvas.getContext('2d');
+    const overlayCanvas = overlayCanvasRef.current;
+    const overlayCtx = overlayCanvas?.getContext('2d') ?? null;
 
     exportCanvasRef.current = exportCanvas;
     exportCtxRef.current = exportCtx;
+    overlayCtxRef.current = overlayCtx;
     onCanvasReady?.(exportCanvas);
 
     const baseGeometry = new THREE.IcosahedronGeometry(0.9, isLowPower ? 1 : 2);
@@ -187,6 +196,10 @@ export default function ThreeVisualizer({
         exportCanvasRef.current.width = safeWidth;
         exportCanvasRef.current.height = safeHeight;
       }
+      if (overlayCanvasRef.current) {
+        overlayCanvasRef.current.width = safeWidth;
+        overlayCanvasRef.current.height = safeHeight;
+      }
     };
 
     resize();
@@ -221,6 +234,7 @@ export default function ThreeVisualizer({
       starsRef.current = null;
       exportCanvasRef.current = null;
       exportCtxRef.current = null;
+      overlayCtxRef.current = null;
       starBasePositionsRef.current = null;
       starSeedsRef.current = null;
     };
@@ -328,6 +342,21 @@ export default function ThreeVisualizer({
 
       rendererRef.current?.render(sceneRef.current!, cameraRef.current!);
 
+      const overlayCanvas = overlayCanvasRef.current;
+      const overlayCtx = overlayCtxRef.current;
+      if (overlayCanvas && overlayCtx) {
+        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        if (somaticOverlay) {
+          drawSomaticTraceOverlay(
+            overlayCtx,
+            overlayCanvas.width,
+            overlayCanvas.height,
+            somaticOverlay,
+            time
+          );
+        }
+      }
+
       const exportCanvas = exportCanvasRef.current;
       const exportCtx = exportCtxRef.current;
       const rendererCanvas = rendererRef.current?.domElement;
@@ -338,6 +367,9 @@ export default function ThreeVisualizer({
 
         if (showSessionInfo && overlayLines.length > 0) {
           drawSessionOverlay(exportCtx, exportCanvas.width, exportCanvas.height, overlayLines, smoothed);
+        }
+        if (somaticOverlay) {
+          drawSomaticTraceOverlay(exportCtx, exportCanvas.width, exportCanvas.height, somaticOverlay, time);
         }
       }
     };
@@ -350,11 +382,12 @@ export default function ThreeVisualizer({
         frameRef.current = null;
       }
     };
-  }, [isActive, isLowPower, overlayLines, showSessionInfo]);
+  }, [isActive, isLowPower, overlayLines, showSessionInfo, somaticOverlay]);
 
   return (
     <div className="relative h-64 w-full overflow-hidden rounded-3xl border border-black/5 bg-black/10 md:h-72">
       <div ref={containerRef} className="h-full w-full" />
+      <canvas ref={overlayCanvasRef} className="pointer-events-none absolute inset-0 h-full w-full" />
       {showSessionInfo && overlayLines.length > 0 ? (
         <div className="pointer-events-none absolute left-3 top-3 max-w-[82%] rounded-2xl border border-white/20 bg-slate-950/52 px-3 py-2 text-[11px] leading-relaxed text-white/90 backdrop-blur-sm">
           {overlayLines.map((line, index) => (

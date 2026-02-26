@@ -11,7 +11,11 @@ import WaveformVisualizer from '@/components/audio/WaveformVisualizer';
 import ThreeVisualizer from '@/components/audio/ThreeVisualizer';
 import VoicePortraitCard from '@/components/audio/VoicePortraitCard';
 import RoomFrequencyMap from '@/components/audio/RoomFrequencyMap';
-import type { VisualizationSessionOverlayData } from '@/components/audio/visualizationSessionOverlay';
+import SomaticTracePad, { type SomaticTraceCapture } from '@/components/audio/SomaticTracePad';
+import type {
+  SomaticTraceOverlayData,
+  VisualizationSessionOverlayData
+} from '@/components/audio/visualizationSessionOverlay';
 import { useBackgroundAudioBridge } from '@/components/background/BackgroundAudioBridge';
 import { FrequencyGenerator, type FrequencyConfig } from '@/lib/audio/FrequencyGenerator';
 import { MicrophoneAnalysisService } from '@/lib/audio/MicrophoneAnalysisService';
@@ -43,6 +47,12 @@ import {
   createRoomResponseVoices,
   type RoomScanResult
 } from '@/lib/audio/SympatheticResonanceEngine';
+import {
+  analyzeSomaticTrace,
+  buildSomaticTraceSession,
+  resolveSomaticTraceRuntime,
+  type SomaticTraceSession
+} from '@/lib/audio/SomaticTraceEngine';
 import {
   buildSolfeggioHarmonicField,
   getSolfeggioHarmonicPreset,
@@ -120,6 +130,10 @@ import { createSlug } from '@/lib/utils/helpers';
 
 const DEFAULT_VOLUME = 0.35;
 const DRAFT_KEY = 'frequency-healing:draft';
+const SOMATIC_TRACE_CACHE_KEY = 'frequency-healing:somatic-trace';
+const SOMATIC_TRACE_MIN_DURATION_MS = 20_000;
+const SOMATIC_TRACE_MAX_DURATION_MS = 30_000;
+const SOMATIC_TRACE_RUNTIME_INTERVAL_MS = 850;
 const STUDIO_UNLOCK_KEY = 'frequency-healing:studio-unlocked';
 const FIRST_VALUE_KEY = 'frequency-healing:first-value-reached';
 const MAX_EXPORT_SECONDS = 300;
@@ -228,6 +242,8 @@ type DraftState = {
   audioFormat: (typeof AUDIO_FORMATS)[number];
   includeVideo: boolean;
   showSessionInfoOverlay: boolean;
+  somaticTraceEnabled: boolean;
+  somaticTraceSession: Json | null;
   title: string;
   description: string;
   isPublic: boolean;
@@ -280,6 +296,190 @@ function randomizeSteps(length = 16) {
     next[Math.floor(Math.random() * length)] = true;
   }
   return next;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function asNumber(value: unknown, fallback: number) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function asBoolean(value: unknown, fallback: boolean) {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function restoreSomaticTraceSession(raw: Json | null | undefined): SomaticTraceSession | null {
+  const object = asRecord(raw);
+  if (!object) {
+    return null;
+  }
+
+  const metrics = asRecord(object.metrics);
+  const mirror = asRecord(object.mirror);
+  const release = asRecord(object.release);
+  const mirrorRhythm = asRecord(mirror?.rhythm);
+  const mirrorModulation = asRecord(mirror?.modulation);
+  const mirrorSweep = asRecord(mirror?.sweep);
+  const mirrorBinaural = asRecord(mirror?.binaural);
+  const releaseRhythm = asRecord(release?.rhythm);
+  const releaseModulation = asRecord(release?.modulation);
+  const releaseSweep = asRecord(release?.sweep);
+  const releaseBinaural = asRecord(release?.binaural);
+  const durations = asRecord(object.phaseDurationsMs);
+
+  if (
+    !metrics ||
+    !mirrorRhythm ||
+    !mirrorModulation ||
+    !mirrorSweep ||
+    !mirrorBinaural ||
+    !releaseRhythm ||
+    !releaseModulation ||
+    !releaseSweep ||
+    !releaseBinaural ||
+    !durations
+  ) {
+    return null;
+  }
+
+  const selectedFrequencies = Array.isArray(object.selectedFrequencies)
+    ? object.selectedFrequencies
+        .map((entry) => (typeof entry === 'number' ? normalizeFrequency(entry) : null))
+        .filter((entry): entry is number => entry !== null)
+        .slice(0, MAX_PHASE2_FREQUENCIES)
+    : [];
+  if (selectedFrequencies.length === 0) {
+    return null;
+  }
+
+  const overlayPoints = Array.isArray(object.overlayPoints)
+    ? object.overlayPoints
+        .map((entry) => asRecord(entry))
+        .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+        .map((entry) => ({
+          x: clamp(0, asNumber(entry.x, 0.5), 1),
+          y: clamp(0, asNumber(entry.y, 0.5), 1),
+          energy: clamp(0.01, asNumber(entry.energy, 0.25), 1)
+        }))
+        .slice(0, 280)
+    : [];
+
+  const frequencyVolumes: Record<string, number> = {};
+  const rawVolumes = asRecord(object.frequencyVolumes);
+  if (rawVolumes) {
+    for (const [key, value] of Object.entries(rawVolumes)) {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        frequencyVolumes[key] = clamp(0.05, value, 1);
+      }
+    }
+  }
+
+  const rhythmFromRecord = (record: Record<string, unknown>): RhythmConfig => {
+    const subdivision: RhythmConfig['subdivision'] =
+      record.subdivision === '4n' || record.subdivision === '8n' || record.subdivision === '16n' || record.subdivision === '8t'
+        ? record.subdivision
+        : '16n';
+
+    return {
+      enabled: asBoolean(record.enabled, true),
+      bpm: clamp(35, asNumber(record.bpm, 72), 180),
+      subdivision,
+      steps: normalizeRhythmSteps(record.steps)
+    };
+  };
+
+  const modulationFromRecord = (record: Record<string, unknown>): ModulationConfig => {
+    const waveform: ModulationConfig['waveform'] =
+      record.waveform === 'sine' ||
+      record.waveform === 'triangle' ||
+      record.waveform === 'square' ||
+      record.waveform === 'sawtooth'
+        ? record.waveform
+        : 'sine';
+
+    return {
+      enabled: asBoolean(record.enabled, true),
+      rateHz: clamp(0.01, asNumber(record.rateHz, 0.22), 24),
+      depthHz: clamp(0.1, asNumber(record.depthHz, 8), 220),
+      waveform
+    };
+  };
+
+  const sweepFromRecord = (record: Record<string, unknown>): SweepConfig => {
+    const curve: SweepConfig['curve'] =
+      record.curve === 'linear' || record.curve === 'exponential' || record.curve === 'easeInOut'
+        ? record.curve
+        : 'easeInOut';
+
+    return {
+      enabled: asBoolean(record.enabled, true),
+      targetHz: normalizeFrequency(asNumber(record.targetHz, 528)),
+      durationSeconds: clamp(1, asNumber(record.durationSeconds, 18), 180),
+      curve
+    };
+  };
+
+  const binauralFromRecord = (record: Record<string, unknown>): BinauralConfig => ({
+    enabled: asBoolean(record.enabled, true),
+    beatHz: clamp(0.1, asNumber(record.beatHz, 8), 40),
+    panSpread: clamp(0.2, asNumber(record.panSpread, 0.82), 1)
+  });
+
+  return {
+    id: typeof object.id === 'string' ? object.id : `somatic-${Date.now().toString(36)}`,
+    createdAt: typeof object.createdAt === 'string' ? object.createdAt : new Date().toISOString(),
+    metrics: {
+      durationMs: Math.max(0, asNumber(metrics.durationMs, 0)),
+      sampleCount: Math.max(0, Math.round(asNumber(metrics.sampleCount, 0))),
+      distance: Math.max(0, asNumber(metrics.distance, 0)),
+      meanSpeed: Math.max(0, asNumber(metrics.meanSpeed, 0)),
+      speedVariance: Math.max(0, asNumber(metrics.speedVariance, 0)),
+      speedVarianceRatio: Math.max(0, asNumber(metrics.speedVarianceRatio, 0)),
+      curvature: clamp(0, asNumber(metrics.curvature, 0), 1),
+      jitter: clamp(0, asNumber(metrics.jitter, 0), 1),
+      pauseRatio: clamp(0, asNumber(metrics.pauseRatio, 0), 1),
+      directionChanges: Math.max(0, Math.round(asNumber(metrics.directionChanges, 0))),
+      directionChangeRatio: clamp(0, asNumber(metrics.directionChangeRatio, 0), 1),
+      complexityScore: clamp(0, asNumber(metrics.complexityScore, 0), 1),
+      tensionScore: clamp(0, asNumber(metrics.tensionScore, 0.35), 1),
+      coherenceScore: clamp(0, asNumber(metrics.coherenceScore, 0.7), 1),
+      centroidX: clamp(0, asNumber(metrics.centroidX, 0.5), 1),
+      centroidY: clamp(0, asNumber(metrics.centroidY, 0.5), 1)
+    },
+    overlayPoints,
+    selectedFrequencies,
+    frequencyVolumes,
+    mixStyle: object.mixStyle === 'manual' ? 'manual' : 'golden432',
+    waveform:
+      object.waveform === 'sine' ||
+      object.waveform === 'triangle' ||
+      object.waveform === 'square' ||
+      object.waveform === 'sawtooth'
+        ? object.waveform
+        : 'sine',
+    mirror: {
+      rhythm: rhythmFromRecord(mirrorRhythm),
+      modulation: modulationFromRecord(mirrorModulation),
+      sweep: sweepFromRecord(mirrorSweep),
+      binaural: binauralFromRecord(mirrorBinaural)
+    },
+    release: {
+      rhythm: rhythmFromRecord(releaseRhythm),
+      modulation: modulationFromRecord(releaseModulation),
+      sweep: sweepFromRecord(releaseSweep),
+      binaural: binauralFromRecord(releaseBinaural)
+    },
+    phaseDurationsMs: {
+      mirror: Math.max(1, Math.round(asNumber(durations.mirror, 16_000))),
+      release: Math.max(1, Math.round(asNumber(durations.release, 22_000))),
+      total: Math.max(1, Math.round(asNumber(durations.total, 38_000)))
+    }
+  };
 }
 
 function isBaseVisualizationType(type: VisualizerType): type is BaseVisualizationType {
@@ -371,6 +571,11 @@ export default function FrequencyCreator() {
   const [harmonicFieldConfig, setHarmonicFieldConfig] = useState<HarmonicFieldConfig>(
     defaultAudioConfig.innovation.harmonicField
   );
+  const [somaticTraceEnabled, setSomaticTraceEnabled] = useState(false);
+  const [somaticTraceSession, setSomaticTraceSession] = useState<SomaticTraceSession | null>(null);
+  const [somaticTraceOverlay, setSomaticTraceOverlay] = useState<SomaticTraceOverlayData | null>(null);
+  const [somaticTraceStatus, setSomaticTraceStatus] = useState<string | null>(null);
+  const [somaticTracePhase, setSomaticTracePhase] = useState<'mirror' | 'release' | 'complete' | null>(null);
   const [voiceProfile, setVoiceProfile] = useState<VoiceBioprintProfile | null>(null);
   const [voiceProfileId, setVoiceProfileId] = useState<string | null>(null);
   const [isCapturingVoice, setIsCapturingVoice] = useState(false);
@@ -414,6 +619,8 @@ export default function FrequencyCreator() {
   const journeyStartAtRef = useRef<number | null>(null);
   const journeyAdaptiveOffsetRef = useRef(0);
   const journeyLastBreathRef = useRef<number | null>(null);
+  const somaticTraceStartedAtRef = useRef<number | null>(null);
+  const somaticTraceLastPhaseRef = useRef<'mirror' | 'release' | 'complete' | null>(null);
   const breathSyncStartAtRef = useRef<number | null>(null);
   const breathLastBpmRef = useRef<number | null>(null);
   const breathLastConfidenceRef = useRef(0);
@@ -593,6 +800,42 @@ export default function FrequencyCreator() {
     [audioConfig]
   );
 
+  const somaticTraceSessionJson = useMemo<Json | null>(() => {
+    if (!somaticTraceSession) {
+      return null;
+    }
+
+    return {
+      id: somaticTraceSession.id,
+      createdAt: somaticTraceSession.createdAt,
+      metrics: { ...somaticTraceSession.metrics },
+      overlayPoints: somaticTraceSession.overlayPoints.map((entry) => ({ ...entry })),
+      selectedFrequencies: [...somaticTraceSession.selectedFrequencies],
+      frequencyVolumes: { ...somaticTraceSession.frequencyVolumes },
+      mixStyle: somaticTraceSession.mixStyle,
+      waveform: somaticTraceSession.waveform,
+      mirror: {
+        rhythm: {
+          ...somaticTraceSession.mirror.rhythm,
+          steps: [...somaticTraceSession.mirror.rhythm.steps]
+        },
+        modulation: { ...somaticTraceSession.mirror.modulation },
+        sweep: { ...somaticTraceSession.mirror.sweep },
+        binaural: { ...somaticTraceSession.mirror.binaural }
+      },
+      release: {
+        rhythm: {
+          ...somaticTraceSession.release.rhythm,
+          steps: [...somaticTraceSession.release.rhythm.steps]
+        },
+        modulation: { ...somaticTraceSession.release.modulation },
+        sweep: { ...somaticTraceSession.release.sweep },
+        binaural: { ...somaticTraceSession.release.binaural }
+      },
+      phaseDurationsMs: { ...somaticTraceSession.phaseDurationsMs }
+    };
+  }, [somaticTraceSession]);
+
   const customFrequencyValue = Number(customFrequencyInput);
   const customFrequencyValid =
     customFrequencyInput.trim().length > 0 &&
@@ -631,6 +874,16 @@ export default function FrequencyCreator() {
     const extra = selectedFrequencies.length - first.length;
     return `${first.join(' • ')}${extra > 0 ? ` +${extra}` : ''}`;
   }, [selectedFrequencies, tFrequencyCreator]);
+  const somaticTraceSummary = useMemo(() => {
+    if (!somaticTraceSession) {
+      return tFrequencyCreator('ui.somaticTraceAwaiting');
+    }
+
+    return tFrequencyCreator('ui.somaticTraceSummary', {
+      tension: Math.round(somaticTraceSession.metrics.tensionScore * 100),
+      coherence: Math.round(somaticTraceSession.metrics.coherenceScore * 100)
+    });
+  }, [somaticTraceSession, tFrequencyCreator]);
   const savedCompositionPath = savedCompositionId ? `/composition/${savedCompositionId}` : null;
   const savedCompositionUrl = savedCompositionPath ? `${origin}${savedCompositionPath}` : null;
   const savedEmbedCode = useMemo(() => {
@@ -763,6 +1016,9 @@ export default function FrequencyCreator() {
     if (harmonicFieldConfig.enabled) {
       activeModules.push(tFrequencyCreator('summaryModules.harmonicField'));
     }
+    if (somaticTraceEnabled && somaticTraceSession) {
+      activeModules.push(tFrequencyCreator('summaryModules.somaticTrace'));
+    }
 
     if (activeModules.length === 0) {
       return tFrequencyCreator('summary.allAdvancedModulesOff');
@@ -782,6 +1038,8 @@ export default function FrequencyCreator() {
     sweepConfig.enabled,
     sympatheticConfig.enabled,
     sympatheticConfig.mode,
+    somaticTraceEnabled,
+    somaticTraceSession,
     tFrequencyCreator
   ]);
 
@@ -977,6 +1235,7 @@ export default function FrequencyCreator() {
     intentionConfig.ritualIntensity,
     preIntentionVoices
   ]);
+  const playDisabled = mixedVoices.length === 0 || isSaving || (somaticTraceEnabled && !somaticTraceSession);
 
   useEffect(() => {
     return () => {
@@ -1255,6 +1514,17 @@ export default function FrequencyCreator() {
       if (typeof draft.showSessionInfoOverlay === 'boolean') {
         setShowSessionInfoOverlay(draft.showSessionInfoOverlay);
       }
+      if (typeof draft.somaticTraceEnabled === 'boolean') {
+        setSomaticTraceEnabled(draft.somaticTraceEnabled);
+      }
+      if (draft.somaticTraceSession) {
+        const restoredSomaticSession = restoreSomaticTraceSession(draft.somaticTraceSession);
+        if (restoredSomaticSession) {
+          setSomaticTraceSession(restoredSomaticSession);
+          setSomaticTraceOverlay(resolveSomaticTraceRuntime(restoredSomaticSession, 0).overlay);
+          setSomaticTracePhase('mirror');
+        }
+      }
       if (draft.title) {
         setTitle(draft.title);
       }
@@ -1288,6 +1558,8 @@ export default function FrequencyCreator() {
       audioFormat,
       includeVideo,
       showSessionInfoOverlay,
+      somaticTraceEnabled,
+      somaticTraceSession: somaticTraceSessionJson,
       title,
       description,
       isPublic,
@@ -1304,6 +1576,8 @@ export default function FrequencyCreator() {
     duration,
     frequencyVolumes,
     includeVideo,
+    somaticTraceEnabled,
+    somaticTraceSessionJson,
     showSessionInfoOverlay,
     isPublic,
     mixStyle,
@@ -1408,6 +1682,83 @@ export default function FrequencyCreator() {
       generator.setAmbientLayer(ambientSound);
     }
   }, [ambientSound, generator, isPlaying]);
+
+  useEffect(() => {
+    if (!somaticTraceEnabled || !somaticTraceSession) {
+      somaticTraceStartedAtRef.current = null;
+      somaticTraceLastPhaseRef.current = null;
+      setSomaticTracePhase(null);
+      setSomaticTraceOverlay(null);
+      return;
+    }
+
+    if (!isPlaying) {
+      somaticTraceStartedAtRef.current = null;
+      somaticTraceLastPhaseRef.current = null;
+      const previewRuntime = resolveSomaticTraceRuntime(somaticTraceSession, 0);
+      setSomaticTracePhase('mirror');
+      setSomaticTraceOverlay(previewRuntime.overlay);
+      return;
+    }
+
+    if (!somaticTraceStartedAtRef.current) {
+      somaticTraceStartedAtRef.current = performance.now();
+    }
+
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const applyRuntime = (elapsedMs: number) => {
+      const runtime = resolveSomaticTraceRuntime(somaticTraceSession, elapsedMs);
+
+      setRhythmConfig({
+        ...runtime.rhythm,
+        steps: [...runtime.rhythm.steps]
+      });
+      setModulationConfig({ ...runtime.modulation });
+      setSweepConfig({ ...runtime.sweep });
+      setBinauralConfig((prev) => ({
+        ...prev,
+        ...runtime.binaural,
+        enabled: true
+      }));
+      setSomaticTraceOverlay(runtime.overlay);
+      setSomaticTracePhase(runtime.phase);
+
+      if (somaticTraceLastPhaseRef.current !== runtime.phase) {
+        somaticTraceLastPhaseRef.current = runtime.phase;
+        if (runtime.phase === 'mirror') {
+          setSomaticTraceStatus(tFrequencyCreatorStatus('somaticTraceMirrorPhase'));
+        } else if (runtime.phase === 'release') {
+          setSomaticTraceStatus(tFrequencyCreatorStatus('somaticTraceReleasePhase'));
+        } else {
+          setSomaticTraceStatus(tFrequencyCreatorStatus('somaticTraceComplete'));
+        }
+      }
+
+      if (runtime.phase === 'complete' && intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    applyRuntime(0);
+
+    intervalId = setInterval(() => {
+      if (cancelled || !somaticTraceStartedAtRef.current) {
+        return;
+      }
+      const elapsedMs = performance.now() - somaticTraceStartedAtRef.current;
+      applyRuntime(elapsedMs);
+    }, SOMATIC_TRACE_RUNTIME_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [isPlaying, somaticTraceEnabled, somaticTraceSession, tFrequencyCreatorStatus]);
 
   useEffect(() => {
     if (!isPlaying || !sympatheticConfig.enabled) {
@@ -2557,6 +2908,96 @@ export default function FrequencyCreator() {
     setJourneyStatus(null);
   };
 
+  const applySomaticSession = useCallback(
+    (session: SomaticTraceSession, traceDurationMs: number) => {
+      setSomaticTraceSession(session);
+      setSomaticTraceEnabled(true);
+      setSomaticTracePhase('mirror');
+      somaticTraceStartedAtRef.current = null;
+      somaticTraceLastPhaseRef.current = null;
+      const initialRuntime = resolveSomaticTraceRuntime(session, 0);
+      setSomaticTraceOverlay(initialRuntime.overlay);
+
+      setMixStyle(session.mixStyle);
+      setWaveform(session.waveform);
+      setSelectedFrequencies(dedupeFrequencies(session.selectedFrequencies, activeFrequencyMaxHz));
+      setFrequencyVolumes({ ...session.frequencyVolumes });
+      setRhythmConfig({
+        ...session.mirror.rhythm,
+        steps: [...session.mirror.rhythm.steps]
+      });
+      setModulationConfig({ ...session.mirror.modulation });
+      setSweepConfig({ ...session.mirror.sweep });
+      setBinauralConfig({ ...session.mirror.binaural, enabled: true });
+      setVisualizationType('multi-layer');
+      setVisualizationLayers(() => {
+        const gradientLayer = createVisualizationLayer('gradient');
+        const ribbonLayer = createVisualizationLayer('ripple');
+        const mandalaLayer = createVisualizationLayer('mandala');
+        const tension = session.metrics.tensionScore;
+        const coherence = session.metrics.coherenceScore;
+
+        return [
+          {
+            ...gradientLayer,
+            intensity: Number(clamp(0.2, 0.62 + tension * 0.35, 1.3).toFixed(3)),
+            speed: Number(clamp(0.2, 0.56 + tension * 0.46, 2).toFixed(3)),
+            colorA: '#0f2336',
+            colorB: '#1f5e7a',
+            colorC: '#88daf6'
+          },
+          {
+            ...ribbonLayer,
+            intensity: Number(clamp(0.2, 0.74 + tension * 0.48, 1.45).toFixed(3)),
+            speed: Number(clamp(0.18, 0.5 + tension * 0.9, 2.2).toFixed(3)),
+            opacity: Number(clamp(0.12, 0.56 + tension * 0.24, 0.96).toFixed(3)),
+            blendMode: 'screen',
+            colorA: '#8ce7ff',
+            colorB: '#42a5f5',
+            colorC: '#133252'
+          },
+          {
+            ...mandalaLayer,
+            intensity: Number(clamp(0.24, 0.62 + coherence * 0.44, 1.5).toFixed(3)),
+            speed: Number(clamp(0.15, 0.26 + coherence * 0.5, 1.5).toFixed(3)),
+            opacity: Number(clamp(0.16, 0.58 + coherence * 0.26, 1).toFixed(3)),
+            blendMode: 'lighter',
+            colorA: '#d1f8ff',
+            colorB: '#9fe4f4',
+            colorC: '#4e87bc'
+          }
+        ];
+      });
+      setSomaticTraceStatus(
+        tFrequencyCreator('ui.somaticTraceMappedSummary', {
+          seconds: (traceDurationMs / 1000).toFixed(1),
+          mirror: Math.round(session.phaseDurationsMs.mirror / 1000),
+          release: Math.round(session.phaseDurationsMs.release / 1000)
+        })
+      );
+    },
+    [activeFrequencyMaxHz, tFrequencyCreator]
+  );
+
+  const handleAnalyzeSomaticTrace = useCallback(
+    (capture: SomaticTraceCapture) => {
+      if (capture.points.length < 3) {
+        setSomaticTraceStatus(tFrequencyCreator('ui.somaticTraceTooShort'));
+        return;
+      }
+
+      const analysis = analyzeSomaticTrace(capture.points);
+      const session = buildSomaticTraceSession(analysis);
+      applySomaticSession(session, capture.durationMs);
+      setStatus(
+        tFrequencyCreator('ui.somaticTraceApplied', {
+          count: session.selectedFrequencies.length
+        })
+      );
+    },
+    [applySomaticSession, tFrequencyCreator]
+  );
+
   const currentLayerEntries = visualizationType === 'multi-layer' ? visualizationLayers : effectiveVisualizationLayers;
 
   const trackEvent = useCallback(
@@ -2633,11 +3074,18 @@ export default function FrequencyCreator() {
     if (isPlaying) {
       generator.stop();
       setIsPlaying(false);
+      somaticTraceStartedAtRef.current = null;
       return;
     }
 
     if (mixedVoices.length === 0) {
       setStatus(tFrequencyCreatorStatus('selectFrequencyOrFieldBeforePlayback'));
+      return;
+    }
+
+    if (somaticTraceEnabled && !somaticTraceSession) {
+      setSomaticTraceStatus(tFrequencyCreatorStatus('somaticTraceDrawFirst'));
+      setStatus(tFrequencyCreatorStatus('somaticTraceDrawFirst'));
       return;
     }
 
@@ -2685,6 +3133,10 @@ export default function FrequencyCreator() {
             ? tFrequencyCreatorStatus('breathSyncListeningMic')
             : tFrequencyCreatorStatus('breathSyncManualMode')
         );
+      }
+      if (somaticTraceEnabled) {
+        somaticTraceStartedAtRef.current = performance.now();
+        somaticTraceLastPhaseRef.current = null;
       }
       generator.setMasterVolume(volume);
       generator.setRhythmPattern(rhythmConfig);
@@ -3036,6 +3488,7 @@ export default function FrequencyCreator() {
             .filter((keyword) => keyword.length > 0)
             .map((keyword) => `intent-${keyword}`)
         : [];
+      const somaticTraceActive = somaticTraceEnabled && Boolean(somaticTraceSession);
 
       const insertPayload: CompositionInsert = {
         user_id: activeUserId,
@@ -3116,6 +3569,14 @@ export default function FrequencyCreator() {
             lastFieldAt: harmonicFieldConfig.lastFieldAt,
             layerFrequencies: harmonicFieldBundle.layerFrequencies,
             interferenceFrequencies: harmonicFieldBundle.interferenceFrequencies
+          },
+          somaticTrace: {
+            enabled: somaticTraceActive,
+            phase: somaticTracePhase,
+            metrics: somaticTraceSession ? { ...somaticTraceSession.metrics } : null,
+            phaseDurationsMs: somaticTraceSession ? { ...somaticTraceSession.phaseDurationsMs } : null,
+            mappedFrequencies: somaticTraceSession?.selectedFrequencies ?? [],
+            traceOverlayPoints: somaticTraceSession?.overlayPoints.length ?? 0
           }
         },
         innovation_flags: [
@@ -3124,7 +3585,8 @@ export default function FrequencyCreator() {
           adaptiveJourneyConfig.enabled ? 'adaptive_binaural_journey' : null,
           breathSyncConfig.enabled ? 'breath_sync_protocol' : null,
           intentionConfig.enabled ? 'quantum_intention_imprint' : null,
-          harmonicFieldConfig.enabled ? 'solfeggio_harmonic_field' : null
+          harmonicFieldConfig.enabled ? 'solfeggio_harmonic_field' : null,
+          somaticTraceActive ? 'somatic_trace_alchemy' : null
         ].filter((value): value is string => Boolean(value)),
         scientific_disclaimer_ack:
           voiceBioprintConfig.disclaimerAccepted ||
@@ -3150,7 +3612,9 @@ export default function FrequencyCreator() {
           intentionConfig.enabled ? 'quantum-intention' : null,
           ...intentionKeywordTags,
           harmonicFieldConfig.enabled ? 'solfeggio-field' : null,
-          harmonicFieldConfig.enabled ? `field-${harmonicFieldConfig.presetId}` : null
+          harmonicFieldConfig.enabled ? `field-${harmonicFieldConfig.presetId}` : null,
+          somaticTraceActive ? 'somatic-trace' : null,
+          somaticTraceActive && somaticTracePhase ? `somatic-${somaticTracePhase}` : null
         ].filter((tag): tag is string => Boolean(tag) && tag !== 'none')
       };
 
@@ -3330,6 +3794,7 @@ export default function FrequencyCreator() {
 
       if (typeof window !== 'undefined') {
         window.localStorage.removeItem(DRAFT_KEY);
+        window.localStorage.removeItem(SOMATIC_TRACE_CACHE_KEY);
       }
 
       if (isPublic) {
@@ -3388,7 +3853,7 @@ export default function FrequencyCreator() {
                   })}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              <Button size="sm" onClick={handlePlay} disabled={mixedVoices.length === 0 || isSaving}>
+              <Button size="sm" onClick={handlePlay} disabled={playDisabled}>
                 {isPlaying ? tFrequencyCreator('ui.stopNow') : tFrequencyCreator('ui.playNow')}
               </Button>
               <Button
@@ -3405,6 +3870,62 @@ export default function FrequencyCreator() {
                 {canAccessStudioControls ? tFrequencyCreator('ui.tuneFrequencies') : tFrequencyCreator('ui.unlockStudioControls')}
               </Button>
             </div>
+          </div>
+          <div className="rounded-2xl border border-ink/10 bg-white/82 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.22em] text-ink/55">{tFrequencyCreator('ui.somaticTraceMode')}</p>
+                <h3 className="mt-1 text-base font-semibold text-ink/90">{tFrequencyCreator('ui.somaticTraceTitle')}</h3>
+                <p className="mt-1 text-xs text-ink/62">{tFrequencyCreator('ui.somaticTraceTagline')}</p>
+              </div>
+              <label className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-white px-3 py-1 text-xs text-ink/70">
+                <span>{somaticTraceEnabled ? tFrequencyCreator('ui.on') : tFrequencyCreator('ui.off')}</span>
+                <input
+                  type="checkbox"
+                  checked={somaticTraceEnabled}
+                  onChange={(event) => {
+                    const checked = event.target.checked;
+                    setSomaticTraceEnabled(checked);
+                    if (!checked) {
+                      somaticTraceStartedAtRef.current = null;
+                      somaticTraceLastPhaseRef.current = null;
+                      setSomaticTraceOverlay(null);
+                      setSomaticTracePhase(null);
+                      setSomaticTraceStatus(null);
+                    }
+                  }}
+                  className="h-4 w-4"
+                />
+              </label>
+            </div>
+            <p className="mt-2 text-xs text-ink/60">{somaticTraceSummary}</p>
+            {somaticTraceEnabled ? (
+              <div className="mt-3">
+                <SomaticTracePad
+                  enabled={somaticTraceEnabled}
+                  cacheKey={SOMATIC_TRACE_CACHE_KEY}
+                  minDurationMs={SOMATIC_TRACE_MIN_DURATION_MS}
+                  maxDurationMs={SOMATIC_TRACE_MAX_DURATION_MS}
+                  onAnalyze={handleAnalyzeSomaticTrace}
+                  clearLabel={tFrequencyCreator('ui.clear')}
+                  analyzeLabel={tFrequencyCreator('ui.analyzeTrace')}
+                />
+              </div>
+            ) : (
+              <p className="mt-3 rounded-2xl border border-ink/10 bg-white px-3 py-2 text-xs text-ink/58">
+                {tFrequencyCreator('ui.somaticTraceEnableHint')}
+              </p>
+            )}
+            {somaticTraceStatus ? (
+              <p className="mt-2 rounded-2xl border border-ink/10 bg-white/80 px-3 py-2 text-xs text-ink/65">
+                {somaticTraceStatus}
+              </p>
+            ) : null}
+            {somaticTracePhase ? (
+              <p className="mt-2 text-xs uppercase tracking-[0.2em] text-ink/52">
+                {tFrequencyCreator(`ui.somaticTracePhase.${somaticTracePhase}`)}
+              </p>
+            ) : null}
           </div>
           {status ? <p className="text-sm text-ink/70">{status}</p> : null}
         </div>
@@ -3772,7 +4293,7 @@ export default function FrequencyCreator() {
                 <Button size="sm" onClick={() => handleUnlockStudioControls('manual')}>
                   {tFrequencyCreator('ui.unlockStudioControls')}
                 </Button>
-                <Button size="sm" variant="outline" onClick={handlePlay} disabled={mixedVoices.length === 0 || isSaving}>
+                <Button size="sm" variant="outline" onClick={handlePlay} disabled={playDisabled}>
                   {isPlaying ? tFrequencyCreator('ui.stopNow') : tFrequencyCreator('ui.playNow')}
                 </Button>
               </div>
@@ -5059,6 +5580,7 @@ export default function FrequencyCreator() {
               isActive={isPlaying && liveVisualizationEnabled}
               showSessionInfo={showSessionInfoOverlay}
               sessionInfo={sessionOverlayInfo}
+              somaticOverlay={somaticTraceOverlay}
               onCanvasReady={setVisualCanvas}
             />
           ) : (
@@ -5069,6 +5591,7 @@ export default function FrequencyCreator() {
               isActive={isPlaying && liveVisualizationEnabled}
               showSessionInfo={showSessionInfoOverlay}
               sessionInfo={sessionOverlayInfo}
+              somaticOverlay={somaticTraceOverlay}
               breathGuide={
                 breathSyncConfig.enabled && isPlaying && breathRuntime
                   ? {
@@ -5329,7 +5852,7 @@ export default function FrequencyCreator() {
               <p className="truncate text-sm font-semibold text-ink/90">{selectedFrequencySummary}</p>
             </div>
             <div className="flex items-center gap-2">
-              <Button size="sm" onClick={handlePlay} disabled={mixedVoices.length === 0 || isSaving}>
+              <Button size="sm" onClick={handlePlay} disabled={playDisabled}>
                 {isPlaying ? tFrequencyCreator('ui.stop') : tFrequencyCreator('ui.play')}
               </Button>
               <Button

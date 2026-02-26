@@ -23,6 +23,23 @@ export interface BreathGuideOverlayData {
   targetBpm: number;
 }
 
+export interface SomaticTraceOverlayData {
+  phase: 'mirror' | 'release' | 'complete';
+  phaseProgress: number;
+  overallProgress: number;
+  tension: number;
+  coherence: number;
+  points: Array<{
+    x: number;
+    y: number;
+    energy: number;
+  }>;
+}
+
+function clampValue(min: number, value: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
 function formatFrequency(value: number) {
   return `${Math.round(value * 100) / 100}Hz`;
 }
@@ -229,6 +246,96 @@ export function drawBreathGuideOverlay(
     x,
     y + 20
   );
+
+  ctx.restore();
+}
+
+export function drawSomaticTraceOverlay(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  data: SomaticTraceOverlayData,
+  timeMs: number
+) {
+  if (!data.points || data.points.length < 2) {
+    return;
+  }
+
+  const tension = clampValue(0, data.tension, 1);
+  const coherence = clampValue(0.05, data.coherence, 1);
+  const releaseProgress = data.phase === 'release' ? data.phaseProgress : data.phase === 'complete' ? 1 : 0;
+  const traceFade = clampValue(0.12, 1 - releaseProgress * 0.82, 1);
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+
+  for (let index = 1; index < data.points.length; index += 1) {
+    const previous = data.points[index - 1];
+    const current = data.points[index];
+
+    const previousX = previous.x * width;
+    const previousY = previous.y * height;
+    const baseX = current.x * width;
+    const baseY = current.y * height;
+    const jitterStrength = tension * 16 * traceFade;
+    const jitterX = Math.sin(timeMs * 0.0014 + index * 0.39) * jitterStrength;
+    const jitterY = Math.cos(timeMs * 0.0012 + index * 0.44) * jitterStrength;
+
+    const x = baseX + jitterX;
+    const y = baseY + jitterY;
+    const hue = 178 + current.energy * 120 - coherence * 42;
+    const alpha = clampValue(0.06, (0.18 + current.energy * 0.45 + tension * 0.28) * traceFade, 0.9);
+    const strokeWidth = clampValue(0.7, 0.9 + current.energy * 2.8 + tension * 1.4, 6.8);
+
+    ctx.strokeStyle = `hsla(${Math.round(hue)}, 92%, 70%, ${alpha})`;
+    ctx.lineWidth = strokeWidth;
+    ctx.beginPath();
+    ctx.moveTo(previousX, previousY);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  }
+
+  const bloom = clampValue(0, coherence * (0.2 + releaseProgress * 0.9), 1);
+  if (bloom > 0.02) {
+    const centerX = width * 0.5;
+    const centerY = height * 0.5;
+    const baseRadius = Math.min(width, height) * (0.08 + bloom * 0.18);
+    const petalCount = 6 + Math.round(coherence * 8);
+
+    ctx.globalCompositeOperation = 'lighter';
+    for (let layer = 0; layer < 3; layer += 1) {
+      const radius = baseRadius * (1 + layer * 0.52);
+      const rotation = timeMs * (0.00012 + layer * 0.00005);
+      const alpha = clampValue(0.08, bloom * (0.38 - layer * 0.09), 0.45);
+
+      ctx.strokeStyle = `hsla(${196 + layer * 22}, 86%, 80%, ${alpha})`;
+      ctx.lineWidth = 1.2 + layer * 0.45;
+      ctx.beginPath();
+
+      for (let index = 0; index < petalCount; index += 1) {
+        const angle = (Math.PI * 2 * index) / petalCount + rotation;
+        const pulse = 1 + Math.sin(timeMs * 0.00035 + index * 1.3 + layer) * 0.08;
+        const x = centerX + Math.cos(angle) * radius * pulse;
+        const y = centerY + Math.sin(angle) * radius * pulse;
+        if (index === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
+        }
+      }
+
+      ctx.closePath();
+      ctx.stroke();
+    }
+
+    const radial = ctx.createRadialGradient(centerX, centerY, baseRadius * 0.2, centerX, centerY, baseRadius * 2.2);
+    radial.addColorStop(0, `rgba(196, 236, 255, ${0.36 * bloom})`);
+    radial.addColorStop(1, 'rgba(196, 236, 255, 0)');
+    ctx.fillStyle = radial;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, baseRadius * 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   ctx.restore();
 }

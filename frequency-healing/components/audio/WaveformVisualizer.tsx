@@ -12,9 +12,11 @@ import { CompositorRenderer } from '@/lib/visualization/renderers/CompositorRend
 import { cn } from '@/lib/utils/helpers';
 import {
   drawBreathGuideOverlay,
+  drawSomaticTraceOverlay,
   drawSessionOverlay,
   getSessionOverlayLines,
   type BreathGuideOverlayData,
+  type SomaticTraceOverlayData,
   type VisualizationSessionOverlayData
 } from '@/components/audio/visualizationSessionOverlay';
 
@@ -26,6 +28,7 @@ interface WaveformVisualizerProps {
   showSessionInfo?: boolean;
   sessionInfo?: VisualizationSessionOverlayData | null;
   breathGuide?: BreathGuideOverlayData | null;
+  somaticOverlay?: SomaticTraceOverlayData | null;
   onCanvasReady?: (canvas: HTMLCanvasElement | null) => void;
   className?: string;
 }
@@ -45,6 +48,7 @@ export default function WaveformVisualizer({
   showSessionInfo = false,
   sessionInfo = null,
   breathGuide = null,
+  somaticOverlay = null,
   onCanvasReady,
   className
 }: WaveformVisualizerProps) {
@@ -131,7 +135,7 @@ export default function WaveformVisualizer({
       return;
     }
 
-    if ((!showSessionInfo || overlayLines.length === 0) && !breathGuide) {
+    if ((!showSessionInfo || overlayLines.length === 0) && !breathGuide && !somaticOverlay) {
       engineRef.current.setOverlayRenderer(null);
       return;
     }
@@ -143,8 +147,11 @@ export default function WaveformVisualizer({
       if (breathGuide) {
         drawBreathGuideOverlay(frame.ctx, frame.width, frame.height, breathGuide);
       }
+      if (somaticOverlay) {
+        drawSomaticTraceOverlay(frame.ctx, frame.width, frame.height, somaticOverlay, frame.time);
+      }
     });
-  }, [analyser, breathGuide, overlayLines, showSessionInfo]);
+  }, [analyser, breathGuide, overlayLines, showSessionInfo, somaticOverlay]);
 
   useEffect(() => {
     onCanvasReady?.(canvasRef.current);

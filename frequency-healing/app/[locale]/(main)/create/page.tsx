@@ -23,6 +23,7 @@ const CREATE_KEYWORDS: Record<AppLocale, string[]> = {
     'custom frequency stack',
     'adaptive binaural journey',
     'voice bioprint',
+    'somatic trace alchemy',
     'quantum intention mapping',
     'harmonic field generator',
     'sympathetic resonance'
@@ -36,6 +37,7 @@ const CREATE_KEYWORDS: Record<AppLocale, string[]> = {
     'カスタム周波数スタック',
     'アダプティブバイノーラルジャーニー',
     'Voice Bioprint',
+    'ソマティックトレース',
     '量子意図マッピング',
     'ハーモニックフィールド生成',
     '共鳴ルームチューニング'
@@ -49,6 +51,7 @@ const CREATE_KEYWORDS: Record<AppLocale, string[]> = {
     'chồng tần số tùy chỉnh',
     'lộ trình binaural thích ứng',
     'voice bioprint',
+    'somatic trace alchemy',
     'ánh xạ ý định lượng tử',
     'harmonic field generator',
     'cộng hưởng phòng âm'
@@ -58,6 +61,7 @@ const CREATE_KEYWORDS: Record<AppLocale, string[]> = {
 const CREATE_FEATURES: Record<AppLocale, string[]> = {
   en: [
     'Custom frequency stack (20-2000Hz, advanced up to 20kHz)',
+    'Somatic Trace Alchemy gesture-to-audio flow',
     'Adaptive binaural journey templates',
     'Breath-sync protocol with pacing guidance',
     'Voice Bioprint vocal spectrum mapping',
@@ -65,6 +69,7 @@ const CREATE_FEATURES: Record<AppLocale, string[]> = {
   ],
   ja: [
     'カスタム周波数スタック（20〜2000Hz、拡張で最大20kHz）',
+    'Somatic Trace Alchemy ジェスチャー入力',
     'アダプティブ・バイノーラル・ジャーニー',
     '呼吸ペーシング付き Breath-Sync プロトコル',
     'Voice Bioprint 音声スペクトラム解析',
@@ -72,6 +77,7 @@ const CREATE_FEATURES: Record<AppLocale, string[]> = {
   ],
   vi: [
     'Chồng tần số tùy chỉnh (20-2000Hz, nâng cao tới 20kHz)',
+    'Somatic Trace Alchemy bằng cử chỉ chạm',
     'Lộ trình binaural thích ứng',
     'Giao thức Breath-Sync có hướng dẫn nhịp thở',
     'Voice Bioprint phân tích phổ giọng nói',

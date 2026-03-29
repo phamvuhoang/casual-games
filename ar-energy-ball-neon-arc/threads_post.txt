@@ -1,0 +1,9 @@
+Just shipped a new AR game, "Neon Arc"! 🚀
+
+It's a retro-futuristic take on classic brick-breaker games, but with a twist – you control the energy ball with your bare hands!
+
+I'm using #ThreeJS for the 3D rendering, #MediaPipe for the hand tracking, and #React for the UI. It's amazing how far browser-based AR has come.
+
+Check out the game and let me know what you think!
+
+#BuildInPublic #AR #WebAR #JavaScript #Vite
